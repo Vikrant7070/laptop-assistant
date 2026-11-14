@@ -12,11 +12,15 @@ import re
 import shutil
 import socket
 import subprocess
+import threading
 import time
+import urllib.parse
 import webbrowser
 from pathlib import Path
 
 import psutil
+
+from shared import DATA, REACTIONS, ps_escape, work_area
 
 try:  # real pixel coordinates, so clicks land where UI Automation says
     import ctypes as _c
@@ -25,8 +29,7 @@ except Exception:
     pass
 
 HOME = Path.home()
-DATA = Path(__file__).parent / "data"
-DATA.mkdir(exist_ok=True)
+DATA.mkdir(parents=True, exist_ok=True)
 NOTES_FILE = DATA / "notes.json"
 REMINDERS_FILE = DATA / "reminders.json"
 MEMORY_FILE = DATA / "memory.json"
@@ -39,8 +42,14 @@ def _load(path, default):
         return default
 
 
+_files_lock = threading.Lock()   # notes / reminders are read-modify-written from several threads
+
+
 def _save(path, obj):
-    path.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+    """Write JSON atomically (a reader never sees a half-written file)."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
 
 
 def _ps(cmd, timeout=30):
@@ -130,11 +139,26 @@ def list_top_processes(sort_by="memory", limit=10):
     return "\n".join(rows)
 
 
+def _nova_pids():
+    """This process, its parent and its children (3D body, listeners) - never closed by kill_process."""
+    pids = {os.getpid()}
+    try:
+        me = psutil.Process()
+        pids |= {c.pid for c in me.children(recursive=True)}
+        if me.parent():
+            pids.add(me.parent().pid)
+    except psutil.Error:
+        pass
+    return pids
+
+
 def kill_process(name_or_pid):
-    killed = []
+    killed, mine = [], _nova_pids()
     target = str(name_or_pid).lower().removesuffix(".exe")
     for p in psutil.process_iter(["pid", "name"]):
         try:
+            if p.info["pid"] in mine:
+                continue
             if str(p.info["pid"]) == target or (p.info["name"] or "").lower().removesuffix(".exe") == target:
                 p.terminate()
                 killed.append(f"{p.info['name']} ({p.info['pid']})")
@@ -176,13 +200,17 @@ APPS = {
 
 
 def open_app(name):
-    key = name.strip().lower()
-    target = APPS.get(key, name)
+    key = str(name).strip().lower()
+    target = APPS.get(key, str(name).strip())
+    if not target or re.search(r'[&|<>^"%\r\n]', target):
+        return f"Couldn't open {name}: that isn't an app name."
     try:
-        if ":" in target and not os.path.exists(target):
-            os.startfile(target)
+        exe = shutil.which(target)
+        if exe and exe.lower().endswith(".exe"):
+            subprocess.Popen([exe])     # an argument list: no shell, nothing to inject into
         else:
-            subprocess.Popen(f'start "" "{target}"', shell=True)
+            # Like the Run box: App Paths (chrome, winword), URL protocols (ms-settings:), .cmd launchers, files.
+            os.startfile(exe or target)
         return f"Opened {name}."
     except Exception as e:
         return f"Couldn't open {name}: {e}"
@@ -191,26 +219,39 @@ def open_app(name):
 BROWSERS = {"chrome.exe": "chrome", "msedge.exe": "msedge", "firefox.exe": "firefox", "brave.exe": "brave"}
 
 
+def _exe_path(proc_name):
+    """Full path of a running program, e.g. chrome.exe -> C:\\...\\chrome.exe (None if it isn't running)."""
+    for p in psutil.process_iter(["name", "exe"]):
+        try:
+            if (p.info["name"] or "").lower() == proc_name and p.info["exe"]:
+                return p.info["exe"]
+        except psutil.Error:
+            pass
+    return None
+
+
 def _browser_in_use():
     """The browser whose window is closest to the front - so Nova keeps using the one the user is in."""
     for _, _, proc in _windows():
         if proc.lower() in BROWSERS:
-            return BROWSERS[proc.lower()]
+            return proc.lower()
     return None
 
 
 def open_website(url_or_search):
-    q = url_or_search.strip()
-    if " " in q or "." not in q:
-        url = "https://www.google.com/search?q=" + q.replace(" ", "+")
+    q = str(url_or_search).strip()
+    if " " in q or "." not in q or q.lower().startswith(("file:", "javascript:")):
+        url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(q)
     else:
-        url = q if q.startswith("http") else "https://" + q
+        url = q if q.lower().startswith(("http://", "https://")) else "https://" + q
+        url = urllib.parse.quote(url, safe=":/?#[]@!$&'()*+,;=%~")   # stray spaces / quotes can't break out
     browser = _browser_in_use()
-    if browser:
-        subprocess.Popen(f'start "" {browser} "{url}"', shell=True)
+    exe = _exe_path(browser) if browser else None
+    if exe:   # keep using the browser the user is in (an argument list: no shell, nothing to inject into)
+        subprocess.Popen([exe, url])
     else:
         webbrowser.open(url)
-    return f"Opened {url}" + (f" in {browser}" if browser else "")
+    return f"Opened {url}" + (f" in {BROWSERS[browser]}" if exe else "")
 
 
 def open_windows_summary(limit=6):
@@ -234,8 +275,15 @@ def list_folder(path="downloads"):
     p = _resolve(path)
     if not p.is_dir():
         return f"{p} is not a folder."
-    items = sorted(p.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True)[:60]
-    rows = [f"{'[DIR] ' if i.is_dir() else ''}{i.name}{'' if i.is_dir() else ' - ' + _fmt_bytes(i.stat().st_size)}" for i in items]
+    entries = []
+    for i in p.iterdir():
+        try:
+            st = i.stat()
+            entries.append((st.st_mtime, i, st.st_size, i.is_dir()))
+        except OSError:
+            entries.append((0, i, 0, False))     # a locked or broken entry is still listed
+    entries.sort(key=lambda e: e[0], reverse=True)
+    rows = [f"{'[DIR] ' if d else ''}{i.name}{'' if d else ' - ' + _fmt_bytes(size)}" for _, i, size, d in entries[:60]]
     return f"{p} (newest first):\n" + "\n".join(rows)
 
 
@@ -336,7 +384,7 @@ def delete_to_recycle_bin(path):
         return f"{p} does not exist."
     kind = "DeleteDirectory" if p.is_dir() else "DeleteFile"
     cmd = (f"Add-Type -AssemblyName Microsoft.VisualBasic; "
-           f"[Microsoft.VisualBasic.FileIO.FileSystem]::{kind}('{p}', 'OnlyErrorDialogs', 'SendToRecycleBin')")
+           f"[Microsoft.VisualBasic.FileIO.FileSystem]::{kind}('{ps_escape(p)}', 'OnlyErrorDialogs', 'SendToRecycleBin')")
     out = _ps(cmd)
     return f"Moved {p} to the Recycle Bin. {out if 'ERR' in out else ''}".strip()
 
@@ -354,7 +402,11 @@ def temp_files_size():
 
 
 def clean_temp_files():
-    freed, root = 0, os.environ.get("TEMP", "")
+    root = os.environ.get("TEMP", "").strip()
+    # Without a real TEMP folder, Path("") would be the current folder - never clean that (or a drive or home).
+    if not root or not os.path.isabs(root) or not Path(root).is_dir() or Path(root) in (Path(Path(root).anchor), HOME):
+        return "I couldn't find the temporary-files folder (TEMP), so I didn't delete anything."
+    freed = 0
     for entry in Path(root).iterdir():
         try:
             size = entry.stat().st_size if entry.is_file() else sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
@@ -418,9 +470,9 @@ def run_powershell(command, as_admin=False):
     # Elevated: Windows shows its own UAC prompt; output comes back through a temp file.
     out = Path(os.environ.get("TEMP", ".")) / f"nova_admin_{int(time.time())}.txt"
     script = out.with_suffix(".ps1")
-    script.write_text(f"& {{ {command} }} *> '{out}'", encoding="utf-8")
+    script.write_text(f"& {{ {command} }} *> '{ps_escape(out)}'", encoding="utf-8")
     _ps(f"Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden "
-        f"-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','{script}'", timeout=300)
+        f"-ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','\"{ps_escape(script)}\"'", timeout=300)
     try:
         raw = out.read_bytes() if out.exists() else b""
         result = raw.decode("utf-16" if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8", errors="ignore")
@@ -578,8 +630,12 @@ def move_or_rename(source, destination):
 
 def copy_path(source, destination):
     src, dst = _resolve(source), _resolve(destination)
+    if not src.exists():
+        return f"{src} does not exist."
     if dst.is_dir():
         dst = dst / src.name
+    if dst.exists():
+        return f"{dst} already exists - pick another name."
     (shutil.copytree if src.is_dir() else shutil.copy2)(str(src), str(dst))
     return f"Copied to {dst}"
 
@@ -587,22 +643,28 @@ def copy_path(source, destination):
 # ---------------------------------------------------------------- apps & Windows settings
 
 def search_installable_apps(query):
-    return _ps(f"winget search --accept-source-agreements \"{query}\" | Select-Object -First 15", timeout=90)
+    return _ps(f"winget search --accept-source-agreements -- '{ps_escape(query)}' | Select-Object -First 15", timeout=90)
 
 
 def install_app(winget_id):
-    return _ps(f"winget install --id \"{winget_id}\" -e --silent --accept-package-agreements --accept-source-agreements", timeout=900)
+    return _ps(f"winget install --id '{ps_escape(winget_id)}' -e --silent --accept-package-agreements "
+               "--accept-source-agreements", timeout=900)
 
 
 def uninstall_app(name_or_id):
-    return _ps(f"winget uninstall \"{name_or_id}\" --silent --accept-source-agreements", timeout=600)
+    return _ps(f"winget uninstall --silent --accept-source-agreements -- '{ps_escape(name_or_id)}'", timeout=600)
+
+
+def _like_literal(text):
+    """Wildcard characters in the user's text are matched literally by -like."""
+    return re.sub(r"([*?\[\]`])", r"`\1", str(text or ""))
 
 
 def list_installed_apps(name_contains=""):
     cmd = ("Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*,"
            "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*,"
            "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue | "
-           f"Where-Object {{ $_.DisplayName -like '*{name_contains}*' }} | Sort-Object DisplayName -Unique | "
+           f"Where-Object {{ $_.DisplayName -like '*{ps_escape(_like_literal(name_contains))}*' }} | Sort-Object DisplayName -Unique | "
            "Select-Object -First 60 -ExpandProperty DisplayName")
     return _ps(cmd)
 
@@ -909,8 +971,12 @@ def click_at(x, y, button="left", double=False):
 LAST_IMAGE = {"jpg_b64": None}  # shown in the chat so the user always sees what Nova looked at
 
 
+def _setting(name, default=None):
+    return _load(DATA / "settings.json", {}).get(name, default)
+
+
 def _camera_allowed():
-    return bool(_load(DATA / "settings.json", {}).get("camera"))
+    return bool(_setting("camera"))
 
 
 def _camera_users():
@@ -981,7 +1047,7 @@ def look_through_camera(question="What do you see?"):
     avatar_client.send("say", text="Let me take a look 👀", secs=3, timeout=2)
     img = _grab_camera_jpeg()  # kept in memory only, never saved to disk
     LAST_IMAGE["jpg_b64"] = img
-    model = _load(DATA / "settings.json", {}).get("model")
+    model = _setting("model")
     return "Through the camera: " + llm.see(img, question, preferred=model)
 
 
@@ -991,7 +1057,7 @@ SCREEN_HOOKS = {"hide": None, "show": None}  # desktop.py hides Nova's chat wind
 
 
 def _screen_allowed():
-    return bool(_load(DATA / "settings.json", {}).get("screen"))
+    return bool(_setting("screen"))
 
 
 def _grab_screen_jpeg(what="screen", window="", max_width=1400):
@@ -1031,7 +1097,7 @@ def look_at_screen(question="What's on my screen?", what="screen", window=""):
     import llm
     img = _grab_screen_jpeg(what, window)  # kept in memory only, never saved to disk
     LAST_IMAGE["jpg_b64"] = img
-    model = _load(DATA / "settings.json", {}).get("model")
+    model = _setting("model")
     return "On the screen: " + llm.see(img, question, preferred=model, kind="screen")
 
 
@@ -1043,9 +1109,10 @@ def toggle_wifi(on):
 # ---------------------------------------------------------------- notes, reminders, memory
 
 def add_note(text):
-    notes = _load(NOTES_FILE, [])
-    notes.append({"text": text, "at": get_datetime()})
-    _save(NOTES_FILE, notes)
+    with _files_lock:
+        notes = _load(NOTES_FILE, [])
+        notes.append({"text": text, "at": get_datetime()})
+        _save(NOTES_FILE, notes)
     return f"Saved note #{len(notes)}."
 
 
@@ -1056,21 +1123,23 @@ def list_notes():
 
 def set_reminder(text, minutes_from_now):
     due = time.time() + float(minutes_from_now) * 60
-    rems = _load(REMINDERS_FILE, [])
-    rems.append({"text": text, "due": due, "done": False})
-    _save(REMINDERS_FILE, rems)
+    with _files_lock:
+        rems = _load(REMINDERS_FILE, [])
+        rems.append({"text": text, "due": due, "done": False})
+        _save(REMINDERS_FILE, rems)
     return f"I'll remind you at {dt.datetime.fromtimestamp(due).strftime('%I:%M %p')}: {text}"
 
 
 def due_reminders():
-    rems = _load(REMINDERS_FILE, [])
-    now, due = time.time(), []
-    for r in rems:
-        if not r["done"] and r["due"] <= now:
-            r["done"] = True
-            due.append(r["text"])
-    if due:
-        _save(REMINDERS_FILE, rems)
+    with _files_lock:
+        rems = _load(REMINDERS_FILE, [])
+        now, due = time.time(), []
+        for r in rems:
+            if not r.get("done") and r.get("due", now + 1) <= now:
+                r["done"] = True
+                due.append(r.get("text", ""))
+        if due:
+            _save(REMINDERS_FILE, rems[-200:])    # finished reminders don't pile up forever
     return due
 
 
@@ -1106,10 +1175,6 @@ def recall_knowledge(about=""):
 
 # ---------------------------------------------------------------- reactions and dragging windows (3D Nova)
 
-REACTIONS = ("laugh", "dance", "spin", "clap", "surprised", "sad", "confused", "nod", "shake", "facepalm", "bow", "love",
-             "yawn", "look", "happy", "wave")
-
-
 def react(reaction, times=0):
     """Make 3D Nova act something out on screen."""
     import avatar_client
@@ -1126,16 +1191,12 @@ def react(reaction, times=0):
 
 
 def _avatar_pos():
-    import urllib.request
-    try:
-        return json.loads(urllib.request.urlopen("http://127.0.0.1:5056/", timeout=1).read())["pos"]
-    except Exception:
-        return None
+    import avatar_client
+    return avatar_client.position()
 
 
 def drag_window(window="", to="center"):
     """Move a window to another part of the screen. 3D Nova walks over, takes hold of its title bar and carries it."""
-    import threading
     import avatar_client
     w = _target_window(window)
     if not w:
@@ -1146,8 +1207,7 @@ def drag_window(window="", to="center"):
         time.sleep(0.4)
     r = wintypes.RECT()
     _user32.GetWindowRect(hwnd, ctypes.byref(r))
-    area = wintypes.RECT()
-    _user32.SystemParametersInfoW(0x30, 0, ctypes.byref(area), 0)
+    area = wintypes.RECT(*work_area())
     ww, wh = r.right - r.left, r.bottom - r.top
     aw, ah = area.right - area.left, area.bottom - area.top
     ww, wh = min(ww, aw), min(wh, ah)

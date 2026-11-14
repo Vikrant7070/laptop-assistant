@@ -4,10 +4,8 @@ Run:  pythonw desktop.py            (or double-click "Start Nova.bat")
       pythonw desktop.py --hidden   (start in the tray, used for auto-start)
 """
 import ctypes
-import json
 import subprocess
 import sys
-from ctypes import wintypes
 import threading
 import urllib.request
 from pathlib import Path
@@ -19,6 +17,7 @@ from PIL import Image, ImageDraw
 from werkzeug.serving import make_server
 
 import app as server
+from shared import work_area
 
 ROOT = Path(__file__).parent
 PORT = 5055
@@ -33,12 +32,6 @@ def already_running():
         return True
     except Exception:
         return False
-
-
-def work_area():
-    r = wintypes.RECT()
-    ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(r), 0)
-    return r.left, r.top, r.right, r.bottom
 
 
 def icon_image():
@@ -66,7 +59,6 @@ def main():
                                 hidden=True, resizable=False, background_color="#151829")
     quitting = {"v": False}
     ducked = {"v": False}
-    import ctypes
     import tools
     u32 = ctypes.windll.user32
 
@@ -110,13 +102,12 @@ def main():
     def show_ear():
         """Put the listening bubble beside 3D Nova and give it the keyboard focus (voice typing types there)."""
         x, y = 1200, 900
-        try:
-            fx, fy = json.loads(urllib.request.urlopen(avatar_client.URL + "/", timeout=2).read())["pos"]
+        pos = avatar_client.position()
+        if pos:
+            fx, fy = pos
             left, top, right, bottom = work_area()
             x = int(fx - 120 - 430) if fx - 120 - 430 > left else int(fx + 120)
             y = int(min(max(fy - 190, top), bottom - 110))
-        except Exception:
-            pass
         ear.move(x, y)
         ear.show()
         h = next((h for h, title, _ in tools._windows() if title == "Nova ear"), None)
@@ -148,8 +139,7 @@ def main():
 
     window.events.closing += on_closing
     server.show_window_hook = show
-    server.ears.set_mode("typing")
-  # after the wake word, the app listens (silent recognizer, or the bubble)
+    server.ears.set_mode("typing")   # after the wake word, the app listens (silent recognizer, or the bubble)
     threading.Thread(target=server.warm_brain, daemon=True).start()   # so the first answer isn't the slow one
     if server.settings()["wake"]:
         server.ears.start()

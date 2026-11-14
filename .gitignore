@@ -1,0 +1,9 @@
+# Nova's runtime data: personal profile, conversation log, settings, encrypted API keys, generated helper scripts.
+# Never commit these (they stay on this laptop).
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.tmp

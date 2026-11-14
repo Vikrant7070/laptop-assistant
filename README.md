@@ -31,7 +31,7 @@ A big cloud model understands multi-step tasks much better than the small local 
 - Cloud use is billed by the provider. Gemini's free tier is enough for light use.
 
 ## Start Nova
-Double-click **`Start Nova.bat`**. The chat window opens and 3D Nova appears on your desktop. The first time, pick your model in **⚙ Model**.
+Double-click **`Start Nova.bat`**. 3D Nova appears on your desktop and a tray icon shows up; the chat window starts hidden, so press **Ctrl+Alt+N** (or click her or the tray icon) to open it. `pythonw desktop.py --show` opens the chat window straight away. The first time, pick your model in **⚙ Model**.
 
 | Action | How |
 |---|---|
@@ -57,7 +57,7 @@ Double-click **`Start Nova.bat`**. The chat window opens and 3D Nova appears on 
 | Anything else | PowerShell, even as administrator (Windows asks you first) |
 
 ## Voice: talking with Nova
-- **She speaks out loud** in Windows' **Heera (English, India)** voice. Her 3D mouth moves while she talks, and she speaks even when the chat window is hidden. Switch this with **🔊 Voice**. It works offline.
+- **She speaks out loud** in a natural offline voice (Kokoro, see *Personality and voice* below), or in Windows' **Heera (English, India)** voice if the Kokoro files aren't installed. Her 3D mouth moves while she talks, and she speaks even when the chat window is hidden. Switch this with **🔊 Voice**. It works offline.
 - **Say "Hey Nova"** after turning on **👂 Hey Nova**. You can say the whole thing in one breath, like "Hey Nova, what's my battery?", or say "Hey Nova", wait for her "I'm listening… 👂" bubble, and then speak. She answers out loud, and the conversation also shows in the chat.
 - **🎤 in the chat** starts Windows voice typing (Win+H) for longer messages. It's more accurate.
 
@@ -110,3 +110,20 @@ Tick **🖥 Let Nova see my screen** in **⚙ Model**, then ask things like "Wha
 - `static/index.html` is the chat window. `data/` stores notes, memories and settings.
 
 Clicking uses Windows UI Automation to find buttons by name. It works with most apps, including Settings, Notepad, Office, Explorer and browsers. Games and some custom apps don't expose their buttons this way.
+
+## Safety notes
+- Nova's local servers (ports 5055 and 5056) answer only to her own pages on this laptop: requests from other
+  websites, or with a foreign host name (DNS rebinding), get "403 Forbidden".
+- Text the model passes to tools (app names, search words, file paths) is quoted before it reaches PowerShell, so a
+  web page or window title can't smuggle in commands. **Trusted** and **Full access** still let her run PowerShell
+  without asking; use **Careful** if you're unsure.
+- Everything in `data/` (your profile, the task log, settings, encrypted keys) is personal and is git-ignored.
+
+## Tests
+```
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+The tests never touch your real `data/` folder, keyboard, browser, voice or 3D Nova. `docs/REVIEW.md` has the
+review, the full test plan (including the manual checks) and what was fixed.
+

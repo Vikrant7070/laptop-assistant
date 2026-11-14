@@ -68,7 +68,7 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 let flash;
 function say(t) { $("msg").textContent = t; clearTimeout(flash); flash = setTimeout(() => $("msg").textContent = "", 4000); }
 async function send(body) {
@@ -79,13 +79,13 @@ async function load() {
   const k = await (await fetch("/api/knowledge")).json();
   $("profile").innerHTML = [...k.one, ...k.many].map(f => {
     const vals = k.one.includes(f) ? (k.profile[f] ? [k.profile[f]] : []) : k.profile[f];
-    const chips = vals.map(v => `<span class="chip">${esc(v)}<button title="Remove" aria-label="Remove ${esc(v)}" data-f="${f}" data-v="${esc(v)}">×</button></span>`).join("");
+    const chips = vals.map(v => `<span class="chip">${esc(v)}<button title="Remove" aria-label="Remove ${esc(v)}" data-f="${esc(f)}" data-v="${esc(v)}">×</button></span>`).join("");
     return `<div class="field"><div class="name">${esc(k.labels[f])}</div><div class="chips">${chips}
       <form class="add" data-f="${f}"><input placeholder="${k.one.includes(f) ? (vals.length ? "Change…" : "Add…") : "Add…"}" aria-label="Add to ${esc(k.labels[f])}"><button>Add</button></form></div></div>`;
   }).join("");
   $("lessons").innerHTML = k.lessons.length ? k.lessons.map(l => `<div class="lesson">
       <div class="what"><span class="tag ${esc(l.kind)}">${esc(l.kind)}</span>${esc(l.lesson)}</div>
-      <button class="del" title="Delete this lesson" aria-label="Delete this lesson" data-id="${l.id}">×</button>
+      <button class="del" title="Delete this lesson" aria-label="Delete this lesson" data-id="${+l.id}">×</button>
       <div class="meta">${l.situation ? "When: " + esc(l.situation) + " · " : ""}learned ${esc(l.when || "")}${l.hits > 1 ? " · came up " + l.hits + " times" : ""}${l.source === "auto" ? " · noticed by herself" : l.source === "user" ? " · added by you" : l.source === "starter" ? " · starter lesson" : ""}</div>
     </div>`).join("") : `<div class="empty">No lessons yet. She will write one the first time something goes wrong.</div>`;
   $("where").textContent = "Saved in this file on your laptop: " + k.file + ". When Nova thinks with a cloud brain (Gemini, ChatGPT or Claude), a short summary of this page is sent along with each message so she can use it; with the local brain nothing leaves the laptop.";
