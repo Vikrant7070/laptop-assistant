@@ -143,8 +143,9 @@ def _parse_text_call(text, tool_names):
     return None
 
 
-def _post_stream(path, body, on_text, timeout=600):
-    """Like _post, but hands each piece of the reply to on_text() the moment the model writes it."""
+def _post_stream(path, body, on_text, timeout=600, on_think=None):
+    """Like _post, but hands each piece of the reply to on_text() the moment the model writes it
+    (and each piece of its own reasoning, for a model that thinks out loud, to on_think())."""
     body = dict(body, stream=True)
     if GPU_BROKEN["v"]:
         body.setdefault("options", {})["num_gpu"] = 0
@@ -159,6 +160,8 @@ def _post_stream(path, body, on_text, timeout=600):
             if part.get("error"):
                 raise OllamaError(str(part["error"]))
             m = part.get("message") or {}
+            if m.get("thinking") and on_think:
+                on_think(m["thinking"])
             if m.get("content"):
                 msg["content"] += m["content"]
                 on_text(m["content"])
@@ -181,10 +184,11 @@ def reset_cloud():
     _cloud_down.update(until=0.0, why="")
 
 
-def chat(model, messages, tools, think=False, on_text=None, fallback=None):
+def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_think=None, num_predict=200):
     """One model turn. Returns (assistant_message_to_store, text, [ {id,name,args} ]).
     on_text(piece) gets the reply piece by piece while it is being written, so Nova can start speaking the first
-    sentence before the last one exists.
+    sentence before the last one exists. on_think(piece) gets the model's own reasoning, when it shows any (a local
+    thinking model; cloud models keep theirs hidden), for the chat's "what Nova is thinking" log.
     For a cloud model ("cloud:provider:name"), any failure (no internet, bad key, credit ran out...) makes this
     turn run on the local Ollama model `fallback` instead; LAST["fallback"] then says why."""
     LAST["fallback"] = None
@@ -206,23 +210,38 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None):
     native = supports_tools(model)
     body = {"model": model, "messages": messages, "stream": False, "keep_alive": KEEP_ALIVE,
             "options": {"num_ctx": NUM_CTX, "temperature": 0.6,
-                        "num_predict": 200,        # replies are spoken: short. Also stops a small model rambling in loops
+                        "num_predict": num_predict,  # replies are spoken: short (200). Also stops a small model rambling in loops
                         "repeat_penalty": 1.15}}
     if native:
         body["tools"] = _to_ollama_tools(tools)
     if "thinking" in capabilities(model):
         body["think"] = think
     msg = None
-    if on_text and native:
+    thought = []
+    if (on_text or on_think) and native:
         emitted = []
+
+        def got_text(piece):
+            if on_text:
+                emitted.append(piece)
+                on_text(piece)
+
+        def got_thought(piece):
+            thought.append(piece)
+            if on_think:
+                on_think(piece)
         try:
-            msg = _post_stream("/api/chat", body, lambda piece: (emitted.append(piece), on_text(piece)))["message"]
+            msg = _post_stream("/api/chat", body, got_text, on_think=got_thought)["message"]
         except Exception:
             if emitted:        # part of it has been spoken already; don't say it twice
                 raise OllamaError("Nova's brain stopped in the middle of a reply.")
             msg = None         # nothing said yet: do it the plain way (which also handles a GPU crash)
     if msg is None:
         msg = _run("/api/chat", body)["message"]
+        if on_think and not thought:    # not streamed: hand over the reasoning in one piece
+            inline = "\n".join(re.findall(r"<think>(.*?)</think>", msg.get("content") or "", re.S))
+            if msg.get("thinking") or inline.strip():
+                on_think(msg.get("thinking") or inline)
     text = clean(msg.get("content", ""))
     calls = []
     if native:

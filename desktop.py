@@ -143,10 +143,12 @@ def main():
     threading.Thread(target=server.warm_brain, daemon=True).start()   # so the first answer isn't the slow one
     if server.settings()["wake"]:
         server.ears.start()
+    server.start_background()       # nap clock, suggestions about the screen, notifications
     keyboard.add_hotkey(HOTKEY, show)
 
     tray = pystray.Icon("Nova", icon_image(), "Nova - Ctrl+Alt+N", menu=pystray.Menu(
         pystray.MenuItem("Open Nova", show, default=True),
+        pystray.MenuItem("Stop what Nova is doing", lambda icon, _: server.stop_now()),
         pystray.MenuItem("Show 3D Nova on desktop", toggle_body, checked=lambda _: body["shown"]),
         pystray.MenuItem("Start with Windows", toggle_autostart, checked=lambda _: server.STARTUP_LNK.exists()),
         pystray.MenuItem("Quit Nova", quit_app),

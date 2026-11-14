@@ -1,0 +1,11 @@
+Voice clips for 3D Nova's reactions (trimmed, mono 22 kHz):
+
+  laugh, wave, bow, nod          "Free Voice Clips Pack - Bright Female" (voice 03)
+  confused, surprised, sad,
+  facepalm, shake, love          "Free Voice Clips Pack - Mature Female"
+
+Both by cicifyre (https://cicifyre.itch.io/), license CC0 - credit appreciated, not required.
+Source: https://opengameart.org/content/voice-clip-packs-for-visual-novels-and-rpgs
+
+Reactions without a clip here (dance, clap, spin, happy, yawn, look) are synthesized in sfx.py.
+To change a reaction's sound, drop a .wav named after it in this folder (sfx.py rebuilds data/sfx on start).

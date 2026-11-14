@@ -146,6 +146,7 @@ class Mouth:
         self.audio = queue.Queue()        # (generation, samples, rate, words, timing) ready to play
         self.speaking = False
         self.last_end = 0.0
+        self.hold_until = 0.0             # hold(): a reaction sound is playing - count as busy so the mic ignores it
         self.stop_flag = False
         self.gen = 0                      # bumped by stop(): anything prepared before that is thrown away
         self.pending = 0                  # sentences taken from the text queue but not yet played
@@ -377,7 +378,11 @@ class Mouth:
 
     def busy(self):
         return (self.speaking or self.pending > 0 or not self.q.empty() or not self.audio.empty()
-                or time.time() - self.last_end < 0.8)
+                or time.time() - self.last_end < 0.8 or time.time() < self.hold_until)
+
+    def hold(self, secs):
+        """3D Nova is making a sound (a reaction's giggle, claps...): don't listen over it."""
+        self.hold_until = max(self.hold_until, time.time() + secs)
 
 
 LISTEN_PS1 = r"""

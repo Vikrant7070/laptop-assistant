@@ -4,7 +4,9 @@ Everything lives in one readable file on this laptop: data/knowledge.json
   profile  - the user: name, what to call them, work, interests, favourite apps, preferences, routines, people, facts
   lessons  - things Nova got wrong (or found a better way to do), each with the lesson for next time
 
-Nova reads a short summary of it before every answer (prompt_block), adds to it herself through her tools
+Nova reads a short summary of it before every answer (prompt_block): her core profile, how the user likes things
+done, and the facts and lessons closest to the request (retrieval.py), so the bank can grow without the prompt
+growing. She adds to it herself through her tools
 (update_profile, learn_lesson, remember_fact), and app.py adds lessons automatically after a failed task or when the
 user corrects her. The user can read and edit all of it on the Knowledge page.
 """
@@ -12,6 +14,8 @@ import json
 import re
 import threading
 import time
+
+import retrieval
 from shared import DATA
 
 FILE = DATA / "knowledge.json"
@@ -25,7 +29,9 @@ LABELS = {"name": "Name", "nickname": "Call them", "work": "Work / studies", "ci
           "favourite_apps": "Favourite apps and sites", "preferences": "How they like things done",
           "routines": "Routines", "people": "People in their life", "facts": "Other things to remember"}
 KINDS = ("mistake", "improvement", "preference")
-MAX_LESSONS, MAX_LIST = 80, 30
+ALWAYS = ("preferences",)          # how they like things done: matters for every answer
+# Only the relevant part reaches the prompt now, so these are just a sanity limit for the file and the Knowledge page.
+MAX_LESSONS, MAX_LIST = 400, 200
 SECRET = re.compile(r"password|passcode|\bpin\b|otp|cvv|card number|aadhaar|aadhar|\bpan\b|api[ _-]?key|secret|token|"
                     r"\b\d{12,19}\b|"
                     r"[\w.+-]+@[\w-]+\.[\w.-]+|"          # email addresses
@@ -190,32 +196,67 @@ def _ranked(lessons):
     return sorted(lessons, key=lambda l: l.get("hits", 1) * 3 - (now - l.get("last", now)) / 86400 / 7, reverse=True)
 
 
+def _lesson_text(l):
+    return f"{l['situation']} -> {l['lesson']}" if l.get("situation") else l["lesson"]
+
+
+def _relevant(query, items, text_of):
+    """(score, item) for the items about the query, best first."""
+    if not query.strip() or not items:
+        return []
+    bar = retrieval.relevant_bar()
+    s = retrieval.scores(query, [text_of(x) for x in items])
+    return sorted(((sc, x) for sc, x in zip(s, items) if sc >= bar), key=lambda p: -p[0])
+
+
+def _profile_items(p, fields):
+    return [(f, v) for f in fields for v in p[f]]
+
+
+def _group(items):
+    by = {}
+    for f, v in items:
+        by.setdefault(f, []).append(v)
+    return [f"{LABELS[f]}: " + "; ".join(vs) for f, vs in sorted(by.items(), key=lambda x: FIELDS.index(x[0]))]
+
+
 def recall(about=""):
-    """What Nova knows, as text. With `about`, only the parts that mention it."""
+    """What Nova knows, as text. With `about`, only the parts that are about it (by meaning, not just same words)."""
     k = load()
-    p, q = k["profile"], _words(about or "")
-    out = []
-    for f in FIELDS:
-        vals = [p[f]] if f in ONE else p[f]
-        vals = [v for v in vals if v and (not q or q & _words(v + " " + LABELS[f]))]
-        if vals:
-            out.append(f"{LABELS[f]}: " + "; ".join(vals))
-    lessons = [l for l in _ranked(k["lessons"]) if not q or q & _words(l["situation"] + " " + l["lesson"])]
+    p = k["profile"]
+    items = [(f, p[f]) for f in ONE if p[f]] + _profile_items(p, MANY)
+    lessons = _ranked(k["lessons"])
+    if about.strip():
+        q = _words(about)
+        hit = lambda text: q & _words(text)                                   # noqa: E731
+        items = [x for _, x in _relevant(about, items, lambda fv: f"{LABELS[fv[0]]}: {fv[1]}")] + \
+            [fv for fv in items if hit(fv[1] + " " + LABELS[fv[0]])]
+        lessons = [l for _, l in _relevant(about, lessons, _lesson_text)] + [l for l in lessons if hit(_lesson_text(l))]
+        items, lessons = list(dict.fromkeys(items)), list({l["id"]: l for l in lessons}.values())
+    out = _group(items)
     for l in lessons[:15]:
         out.append(f"Lesson ({l['kind']}, came up {l.get('hits', 1)}x): {l['situation']} -> {l['lesson']}")
     return "\n".join(out) or ("Nothing in my knowledge bank about that yet." if about else "My knowledge bank is still empty.")
 
 
-def prompt_block(max_lessons=8, max_chars=1100):
-    """The short summary Nova reads before every answer."""
+def prompt_block(query="", max_items=8, max_lessons=6, max_chars=1400):
+    """The short summary Nova reads before answering `query`: always her core profile and how the user likes things
+    done; then the facts and lessons that are about this request. When few are, the most recent facts and the
+    most-repeated lessons fill in, so she still knows the user a little during small talk."""
     k = load()
     p = k["profile"]
+    who = [(f, p[f]) for f in ONE if p[f]] + [(f, v) for f in ALWAYS for v in p[f][-6:]]
+    rest = _profile_items(p, [f for f in MANY if f not in ALWAYS])
+    facts = [x for _, x in _relevant(query, rest, lambda fv: f"{LABELS[fv[0]]}: {fv[1]}")][:max_items]
+    if len(facts) < 4:                      # a little general background: the newest thing in each list
+        facts += [fv for fv in reversed(rest) if fv not in facts and fv[0] not in {f for f, _ in facts}][:4 - len(facts)]
+    who += facts
+    ranked = _ranked(k["lessons"])
+    lessons = [l for _, l in _relevant(query, ranked, _lesson_text)][:max_lessons]
+    lessons += [l for l in ranked if l not in lessons][:max(0, 3 - len(lessons))]   # the mistakes she repeats most
     lines = []
-    who = [f"{LABELS[f]}: {p[f]}" for f in ONE if p[f]]
-    who += [f"{LABELS[f]}: " + "; ".join(p[f][-8:]) for f in MANY if p[f]]
     if who:
-        lines.append("What you know about the user (use it naturally, don't recite it):\n- " + "\n- ".join(who))
-    lessons = _ranked(k["lessons"])[:max_lessons]
+        lines.append("What you know about the user (use it naturally, don't recite it):\n- " + "\n- ".join(_group(who)))
     if lessons:
         lines.append("Lessons from your own past mistakes - follow them:\n- " +
                      "\n- ".join(f"{l['lesson']}" + (f" (when: {l['situation']})" if l["situation"] else "") for l in lessons))
