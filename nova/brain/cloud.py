@@ -16,7 +16,7 @@ import re
 import urllib.error
 import urllib.request
 from ctypes import wintypes
-from shared import DATA
+from nova.shared import DATA
 
 PROVIDERS = {
     "google": {"label": "Google Gemini", "env": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),

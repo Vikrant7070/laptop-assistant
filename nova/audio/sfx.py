@@ -11,14 +11,13 @@ import wave
 
 import numpy as np
 
-from pathlib import Path
 
-from shared import DATA
+from nova.shared import DATA, ROOT
 
 RATE = 22050
 VERSION = 3                       # bump to rebuild the .wav files after changing a sound
 DIR = DATA / "sfx"
-CLIPS = Path(__file__).parent / "sounds"     # real voice clips, one per reaction (optional)
+CLIPS = ROOT / "sounds"     # real voice clips, one per reaction (optional)
 VOLUME = 0.45                     # peak level of every effect (0-1): clearly there, never louder than her voice
 
 

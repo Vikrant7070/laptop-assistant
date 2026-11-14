@@ -2,7 +2,7 @@
 import threading
 import time
 
-import app
+from nova.core import app
 
 
 def run_in_background(text):

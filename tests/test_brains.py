@@ -1,8 +1,8 @@
 """Knowledge bank, cloud history conversion, key storage and the local-model text protocol."""
-import cloud
-import knowledge
-import llm
-import tools
+from nova.brain import cloud
+from nova.actions import knowledge
+from nova.brain import llm
+from nova.actions import tools
 
 
 # ---------------------------------------------------------------- knowledge bank

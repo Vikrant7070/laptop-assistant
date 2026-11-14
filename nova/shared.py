@@ -7,7 +7,7 @@ import os
 from ctypes import wintypes
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent   # the project folder (nova/ lives inside it)
 # Where Nova keeps settings, notes, knowledge and keys. NOVA_DATA points it elsewhere (the tests use a temp folder).
 DATA = Path(os.environ.get("NOVA_DATA") or ROOT / "data")
 

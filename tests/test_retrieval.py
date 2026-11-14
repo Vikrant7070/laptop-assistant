@@ -1,11 +1,11 @@
 """Per-request picking: which tools the local brain sees, which facts and lessons go into her prompt."""
 import pytest
 
-import app
-import knowledge
-import retrieval
-import toolpick
-import tools
+from nova.core import app
+from nova.actions import knowledge
+from nova.brain import retrieval
+from nova.brain import toolpick
+from nova.actions import tools
 
 
 @pytest.fixture

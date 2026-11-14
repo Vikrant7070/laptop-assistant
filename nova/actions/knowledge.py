@@ -15,8 +15,8 @@ import re
 import threading
 import time
 
-import retrieval
-from shared import DATA
+from nova.brain import retrieval
+from nova.shared import DATA
 
 FILE = DATA / "knowledge.json"
 OLD_MEMORY = DATA / "memory.json"      # the earlier flat list of facts

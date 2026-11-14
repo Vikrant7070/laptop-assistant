@@ -1,7 +1,7 @@
 """HTTP API: request validation and protection against other websites driving Nova (CSRF / DNS rebinding)."""
 import pytest
 
-import app
+from nova.core import app
 
 
 def test_status_ok(client, monkeypatch):
@@ -79,7 +79,7 @@ def test_events_queue_bounded():
 
 
 def test_host_allowed():
-    from shared import host_allowed
+    from nova.shared import host_allowed
     assert host_allowed("127.0.0.1:5055", 5055) and host_allowed("localhost:5056", 5056)
     assert not host_allowed("127.0.0.1:5055", 5056)
     assert not host_allowed("evil.com:5055", 5055) and not host_allowed("", 5055) and not host_allowed(None, 5055)

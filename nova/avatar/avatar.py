@@ -18,7 +18,7 @@ Control API (used by tools.py / app.py):  POST http://127.0.0.1:5056/cmd  {"do":
   carry_to {x, y}        walk to (x, y) holding something up beside her (used to drag a window; waits until she arrives)
   clickthrough {on}      let the mouse pass through her
   show / hide
-Run alone:  pythonw avatar.py
+Run alone (from the project folder):  pythonw -m nova.avatar.avatar
 """
 import ctypes
 import json
@@ -31,7 +31,6 @@ import time
 import tkinter as tk
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
@@ -40,14 +39,14 @@ try:
 except Exception:
     pass
 
-ROOT = Path(__file__).parent
+from nova.shared import REACTIONS, ROOT, host_allowed, work_area  # noqa: E402
+
 FRAMES = ROOT / "static" / "nova3d"
 PORT = 5056
 SCALE = 0.8          # character size on screen
 SPEED = 420          # walking speed, pixels per second
 TICK_MS = 33
-from shared import REACTIONS, host_allowed, work_area  # noqa: E402
-import sfx  # noqa: E402
+from nova.audio import sfx  # noqa: E402
 
 user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
 

@@ -5,8 +5,8 @@ import subprocess
 
 import pytest
 
-import shared
-import tools
+from nova import shared
+from nova.actions import tools
 
 EVIL = ["x'; calc; '", 'x" & calc & "', "x$(calc)", "x`calc`", "x; Start-Process calc"]
 
@@ -121,7 +121,7 @@ def test_kill_process_never_kills_nova(monkeypatch):
 
 
 def test_set_autostart_quotes_paths(ps, monkeypatch, tmp_path):
-    import app
+    from nova.core import app
     monkeypatch.setattr(app, "STARTUP_LNK", tmp_path / "O'Brien" / "Nova.lnk")
     app.set_autostart(True)
     assert "O''Brien" in ps[-1]

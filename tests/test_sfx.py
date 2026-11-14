@@ -4,9 +4,9 @@ import wave
 
 import numpy as np
 
-import sfx
-import voice
-from shared import DATA, REACTIONS
+from nova.audio import sfx
+from nova.audio import voice
+from nova.shared import DATA, REACTIONS
 
 
 def test_every_reaction_has_a_clean_sound(tmp_path, monkeypatch):

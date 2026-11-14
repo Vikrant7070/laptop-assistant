@@ -3,9 +3,9 @@ import json
 import shutil
 from pathlib import Path
 
-import app
-import skills
-import tools
+from nova.core import app
+from nova.actions import skills
+from nova.actions import tools
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "skills"
 
