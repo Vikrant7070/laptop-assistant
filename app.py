@@ -306,6 +306,9 @@ ACT_TOOLS = {"open_app", "open_website", "open_path", "window_action", "minimize
 SLOW_TOOLS = {"open_app", "open_website", "open_path"}   # these need a moment before the screen settles
 LOOK_FROM_STEP = 2      # one-step requests ("open Chrome") stay quick: only the window list is checked
 MAX_TURNS, MAX_TASK_TURNS = 10, 24
+# A cloud brain on High/Max reasoning plans its steps well, so a big job (find my GitHub username, then set up the
+# repo...) gets more steps before she pauses; 24 is a guard against a small model going round in circles.
+DEEP_TASK_TURNS = 50
 CHECK_PROMPT = """This is a screenshot of the user's computer screen. An assistant is doing a task for the user, one step at a time.
 Task: {goal}
 Step just done: {step} -> {result}
@@ -754,6 +757,7 @@ def agent_loop(activity):
         think("🛑 Stopped.", cloud_too=False)
         activity.append("Stopped")
         out = {"reply": STOPPED_REPLY, "activity": activity, "say": STOPPED_REPLY, "stopped": True}
+    nap["last_task"] = time.time()          # the 5-minute nap clock counts from when she finished, not from the ask
     out["images"] = state.pop("images", [])
     if state.get("check_image"):
         out["images"].append(state.pop("check_image"))
@@ -785,9 +789,11 @@ def _agent_loop(activity):
     while True:
         check_stop()
         task = state.get("task")
-        if turns >= (MAX_TASK_TURNS if task and task["steps"] else MAX_TURNS):
+        deep = bool(cloud.parse(model)) and reasoning_level(s, task) != "low"
+        if turns >= ((DEEP_TASK_TURNS if deep else MAX_TASK_TURNS) if task and task["steps"] else MAX_TURNS):
             break
         turns += 1
+        nap["last_task"] = time.time()      # working on it: a long task is not "quiet", so no nap mid-job
         msgs = [{"role": "system", "content": system_prompt(model)}] + trimmed_history()
         # Ordinary questions are spoken while the answer is still being written. During a multi-step screen task
         # she must not talk early - her "done!" may still be corrected by her own check of the screen.
@@ -870,9 +876,10 @@ def _agent_loop(activity):
                           pending=[{"tool": c["name"], "label": ASK.get(c["name"], c["name"]), "input": c["args"]}
                                    for c in calls if is_risky(c)])
         state["messages"].extend(execute(calls, True, activity, model))
-    think("🛑 That's a lot of steps - stopping here.")
-    unsaid.append("I stopped there - that was a lot of steps!")
-    return result(" ".join(spoken) + " (I stopped there - that was a lot of steps!)")
+    think("🛑 That's a lot of steps - pausing here.")
+    line = "That was a lot of steps, so I paused here. Say “keep going” and I'll carry on."
+    unsaid.append(line)
+    return result((" ".join(spoken) + f" ({line})").strip())
 
 
 def ready_info():
@@ -1623,8 +1630,9 @@ def silent_loop():
                 if listen_state["single"]:
                     listen_state["single"] = False
                     avatar_client.send("say", text="Sorry, I didn't catch that 🤔 Say “Hey Nova” again.", secs=4, timeout=2)
-                elif convo["on"] and time.time() - max(convo["last_heard"], nap["last_task"]) > IDLE_NAP:
-                    go_to_sleep("idle")
+                elif (convo["on"] and time.time() - max(convo["last_heard"], nap["last_task"]) > IDLE_NAP
+                      and not lock.locked() and not mouth.busy() and not convo["thinking"]):
+                    go_to_sleep("idle")     # never in the middle of a task or while she's talking
                 elif kind == "unclear" and convo["on"] and time.time() - convo["last_heard"] < 60:
                     avatar_client.send("say", text="Hmm, say that again? 🤔", secs=3, timeout=2)
             else:
@@ -1801,7 +1809,8 @@ def wake_body():
 
 
 def note_task():
-    """The user gave her something to do (or woke her): the 5-minute nap clock starts again."""
+    """The user gave her something to do (or woke her): the 5-minute nap clock starts again. It is also reset after
+    every step of a task and when she finishes answering, so she naps only after 5 quiet minutes."""
     nap["last_task"] = time.time()
     wake_body()
 
