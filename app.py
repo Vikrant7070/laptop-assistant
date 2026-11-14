@@ -10,19 +10,30 @@ import time
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_from_directory
 
+import avatar_client
 import cloud
 import knowledge
 import llm
 import tools
 import voice
+from shared import host_allowed, ps_escape
 
 ROOT = Path(__file__).parent
+PORT = int(os.environ.get("PORT", 5055))
 SETTINGS_FILE = tools.DATA / "settings.json"
 DEFAULT_MODEL = "qwen3-vl:4b-instruct"  # fits a 6 GB laptop GPU; tools + vision, no hidden thinking
 ASSISTANT_NAME = "Nova"
 MAX_HISTORY = 12  # the 8K context holds ~5300 tokens of prompt + tools, so only ~2900 are left for these
+MAX_STORED = 120  # messages kept in memory at all (Nova runs for days in the tray; only MAX_HISTORY reach the model)
+MAX_EVENTS = 50   # voice events waiting for the chat page
+SPOKEN_TAG = re.compile(r"^\[spoken[^\]]*\]\s*")
+
+
+def _unspoken(text):
+    """The user's words without the "[spoken; ...]" marker that voice requests carry."""
+    return SPOKEN_TAG.sub("", text or "")
 
 
 def settings():
@@ -33,6 +44,13 @@ def settings():
     except Exception:
         pass
     return s
+
+
+def save_settings(s):
+    """Atomic write: every request reads this file, and must never see it half-written."""
+    tmp = SETTINGS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(s, indent=2), encoding="utf-8")
+    tmp.replace(SETTINGS_FILE)
 
 
 def brain(s=None):
@@ -250,7 +268,7 @@ def task_log(line):
 
 def new_task(goal):
     task_log(f"\n=== {time.strftime('%Y-%m-%d')} REQUEST: {goal[:300]}")
-    state["task"] = {"goal": re.sub(r"^\[spoken[^\]]*\]\s*", "", goal)[:300], "start": len(state["messages"]),
+    state["task"] = {"goal": _unspoken(goal)[:300], "start": len(state["messages"]),
                      "steps": 0, "did": [], "done": None, "screen": "", "nudged": False}
 
 
@@ -515,6 +533,47 @@ def ready_info():
 app = Flask(__name__, static_folder=str(ROOT / "static"))
 
 
+@app.before_request
+def only_this_laptop():
+    """Nova's API can run commands on this laptop, so only her own pages may use it.
+    - Host must be 127.0.0.1/localhost on our port: stops DNS rebinding (a web page whose domain points at 127.0.0.1).
+    - A request sent by another website (its Origin) is refused: stops cross-site POSTs like /api/voice_typing."""
+    port = request.environ.get("SERVER_PORT") or PORT
+    if not (host_allowed(request.host, int(port)) or host_allowed(request.host, PORT)):
+        abort(403)
+    origin = request.headers.get("Origin")
+    if origin and not host_allowed(origin.split("://", 1)[-1], int(port)) \
+            and not host_allowed(origin.split("://", 1)[-1], PORT):
+        abort(403)
+    if request.method == "POST" and request.headers.get("Sec-Fetch-Site") == "cross-site":
+        abort(403)
+
+
+def _body():
+    """The JSON object a POST carries ({} if none); anything else is a 400."""
+    body = request.get_json(silent=True)
+    if body is None:
+        return {}
+    if not isinstance(body, dict):
+        abort(400, "expected a JSON object")
+    return body
+
+
+def _text(body, key, default=""):
+    v = body.get(key, default)
+    if v is None:
+        return default
+    if not isinstance(v, str):
+        abort(400, f"'{key}' must be text")
+    return v.strip()
+
+
+@app.errorhandler(400)
+@app.errorhandler(403)
+def _json_error(e):
+    return jsonify(error=getattr(e, "description", str(e))), e.code
+
+
 @app.get("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
@@ -532,14 +591,15 @@ def status():
 
 @app.post("/api/setup")
 def setup():
-    body = request.json or {}
+    body = _body()
     s = settings()
-    if body.get("model"):
-        s["model"] = body["model"].strip()
+    model, cloud_model = _text(body, "model"), _text(body, "cloud_model")
+    if model:
+        s["model"] = model
     if body.get("provider") in ("ollama", *cloud.PROVIDERS):
         s["provider"] = body["provider"]
-    if body.get("cloud_model") and s["provider"] in cloud.PROVIDERS:
-        s["cloud_models"] = dict(s.get("cloud_models") or {}, **{s["provider"]: body["cloud_model"].strip()})
+    if cloud_model and s["provider"] in cloud.PROVIDERS:
+        s["cloud_models"] = dict(s.get("cloud_models") or {}, **{s["provider"]: cloud_model})
     if "think" in body:
         s["think"] = bool(body["think"])
     if "camera" in body:
@@ -555,7 +615,7 @@ def setup():
         ears.start() if s["wake"] else ears.stop()
     if body.get("autonomy") in ("careful", "trusted", "full"):
         s["autonomy"] = body["autonomy"]
-    SETTINGS_FILE.write_text(json.dumps(s, indent=2), encoding="utf-8")
+    save_settings(s)
     if "autostart" in body:
         set_autostart(bool(body["autostart"]))
     return jsonify(ok=True, **ready_info())
@@ -564,11 +624,11 @@ def setup():
 @app.post("/api/cloud/key")
 def cloud_key():
     """Save (or with an empty key, forget) a provider's API key, then prove it works by listing its models."""
-    body = request.json or {}
+    body = _body()
     provider = body.get("provider")
     if provider not in cloud.PROVIDERS:
         return jsonify(error="Pick Google, OpenAI or Anthropic."), 400
-    key = body.get("key", "").strip()
+    key = _text(body, "key")
     try:
         ids = cloud.list_models(provider, key) if key else []   # check it works before saving it
         cloud.set_key(provider, key)
@@ -603,27 +663,28 @@ def set_autostart(on):
     import sys
     pyw = Path(sys.executable).with_name("pythonw.exe")
     tools._ps(
-        f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{STARTUP_LNK}');"
-        f"$s.TargetPath='{pyw}';$s.Arguments='\"{ROOT / 'desktop.py'}\" --hidden';"
-        f"$s.WorkingDirectory='{ROOT}';$s.Save()")
+        f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{ps_escape(STARTUP_LNK)}');"
+        f"$s.TargetPath='{ps_escape(pyw)}';$s.Arguments='\"{ps_escape(ROOT / 'desktop.py')}\"';"
+        f"$s.WorkingDirectory='{ps_escape(ROOT)}';$s.Save()")
 
 
 @app.post("/api/dev/save_frames")
 def save_frames():
     """Receives the 3D Nova sprite frames rendered by static/nova3d.html."""
     import base64
-    import re
-    body = request.json or {}
+    body = _body()
     out = ROOT / "static" / "nova3d"
     out.mkdir(exist_ok=True)
     count = 0
-    for anim, frames in body.get("frames", {}).items():
-        if not re.fullmatch(r"[a-z]+", anim):
+    frames_by_anim = body.get("frames") if isinstance(body.get("frames"), dict) else {}
+    for anim, frames in frames_by_anim.items():
+        if not re.fullmatch(r"[a-z]+", anim) or not isinstance(frames, list):
             continue
-        for i, url in enumerate(frames):
+        for i, url in enumerate(frames[:100]):
             (out / f"{anim}_{i:02d}.png").write_bytes(base64.b64decode(url.split(",", 1)[1]))
             count += 1
-    (out / "meta.json").write_text(json.dumps(body.get("meta", {}), indent=1), encoding="utf-8")
+    if count:   # an empty or rejected export must not wipe the sprite sheet's description
+        (out / "meta.json").write_text(json.dumps(body.get("meta", {}), indent=1), encoding="utf-8")
     if avatar_reload_hook:
         avatar_reload_hook()
     return jsonify(ok=True, count=count)
@@ -643,19 +704,19 @@ def show_window():
 @app.post("/api/avatar")
 def avatar():
     """Chat window tells desktop Nova what she's doing: talking, thinking, happy, or a line to say."""
-    import avatar_client
-    body = request.json or {}
-    state = body.get("state")
+    body = _body()
+    mood = body.get("state")
     # Her lips are moved only by the voice itself (voice.Mouth), at the moment the sound plays. The chat window's
     # "talk" (and an "idle" while she's still speaking) would put them out of step with the audio, so they're ignored.
-    if state == "talk" or (state == "idle" and mouth.busy()):
-        state = None
-    if state in ("think", "idle", "sleepy"):
-        avatar_client.send("anim", name=state, timeout=2)
-    elif state in ("happy", "wave"):
-        avatar_client.send(state, timeout=2)
-    if body.get("say"):
-        avatar_client.send("say", text=body["say"], secs=min(14, 3 + len(body["say"]) / 15), timeout=2)
+    if mood == "talk" or (mood == "idle" and mouth.busy()):
+        mood = None
+    if mood in ("think", "idle", "sleepy"):
+        avatar_client.send("anim", name=mood, timeout=2)
+    elif mood in ("happy", "wave"):
+        avatar_client.send(mood, timeout=2)
+    say = _text(body, "say")[:500]
+    if say:
+        avatar_client.send("say", text=say, secs=min(14, 3 + len(say) / 15), timeout=2)
     return jsonify(ok=True)
 
 
@@ -675,6 +736,11 @@ def voice_typing():
 
 mouth = voice.Mouth()
 events = []  # things that happened by voice, for the chat window to show
+
+
+def push_event(e):
+    events.append(e)
+    del events[:-MAX_EVENTS]     # the chat page may be closed for hours: keep only the latest
 
 
 mouth.on_start = lambda words: task_log(f"VOICE starts: {words[:60]}")   # so "she's slow" can be read off the log
@@ -755,9 +821,24 @@ def look_first(text, activity):
     state["messages"].extend(execute([call], True, activity, model))
 
 
+def _cap_history():
+    """Drop the oldest messages, keeping the list starting at a real user message (so tool results keep their calls)."""
+    msgs = state["messages"]
+    if len(msgs) <= MAX_STORED:
+        return
+    cut = len(msgs) - MAX_STORED
+    while cut < len(msgs) and not _is_real_user(msgs[cut]):
+        cut += 1
+    del msgs[:cut]
+    task = state.get("task")
+    if task:
+        task["start"] = max(0, task["start"] - cut)
+
+
 def answer(text):
     """Run one user message through Nova. Returns (result dict, http status)."""
     with lock:
+        _cap_history()
         n, old_pending = len(state["messages"]), state["pending"]
         activity = []
         if state["pending"]:  # user moved on without answering: treat as declined
@@ -775,10 +856,16 @@ def answer(text):
         try:
             look_first(text, activity)
             out = agent_loop(activity)
-        except llm.OllamaError as e:
+        except Exception as e:
             del state["messages"][n:]  # roll back so the history stays valid
             state["pending"] = old_pending
-            return {"error": str(e)}, 503
+            state.pop("task", None)
+            state.pop("images", None)
+            if isinstance(e, llm.OllamaError):
+                return {"error": str(e)}, 503
+            task_log(f"ERROR in answer: {type(e).__name__}: {e}")
+            return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
+        _cap_history()
     speak(out.pop("say", out.get("reply")))
     after_turn(text, out)
     return out, 200
@@ -789,8 +876,6 @@ def answer(text):
 #   "Nova, wake up"   -> conversation: she keeps listening after every answer
 #   "Nova, go to sleep" (or a minute of silence) -> she stops listening
 # Words are captured by Windows voice typing inside a small "ear" bubble next to 3D Nova (static/ear.html).
-
-import avatar_client
 
 convo = {"on": False, "last_heard": 0.0, "thinking": False}
 ear_cmds = []                         # commands for the ear bubble
@@ -924,7 +1009,7 @@ def why_review(user_text, out):
     activity = out.get("activity") or []
     if {"Saved a lesson", "Updated your profile", "Remembered something"} & set(activity):
         return None                            # she already wrote it down herself
-    clean_text = re.sub(r"^\[spoken[^\]]*\]\s*", "", user_text)
+    clean_text = _unspoken(user_text)
     if CORRECTION_RE.search(clean_text):
         return "the user corrected Nova or was unhappy with what she did"
     task = state.get("task") or {}
@@ -943,17 +1028,17 @@ def review_turn(why):
             end = time.time() + 40
             while mouth.busy() and time.time() < end:      # don't slow her answer down
                 time.sleep(0.2)
-            with lock:
-                talk = _transcript(state["messages"])
-                s = settings()
-                model = brain(s)
-                prompt = REVIEW_PROMPT.format(why=why, known=knowledge.recall()[:1500], talk=talk)
-                _, text, calls = llm.chat(model, [{"role": "user", "content": prompt}], SAVE_TOOL, fallback=s["model"])
+            with lock:      # only to copy the conversation; the slow brain call below must not block the user
+                talk = _transcript(list(state["messages"]))
+            s = settings()
+            model = brain(s)
+            prompt = REVIEW_PROMPT.format(why=why, known=knowledge.recall()[:1500], talk=talk)
+            _, text, calls = llm.chat(model, [{"role": "user", "content": prompt}], SAVE_TOOL, fallback=s["model"])
             data = next((c["args"] for c in calls if c["name"] == "save_knowledge"), None)
             if data is None:                               # a model without tool calling may answer with plain JSON
                 m = re.search(r"\{.*\}", text or "", re.S)
                 data = json.loads(m.group(0)) if m else {}
-                data = data.get("args", data)
+                data = data.get("args", data) if isinstance(data, dict) else {}
             saved = []
             for l in (data.get("lessons") or [])[:2]:
                 if isinstance(l, dict) and l.get("lesson"):
@@ -976,7 +1061,7 @@ def review_turn(why):
 def after_turn(user_text, out):
     """Everything that happens once an answer is out: her body reacts, and she may learn from the exchange."""
     try:
-        clean_text = re.sub(r"^\[spoken[^\]]*\]\s*", "", user_text)
+        clean_text = _unspoken(user_text)
         corrected = bool(CORRECTION_RE.search(clean_text))
         react_later("facepalm" if corrected else pick_reaction(clean_text, out), wait_for_speech=not corrected)
         why = why_review(user_text, out)
@@ -1001,16 +1086,18 @@ def knowledge_get():
 @app.post("/api/knowledge")
 def knowledge_edit():
     """The Knowledge page: add or remove profile entries and lessons."""
-    b = request.json or {}
+    b = _body()
     do = b.get("do")
     if do == "profile_add":
-        msg = knowledge.update_profile(b.get("field"), b.get("value"))
+        msg = knowledge.update_profile(_text(b, "field"), _text(b, "value"))
     elif do == "profile_remove":
-        msg = knowledge.update_profile(b.get("field"), b.get("value") or "x", remove=True)
+        msg = knowledge.update_profile(_text(b, "field"), _text(b, "value") or "x", remove=True)
     elif do == "lesson_add":
-        msg = knowledge.learn_lesson(b.get("situation", ""), b.get("lesson", ""), b.get("kind", "preference"), source="user")
+        msg = knowledge.learn_lesson(_text(b, "situation"), _text(b, "lesson"), _text(b, "kind", "preference"), source="user")
     elif do == "lesson_delete":
-        msg = f"Deleted {knowledge.delete_lesson(b.get('id', 0))} lesson(s)."
+        if not isinstance(b.get("id"), int) or isinstance(b.get("id"), bool):
+            return jsonify(error="id must be a number"), 400
+        msg = f"Deleted {knowledge.delete_lesson(b['id'])} lesson(s)."
     else:
         return jsonify(error="unknown action"), 400
     return jsonify(ok=True, message=msg)
@@ -1112,14 +1199,18 @@ def silent_loop():
         listen_state["loop"] = False
 
 
+def _start_conversation():
+    if not convo["on"]:
+        convo.update(on=True, last_heard=time.time())
+        avatar_client.send("say", text="I'm awake! 👂 Talk to me. Say “Nova, go to sleep” when you're done.", secs=7, timeout=2)
+        speak("I'm awake! I'm listening.")
+
+
 def on_wake(conversation=False):
     mouth.stop()
     if silent_ok():
         if conversation:
-            if not convo["on"]:
-                convo.update(on=True, last_heard=time.time())
-                avatar_client.send("say", text="I'm awake! 👂 Talk to me. Say “Nova, go to sleep” when you're done.", secs=7, timeout=2)
-                speak("I'm awake! I'm listening.")
+            _start_conversation()
         elif convo["on"]:
             return                        # already listening
         else:
@@ -1129,13 +1220,10 @@ def on_wake(conversation=False):
     if ear_hooks["show"] is None:      # no desktop app (plain browser): fall back to the chat page
         if show_window_hook:
             show_window_hook()
-        events.append({"listen": True})
+        push_event({"listen": True})
         return
     if conversation:
-        if not convo["on"]:
-            convo.update(on=True, last_heard=time.time())
-            avatar_client.send("say", text="I'm awake! 👂 Talk to me. Say “Nova, go to sleep” when you're done.", secs=7, timeout=2)
-            speak("I'm awake! I'm listening.")
+        _start_conversation()
         ear_listen_after_speech()
     elif not convo["on"]:
         ear_listen()
@@ -1162,10 +1250,15 @@ def confirm_pending(approved):
         activity = []
         state["messages"].extend(execute(state["pending"], approved, activity, brain()))
         state["pending"] = None
+        n = len(state["messages"])
         try:
             out = agent_loop(activity)
-        except llm.OllamaError as e:
-            return {"error": str(e)}, 503
+        except Exception as e:
+            del state["messages"][n:]  # the approved action ran; only the half-finished follow-up is dropped
+            if isinstance(e, llm.OllamaError):
+                return {"error": str(e)}, 503
+            task_log(f"ERROR in confirm: {type(e).__name__}: {e}")
+            return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
     speak(out.pop("say", out.get("reply")))
     return out, 200
 
@@ -1188,7 +1281,7 @@ def heard(text, via="bubble"):
             out, status = answer(f"[spoken; speech recognition may have misheard words] {text}")
     finally:
         convo["thinking"] = False
-    events.append({"me": text, **out})   # shows up in the chat page's history too
+    push_event({"me": text, **out})   # shows up in the chat page's history too
     ears._note(f"answered: {out.get('reply') or out.get('error', '')}"[:160])
     if status != 200:
         speak("Sorry, my brain isn't answering. Is Ollama running?")
@@ -1245,7 +1338,7 @@ def ear_poll():
 
 @app.post("/api/ear_said")
 def ear_said():
-    text = (request.json or {}).get("text", "").strip()
+    text = _text(_body(), "text")[:2000]
     if text:
         threading.Thread(target=heard, args=(text,), daemon=True).start()
     return jsonify(ok=True)
@@ -1265,7 +1358,7 @@ def ear_idle():
 
 @app.post("/api/chat")
 def chat():
-    text = (request.json or {}).get("text", "").strip()
+    text = _text(_body(), "text")[:4000]
     if not text:
         return jsonify(error="empty message"), 400
     mouth.stop()  # don't talk over the user
@@ -1275,7 +1368,7 @@ def chat():
 
 @app.post("/api/confirm")
 def confirm():
-    out, status = confirm_pending(bool((request.json or {}).get("approved")))
+    out, status = confirm_pending(_body().get("approved") is True)
     return jsonify(out), status
 
 
@@ -1328,7 +1421,7 @@ def pulse():
 
 if __name__ == "__main__":
     tools.psutil.cpu_percent(interval=None)  # prime CPU meter
-    port = int(os.environ.get("PORT", 5055))
+    port = PORT
     url = f"http://127.0.0.1:{port}"
     if os.environ.get("NOVA_NO_BROWSER") != "1":
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()

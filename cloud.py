@@ -16,7 +16,7 @@ import re
 import urllib.error
 import urllib.request
 from ctypes import wintypes
-from pathlib import Path
+from shared import DATA
 
 PROVIDERS = {
     "google": {"label": "Google Gemini", "env": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
@@ -25,7 +25,7 @@ PROVIDERS = {
     "anthropic": {"label": "Anthropic Claude", "env": ("ANTHROPIC_API_KEY",)},
 }
 DEFAULT_MODELS = {"anthropic": "claude-opus-5-5"}
-KEYS_FILE = Path(__file__).parent / "data" / "keys.json"
+KEYS_FILE = DATA / "keys.json"
 MAX_TOKENS = 4096   # room for the model's own (hidden) reasoning; Nova's prompt keeps the spoken answer short
 # A healthy reply takes 2-5 s. Overloaded models (Gemini answers 503 or just hangs) shouldn't keep the user waiting:
 # after this long, give up and let the local model answer.
@@ -44,10 +44,10 @@ def model_id(provider, name):
 
 def parse(model):
     """'cloud:google:gemini-x' -> ('google', 'gemini-x'); anything else -> None."""
-    if not (model or "").startswith("cloud:"):
+    parts = (model or "").split(":", 2) if (model or "").startswith("cloud:") else []
+    if len(parts) != 3 or not parts[1] or not parts[2]:
         return None
-    _, provider, name = model.split(":", 2)
-    return provider, name
+    return parts[1], parts[2]
 
 
 # ------------------------------------------------------------------ keys (Windows DPAPI)
@@ -92,13 +92,15 @@ def set_key(provider, key):
     if provider not in PROVIDERS:
         raise CloudError(f"Unknown provider '{provider}'.")
     keys = _load_keys()
-    key = (key or "").strip()
+    key = str(key or "").strip()
     if key:
         keys[provider] = base64.b64encode(_dpapi(key.encode(), True)).decode()
     else:
         keys.pop(provider, None)
-    KEYS_FILE.parent.mkdir(exist_ok=True)
-    KEYS_FILE.write_text(json.dumps(keys, indent=1), encoding="utf-8")
+    KEYS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = KEYS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(keys, indent=1), encoding="utf-8")
+    tmp.replace(KEYS_FILE)
 
 
 def has_keys():

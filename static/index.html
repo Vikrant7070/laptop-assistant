@@ -407,7 +407,7 @@ $("#mic").onclick = () => recording ? stopRec() : startRec();
 
 /* ---------------- chat ---------------- */
 function add(cls, text) { const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text; log.append(d); log.scrollTop = 1e9; return d; }
-function acts(list) { if (!list?.length) return; const d = document.createElement("div"); d.className = "acts"; d.innerHTML = list.map(a => `<span>✓ ${a}</span>`).join(""); log.append(d); }
+function acts(list) { if (!list?.length) return; const d = document.createElement("div"); d.className = "acts"; d.innerHTML = list.map(a => `<span>✓ ${esc(a)}</span>`).join(""); log.append(d); }
 function typing(on) { $("#typing")?.remove(); if (on) { const d = document.createElement("div"); d.id = "typing"; d.className = "typing"; d.innerHTML = `${NAME} is thinking <i></i><i></i><i></i>`; log.append(d); log.scrollTop = 1e9; } }
 
 async function api(path, body) {
@@ -451,14 +451,14 @@ $("#f").onsubmit = e => { e.preventDefault(); send(input.value); };
 
 function showConfirm(items) {
   const d = document.createElement("div"); d.className = "confirm";
-  d.innerHTML = `<b>May I?</b> ${items.map(i => i.label).join(", ")}<code>${items.map(i => esc(JSON.stringify(i.input))).join("\n")}</code>
+  d.innerHTML = `<b>May I?</b> ${esc(items.map(i => i.label).join(", "))}<code>${items.map(i => esc(JSON.stringify(i.input))).join("\n")}</code>
     <button class="yes">Allow</button><button class="no">No thanks</button>`;
   const go = ok => { d.querySelectorAll("button").forEach(b => b.disabled = true); d.style.opacity = .6;
     d.querySelector("b").textContent = ok ? "Allowed ✓" : "Declined ✗"; handle(api("/api/confirm", {approved: ok})); };
   d.querySelector(".yes").onclick = () => go(true); d.querySelector(".no").onclick = () => go(false);
   log.append(d); log.scrollTop = 1e9;
 }
-const esc = s => s.replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 
 /* ---------------- header buttons ---------------- */
 $("#voiceBtn").onclick = async e => { voiceOn = !voiceOn; e.target.classList.toggle("on", voiceOn); await api("/api/setup", {voice: voiceOn}); };

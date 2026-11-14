@@ -14,6 +14,14 @@ def send(do, timeout=20, **args):
         return None
 
 
+def position():
+    """Where 3D Nova stands right now [x, y], or None if she isn't running."""
+    try:
+        return json.loads(urllib.request.urlopen(URL + "/", timeout=1).read())["pos"]
+    except Exception:
+        return None
+
+
 def running():
     try:
         urllib.request.urlopen(URL + "/", timeout=1)

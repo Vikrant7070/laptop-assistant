@@ -28,7 +28,6 @@ import threading
 import time
 import tkinter as tk
 import urllib.request
-from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -45,8 +44,7 @@ PORT = 5056
 SCALE = 0.8          # character size on screen
 SPEED = 420          # walking speed, pixels per second
 TICK_MS = 33
-REACTIONS = ("laugh", "dance", "spin", "clap", "surprised", "sad", "confused", "nod", "shake", "facepalm", "bow", "love",
-             "yawn", "look", "happy", "wave")
+from shared import REACTIONS, host_allowed, work_area  # noqa: E402
 
 user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
 
@@ -99,12 +97,6 @@ gdi32.DeleteObject.argtypes = [VP]
 GWL_EXSTYLE = -20
 WS_EX_LAYERED, WS_EX_TRANSPARENT, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_NOACTIVATE = 0x80000, 0x20, 0x80, 0x8, 0x08000000
 BLEND = BLENDFUNCTION(0, 0, 255, 1)
-
-
-def work_area():
-    r = wintypes.RECT()
-    user32.SystemParametersInfoW(0x30, 0, ctypes.byref(r), 0)
-    return r.left, r.top, r.right, r.bottom
 
 
 def premultiplied_bgra(img):
@@ -348,7 +340,17 @@ class Nova:
             def log_message(self, *a):
                 pass
 
+            def _ours(self):
+                """Only Nova (same laptop, our own Host name) may drive her - not a web page via DNS rebinding."""
+                if host_allowed(self.headers.get("Host"), PORT) and not self.headers.get("Origin"):
+                    return True
+                self.send_response(403)
+                self.end_headers()
+                return False
+
             def do_POST(self):
+                if not self._ours():
+                    return
                 cmd = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or 2) or b"{}")
                 done, result = threading.Event(), {}
                 nova.q.put((cmd, done, result))
@@ -360,6 +362,8 @@ class Nova:
                 self.wfile.write(body)
 
             def do_GET(self):
+                if not self._ours():
+                    return
                 body = json.dumps({"ok": True, "pos": nova.pos, "visible": nova.visible,
                                    "reactions": [r for r in REACTIONS if r in nova.sp.images]}).encode()
                 self.send_response(200)

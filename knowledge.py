@@ -12,10 +12,10 @@ import json
 import re
 import threading
 import time
-from pathlib import Path
+from shared import DATA
 
-FILE = Path(__file__).parent / "data" / "knowledge.json"
-OLD_MEMORY = Path(__file__).parent / "data" / "memory.json"      # the earlier flat list of facts
+FILE = DATA / "knowledge.json"
+OLD_MEMORY = DATA / "memory.json"      # the earlier flat list of facts
 _lock = threading.RLock()
 
 ONE = ("name", "nickname", "work", "city")                        # one value each
@@ -170,10 +170,14 @@ def learn_lesson(situation, lesson, kind="mistake", source="nova"):
 
 
 def delete_lesson(lesson_id):
+    try:
+        lesson_id = int(lesson_id)
+    except (TypeError, ValueError):
+        return 0
     with _lock:
         k = load()
         before = len(k["lessons"])
-        k["lessons"] = [l for l in k["lessons"] if l.get("id") != int(lesson_id)]
+        k["lessons"] = [l for l in k["lessons"] if l.get("id") != lesson_id]
         save(k)
         return before - len(k["lessons"])
 

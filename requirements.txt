@@ -6,7 +6,9 @@ pillow         # tray icon, screenshots, 3D Nova sprites
 keyboard       # Ctrl+Alt+N hotkey, typing, shortcuts
 pyperclip      # clipboard
 uiautomation   # finding buttons in other apps so Nova can click them
+comtypes       # Windows speech voice (SAPI) - voice.py uses it directly
 opencv-python-headless  # webcam, so Nova can see you (only when switched on)
+numpy           # audio buffers for Whisper and the microphone
 faster-whisper  # offline speech-to-text (Whisper large-v3-turbo on the GPU, small.en on the CPU as backup)
 ctranslate2>=4.0,<5
 sounddevice     # microphone audio for Whisper

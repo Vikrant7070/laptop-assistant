@@ -74,7 +74,7 @@ HINGLISH_WORDS.update({
     "nayi": "नई", "purana": "पुराना", "bada": "बड़ा", "badi": "बड़ी", "chhota": "छोटा", "chota": "छोटा", "chhoti": "छोटी",
     "apna": "अपना", "apni": "अपनी", "apne": "अपने", "unka": "उनका", "iska": "इसका", "uska": "उसका", "kisi": "किसी",
     "koi": "कोई", "sabse": "सबसे", "jab": "जब", "tab": "तब", "agar": "अगर", "kyunki": "क्योंकि", "isliye": "इसलिए",
-    "magar": "मगर", "wala": "वाला", "rahe": "रहे", "rahungi": "रहूँगी", "chal": "चल", "chalti": "चलती", "chalta": "चलता",
+    "magar": "मगर", "rahungi": "रहूँगी", "chalti": "चलती", "chalta": "चलता",
     "khula": "खुला", "khuli": "खुली", "kholti": "खोलती", "kholun": "खोलूँ", "karun": "करूँ", "karu": "करूँ", "dikha": "दिखा",
     "dikhao": "दिखाओ", "lagta": "लगता", "lagti": "लगती", "milega": "मिलेगा", "aapke": "आपके", "tumhare": "तुम्हारे",
     "humara": "हमारा", "hamara": "हमारा", "ho gaya": "हो गया",
