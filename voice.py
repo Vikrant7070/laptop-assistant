@@ -14,6 +14,7 @@ from pathlib import Path
 import avatar_client
 
 ROOT = Path(__file__).parent
+LISTENING = "👂 I'm listening…"   # the one "speak now" bubble (several places used to show slightly different ones)
 PREFERRED_VOICES = ("Heera", "Zira", "Aria", "Jenny")
 ONECORE = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices"
 
@@ -133,14 +134,16 @@ class NeuralVoice:
 
 
 class Mouth:
-    """Nova's voice, in two stages so her lips match the sound:
+    """Nova's voice, in two stages so her lips and speech bubble match the sound:
     - the worker prepares audio for each sentence as soon as the text arrives (several sentences ahead), and
-    - the player plays it, and tells 3D Nova to move her lips at the moment the sound starts, and to stop as soon as
-      it ends - including short pauses while the next sentence is still being prepared."""
+    - the player plays it, and at the moment the sound starts tells 3D Nova to move her lips and to show that
+      sentence in her bubble for exactly as long as it lasts; the lips stop as soon as it ends - including short
+      pauses while the next sentence is still being prepared.
+    Messages to 3D Nova go through their own thread (_tell), so a slow reply from her never delays the sound."""
 
     def __init__(self):
-        self.q = queue.Queue()            # text to say
-        self.audio = queue.Queue()        # (generation, samples, rate, words) ready to play
+        self.q = queue.Queue()            # (text, time it was handed over) to say
+        self.audio = queue.Queue()        # (generation, samples, rate, words, timing) ready to play
         self.speaking = False
         self.last_end = 0.0
         self.stop_flag = False
@@ -151,14 +154,18 @@ class Mouth:
         self.voices = []
         self.voice_name = None
         self.neural = NeuralVoice() if NeuralVoice.available() else None
-        self.on_start = None       # called with the words when she starts saying something (the app logs the time)
+        self.on_start = None       # on_start(words, timing): she starts saying a reply (the app logs it)
+        self.bubbles = True        # show each sentence in 3D Nova's speech bubble while it is spoken
+        self.bubble_until = 0.0
+        self.tells = queue.Queue()
         threading.Thread(target=self._worker, daemon=True).start()
         threading.Thread(target=self._player, daemon=True).start()
+        threading.Thread(target=self._teller, daemon=True).start()
 
     def say(self, text):
         text = _clean_for_speech(text or "")
         if text:
-            self.q.put(text)
+            self.q.put((text, time.time()))
 
     def stop(self):
         self.stop_flag = True
@@ -175,20 +182,47 @@ class Mouth:
         except Exception:
             pass
         self._lips(False)
+        if self.bubble_until > time.time():      # her words are still up: take them down with the sound
+            self.bubble_until = 0.0
+            self._tell(None, "say", text="", secs=0)
 
-    def _lips(self, on):
+    # ---- messages to 3D Nova, in order, without ever making the sound wait
+    def _tell(self, gen, do, **args):
+        """gen = the reply this belongs to (dropped if she was stopped since), or None = always deliver."""
+        self.tells.put((gen, do, args))
+
+    def _teller(self):
+        while True:
+            gen, do, args = self.tells.get()
+            if gen is not None and gen != self.gen:
+                continue
+            avatar_client.send(do, timeout=2, **args)
+
+    def _lips(self, on, gen=None):
         if on != self.lips:
             self.lips = on
-            avatar_client.send("anim", name="talk" if on else "idle", timeout=2)
+            self._tell(gen, "anim", name="talk" if on else "idle")
+
+    def _bubble(self, words, secs, gen):
+        """Show the sentence being spoken, for as long as it is spoken (+ a moment to finish reading)."""
+        if self.bubbles and words:
+            self.bubble_until = time.time() + secs + 0.6
+            self._tell(gen, "say", text=words, secs=round(secs + 0.6, 2))
 
     @staticmethod
     def _sentences(text):
         sentences = [x for x in re.split(r"(?<=[.!?।])\s+", text) if x.strip()]  # sentence by sentence so "stop" is quick
-        # A long opening sentence is cut at its first comma, so she starts talking after preparing only a few words.
+        # A long opening sentence is cut in two, so she starts talking after preparing only a few words (the rest is
+        # prepared while the first part plays): at its first comma, or else before a joining word ("... for 25
+        # minutes | without touching ...").
         first = sentences[0] if sentences else ""
-        cut = re.search(r"[,;:—–]\s", first[:45])
-        if len(first) > 50 and cut and cut.end() > 8:
-            sentences = [first[:cut.end()].strip(), first[cut.end():].strip()] + sentences[1:]
+        if len(first) > 50:
+            comma = re.search(r"[,;:—–]\s", first[:45])
+            joiner = re.compile(r"\s(?=(?:and|but|so|because|without|while|which|then|or)\s)", re.I)
+            at = comma.end() if comma and comma.end() > 8 else next(
+                (m.end() for m in joiner.finditer(first) if 25 <= m.end() <= 80), None)
+            if at:
+                sentences = [first[:at].strip(), first[at:].strip()] + sentences[1:]
         return sentences
 
     def _worker(self):
@@ -224,7 +258,7 @@ class Mouth:
             except Exception:
                 self.neural = None
         while True:
-            text = self.q.get()
+            text, said_at = self.q.get()
             self.stop_flag = False
             sentences = self._sentences(text)
             with self.lock:
@@ -237,12 +271,13 @@ class Mouth:
                     if gen != self.gen:
                         left = []
                         break
+                    t0 = time.time()
                     try:
                         samples, rate = self.neural.synth(sentence)
                     except Exception:
                         left = sentences[i:]          # the natural voice failed: the Windows voice says the rest
                         break
-                    self.audio.put((gen, samples, rate, sentence))
+                    self.audio.put((gen, samples, rate, sentence, (said_at, t0, time.time())))
                 else:
                     left = []
             if left:
@@ -250,11 +285,14 @@ class Mouth:
                 while not self.audio.empty() or (self.lips and gen == self.gen):
                     time.sleep(0.05)
                 if gen == self.gen:
-                    self._lips(True)
+                    self._lips(True, gen)
+                    if self.on_start:
+                        self.on_start(left[0], f"Windows voice, {time.time() - said_at:.2f}s after the text")
                 for sentence in left:
                     if self.stop_flag or gen != self.gen:
                         break
                     try:
+                        self._bubble(sentence, len(sentence) / 14 + 0.3, gen)   # (no length known in advance)
                         sp.Speak(DEVANAGARI.sub("", sentence), 0)   # (the Windows voice can't read Hindi script)
                     except Exception:
                         break
@@ -278,11 +316,18 @@ class Mouth:
         self._lips(False)
 
     def _player(self):
+        import numpy as np
         import sounddevice as sd
         first_of_reply = True
+        stream = None
+        try:   # open the speaker now, so even her very first sentence doesn't wait for it (kept open from then on)
+            stream = sd.OutputStream(samplerate=24000, channels=1, dtype="float32", latency="low")
+            stream.start()
+        except Exception:
+            stream = None
         while True:
             try:
-                gen, samples, rate, words = self.audio.get(timeout=0.25)
+                gen, samples, rate, words, (said_at, synth_at, ready_at) = self.audio.get(timeout=0.25)
             except queue.Empty:
                 if self.lips and not self.stop_flag:
                     self._maybe_idle()          # next sentence not ready yet: lips stop during the pause
@@ -292,19 +337,39 @@ class Mouth:
             if gen != self.gen:
                 continue
             try:
-                sd.play(samples, rate, latency="low")
-                time.sleep(0.06)                # the sound reaches the speaker ~0.09 s after play()
-                self._lips(True)
-                if first_of_reply and self.on_start:
-                    self.on_start(words)
-                first_of_reply = False
-                end = time.time() + len(samples) / rate - 0.06
+                secs = len(samples) / rate
+                t_play = time.time()
+                # One output stream stays open between sentences: opening the sound device took ~0.33 s every time,
+                # which delayed each sentence and left a gap between them.
+                if stream is None or stream.samplerate != rate or not stream.active:
+                    if stream is not None:
+                        stream.close()
+                    stream = sd.OutputStream(samplerate=rate, channels=1, dtype="float32", latency="low")
+                    stream.start()
+                data = np.asarray(samples, dtype=np.float32).reshape(-1, 1)
+                chunk = int(rate * 0.05)          # small pieces, so stop() cuts her off within ~0.1 s
+                for i in range(0, len(data), chunk):
+                    if gen != self.gen:
+                        break
+                    stream.write(data[i:i + chunk])
+                    if i == 0:                    # the sound reaches the speaker one output latency from now
+                        opened = time.time() - t_play
+                        time.sleep(min(stream.latency, 0.1))
+                        self._bubble(words, secs, gen)
+                        self._lips(True, gen)
+                        if first_of_reply and self.on_start:
+                            self.on_start(words, f"text->synth {synth_at - said_at:.2f}s, synth {ready_at - synth_at:.2f}s, "
+                                                 f"ready->play {t_play - ready_at:.2f}s, sound device {opened:.2f}s")
+                        first_of_reply = False
+                end = time.time() + stream.latency    # the last piece is still in the speaker's buffer
                 while time.time() < end and gen == self.gen:
-                    time.sleep(0.02)
-                if gen != self.gen:
-                    sd.stop()
+                    time.sleep(0.01)
             except Exception:
-                pass
+                try:                              # device unplugged / changed: reopen it for the next sentence
+                    stream.close()
+                except Exception:
+                    pass
+                stream = None
             finally:
                 self._done_one(gen)
             if self.audio.empty() and self.pending == 0 and self.q.empty():
@@ -776,7 +841,28 @@ class WhisperTranscriber:
         return kind, text
 
 
-class WhisperEars:
+class _EarsBase:
+    """What both listeners share: the status line and the last few things heard (for the chat's status screen)."""
+    status = "off"
+    on_wake = None             # set by the app: listen for the request (conversation=True for "wake up")
+    on_sleep = None            # set by the app: end conversation mode
+
+    def _note(self, what):
+        self.heard = (self.heard + [f"{time.strftime('%H:%M:%S')} {what}"])[-10:]
+
+    def _woke_for_conversation(self):
+        self._note("heard 'Nova, wake up' - conversation mode")
+        avatar_client.send("wave", timeout=2)
+        if self.on_wake:
+            threading.Thread(target=self.on_wake, kwargs={"conversation": True}, daemon=True).start()
+
+    def _asked_to_sleep(self):
+        self._note("heard 'Nova, go to sleep'")
+        if self.on_sleep:
+            threading.Thread(target=self.on_sleep, daemon=True).start()
+
+
+class WhisperEars(_EarsBase):
     """'Hey Nova' with Whisper - no Windows speech recognizer involved. While switched on, it listens to each thing
     said near the laptop, writes it down on the laptop itself, and throws it away unless it starts with 'Hey Nova'.
     'Hey Nova, what's the time?' in one breath works; so does 'Hey Nova' ... pause ... the request."""
@@ -808,7 +894,7 @@ class WhisperEars:
             if m and not EARS_SLEEP_RE.search(text) and not EARS_WAKEUP_RE.search(text):
                 self.early_bare = not text[m.end():].strip(" ,.!?-…")
                 self.early = time.time()
-                avatar_client.send("say", text="I'm listening… 👂", secs=8, timeout=2)
+                avatar_client.send("say", text=LISTENING, secs=8, timeout=2)
                 avatar_client.send("wave", timeout=2)
         finally:
             self.peeking = False
@@ -818,9 +904,6 @@ class WhisperEars:
 
     def set_mode(self, mode):
         pass   # one way of listening only
-
-    def _note(self, what):
-        self.heard = (self.heard + [f"{time.strftime('%H:%M:%S')} {what}"])[-10:]
 
     def start(self):
         if self.thread and self.thread.is_alive() and self.running:
@@ -888,14 +971,9 @@ class WhisperEars:
         low = text.lower()
         rest = text[m.end():].strip(" ,.!?-…")
         if EARS_SLEEP_RE.search(low):
-            self._note("heard 'Nova, go to sleep'")
-            if self.on_sleep:
-                threading.Thread(target=self.on_sleep, daemon=True).start()
+            self._asked_to_sleep()
         elif EARS_WAKEUP_RE.search(low):
-            self._note("heard 'Nova, wake up' - conversation mode")
-            avatar_client.send("wave", timeout=2)
-            if self.on_wake:
-                threading.Thread(target=self.on_wake, kwargs={"conversation": True}, daemon=True).start()
+            self._woke_for_conversation()
         elif len(rest.split()) >= 2:                       # "Hey Nova, what's the time?" in one breath
             self._note(f"heard 'Hey Nova' + request (mic level {self.w.level:.2f}): {rest}"[:160])
             if not early:
@@ -904,9 +982,9 @@ class WhisperEars:
             threading.Thread(target=self.on_text, args=(rest,), daemon=True).start()
         else:
             self._note(f"heard 'Hey Nova' (mic level {self.w.level:.2f})")
-            if not early:
+            if not early:     # (if early, the same bubble is up already and the app's listener keeps it up)
                 avatar_client.send("wave", timeout=2)
-            avatar_client.send("say", text="I'm listening… speak now 👂", secs=6, timeout=2)
+                avatar_client.send("say", text=LISTENING, secs=6, timeout=2)
             if self.on_wake:
                 threading.Thread(target=self.on_wake, daemon=True).start()
 
@@ -955,7 +1033,7 @@ def command_phrases():
     return base + [f"open {a}" for a in apps] + [f"close {a}" for a in apps]
 
 
-class Ears:
+class Ears(_EarsBase):
     """'Hey Nova' wake word + dictation. on_text(text) is called with what the user said."""
 
     def __init__(self, mouth, on_text):
@@ -976,9 +1054,6 @@ class Ears:
         self.mode = mode
 
     mode = "dictation"
-
-    def _note(self, what):
-        self.heard = (self.heard + [f"{time.strftime('%H:%M:%S')} {what}"])[-10:]
 
     def start(self):
         if self.proc and self.proc.poll() is None:
@@ -1018,17 +1093,12 @@ class Ears:
                 conf, text = (line[4:].split("|", 1) + [""])[:2]
                 self._note(f"almost heard '{text}' ({float(conf or 0):.0%} sure) - try a bit louder/closer")
             elif line == "SLEEP":
-                self._note("heard 'Nova, go to sleep'")
-                if self.on_sleep:
-                    threading.Thread(target=self.on_sleep, daemon=True).start()
+                self._asked_to_sleep()
             elif line == "WAKEUP":
                 if self.mouth.busy():
                     self._note("'wake up' ignored (I was talking)")
                     continue
-                self._note("heard 'Nova, wake up' - conversation mode")
-                avatar_client.send("wave", timeout=2)
-                if self.on_wake:
-                    threading.Thread(target=self.on_wake, kwargs={"conversation": True}, daemon=True).start()
+                self._woke_for_conversation()
             elif line == "WAKE":
                 if self.mouth.busy():   # that was probably her own voice
                     self._note("wake word ignored (I was talking)")
@@ -1041,10 +1111,10 @@ class Ears:
                 avatar_client.send("wave", timeout=2)
                 if self.mode == "typing" and self.on_wake:
                     self.quiet_until = time.time() + 20
-                    avatar_client.send("say", text="I'm listening… speak now 👂", secs=6, timeout=2)
+                    avatar_client.send("say", text=LISTENING, secs=6, timeout=2)
                     threading.Thread(target=self.on_wake, daemon=True).start()
                 else:
-                    avatar_client.send("say", text="I'm listening… 👂", secs=6, timeout=2)
+                    avatar_client.send("say", text=LISTENING, secs=6, timeout=2)
             elif self.skip_next and (line.startswith("TEXT:") or line == "NOTHING"):
                 self.skip_next = False
                 continue

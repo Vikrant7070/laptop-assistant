@@ -94,3 +94,18 @@ Not changed on purpose: the autonomy design itself (trusted mode lets `run_power
   The running copy of Nova still has the old code until it is restarted (tray → Quit Nova, then `Start Nova.bat`).
 - Git: `data/` and `__pycache__/` are now untracked (`git rm --cached`, files kept on disk) and ignored. They are
   still inside the two earlier commits; there is no remote, so nothing was published.
+
+## 5. Follow-up: speech bubble shown twice, and audio out of step (2026-11-14)
+
+| Problem | Cause | Fix |
+|---|---|---|
+| Reply bubble shown twice for voice requests | `heard()` showed the reply, and the chat page showed it again when it got the same event. Same pattern for "go to sleep", "I'm awake", reminders and "May I…?"; "I'm listening" came from three places with three wordings. | The voice is the only thing that shows what she says (`voice.Mouth._bubble`). With the voice off, `app.bubble()` shows the reply once. One `voice.LISTENING` text. The page no longer sends bubbles. |
+| Bubble out of step with the audio | The whole reply (cut at 170 characters) appeared when the text was ready, for a guessed time. | Each sentence appears when its sound starts, for exactly as long as it plays, and is taken down when she's interrupted. |
+| Lips / next sentence running late | The player waited for a blocking ~45 ms message to 3D Nova before working out when the sound ends. | Messages to 3D Nova go through their own thread (`Mouth._teller`); stale ones from an interrupted reply are dropped. |
+| ~0.33 s silence before every sentence | The sound device was opened again for each sentence (`sd.play`). | One output stream stays open; text→sound went from ~1.1 s to ~0.6 s, with no gaps between sentences. |
+| Long first sentences slow to start | The whole sentence was synthesized before any sound. | A long first sentence is split at an early comma or a joining word ("and", "without"...). |
+| Duplicate listener code | `Ears` and `WhisperEars` each had their own copy of the status notes, "wake up" and "go to sleep" handling. | Shared `_EarsBase`. |
+
+Live check after restart: typed request — sound and bubble 0.65 s after the reply text; voice request — each sentence's
+bubble appears with its sound (lips within 0.06 s), shown once, cleared ~0.6 s after it ends. `VOICE starts` lines in
+`data/task_log.txt` now record where any delay comes from (synth time, wait, sound device). 120 tests pass.

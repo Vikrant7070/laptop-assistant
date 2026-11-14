@@ -424,7 +424,7 @@ function render(j) {
     im.title = "What Nova saw (not saved) - click to enlarge"; im.onclick = () => im.classList.toggle("big");
     log.append(im); log.scrollTop = 1e9;
   }
-  if (j.reply) { add("nova", j.reply); last3d = null; body3d("happy", j.reply); }
+  if (j.reply) { add("nova", j.reply); last3d = null; body3d("happy"); }   // (her bubble follows her voice: server side)
   if (j.pending) showConfirm(j.pending);
 }
 
@@ -588,7 +588,7 @@ async function pulse() {
     else bar("bat", s.battery, s.battery + "%" + (s.plugged ? " ⚡" : ""), true);
     $("#upV").textContent = `Awake for ${s.uptime_h} h`;
     setMood();
-    for (const line of j.say) { add("nova", line); last3d = null; body3d("happy", line); }
+    for (const line of j.say) { add("nova", line); last3d = null; body3d("happy"); }
   } catch {}
 }
 async function loadStatus() {

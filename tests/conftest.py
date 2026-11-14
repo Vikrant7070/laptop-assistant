@@ -49,6 +49,7 @@ class FakeMouth:
         return False
 
 
+voice.RealMouth = voice.Mouth     # tests of the real voice class use this
 voice.Mouth = FakeMouth
 voice.WhisperTranscriber.available = staticmethod(lambda: False)
 
