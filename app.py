@@ -743,12 +743,25 @@ def push_event(e):
     del events[:-MAX_EVENTS]     # the chat page may be closed for hours: keep only the latest
 
 
-mouth.on_start = lambda words: task_log(f"VOICE starts: {words[:60]}")   # so "she's slow" can be read off the log
+mouth.on_start = lambda words, timing="": task_log(f"VOICE starts: {words[:60]}  ({timing})")   # "she's slow / out of sync"
 
 
 def speak(text):
     if settings()["voice"] and text:
-        mouth.say(text)
+        mouth.say(text)      # each sentence also appears in 3D Nova's bubble while it is being said (voice.Mouth)
+
+
+def bubble(text, secs=None):
+    """Show text in 3D Nova's bubble - only when her voice is off; when it's on, speaking it shows it in step."""
+    text = (text or "").strip()
+    if text and not settings()["voice"]:
+        avatar_client.send("say", text=text, secs=secs or min(14, 3 + len(text) / 15), timeout=2)
+
+
+def announce(text, spoken=None):
+    """Tell the user something: said out loud (with matching bubbles), or as one bubble when the voice is off."""
+    speak(spoken or text)
+    bubble(text)
 
 
 CAMERA_ASK = re.compile(
@@ -867,6 +880,7 @@ def answer(text):
             return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
         _cap_history()
     speak(out.pop("say", out.get("reply")))
+    bubble(out.get("reply"))
     after_turn(text, out)
     return out, 200
 
@@ -1166,7 +1180,7 @@ def silent_loop():
                 time.sleep(0.2)
             if not _still_listening():
                 break
-            avatar_client.send("say", text="👂 I'm listening…", secs=9, timeout=2)
+            avatar_client.send("say", text=voice.LISTENING, secs=9, timeout=2)
             kind, text = transcriber.listen()
             if not _still_listening():    # she was sent to sleep while listening
                 break
@@ -1202,8 +1216,7 @@ def silent_loop():
 def _start_conversation():
     if not convo["on"]:
         convo.update(on=True, last_heard=time.time())
-        avatar_client.send("say", text="I'm awake! 👂 Talk to me. Say “Nova, go to sleep” when you're done.", secs=7, timeout=2)
-        speak("I'm awake! I'm listening.")
+        announce("I'm awake! 👂 Talk to me. Say “Nova, go to sleep” when you're done.", spoken="I'm awake! I'm listening.")
 
 
 def on_wake(conversation=False):
@@ -1237,9 +1250,8 @@ def go_to_sleep(reason="asked"):
     if was_on or reason == "asked":
         line = ("Okay, I'll take a nap. Say “Nova, wake up” when you need me 😴" if reason == "asked" else
                 "It's quiet, so I'll take a nap. Say “Nova, wake up” when you need me 😴")
-        avatar_client.send("say", text=line, secs=6, timeout=2)
         avatar_client.send("anim", name="idle", timeout=2)
-        speak(line)
+        announce(line)
 
 
 def confirm_pending(approved):
@@ -1260,6 +1272,7 @@ def confirm_pending(approved):
             task_log(f"ERROR in confirm: {type(e).__name__}: {e}")
             return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
     speak(out.pop("say", out.get("reply")))
+    bubble(out.get("reply"))
     return out, 200
 
 
@@ -1283,14 +1296,11 @@ def heard(text, via="bubble"):
         convo["thinking"] = False
     push_event({"me": text, **out})   # shows up in the chat page's history too
     ears._note(f"answered: {out.get('reply') or out.get('error', '')}"[:160])
-    if status != 200:
-        speak("Sorry, my brain isn't answering. Is Ollama running?")
-    elif out.get("reply"):
-        avatar_client.send("say", text=out["reply"], secs=min(14, 3 + len(out["reply"]) / 15), timeout=2)
+    if status != 200:     # (the reply itself was already said and shown by answer())
+        announce("Sorry, my brain isn't answering. Is Ollama running?")
     if out.get("pending"):
         what = ", ".join(p["label"].lower() for p in out["pending"])
-        speak(f"Should I {what}? Say yes or no.")
-        avatar_client.send("say", text=f"May I {what}? Say “yes” or “no” 🙋", secs=10, timeout=2)
+        announce(f"May I {what}? Say “yes” or “no” 🙋", spoken=f"Should I {what}? Say yes or no.")
     if via == "silent":
         return
     if convo["on"] or state["pending"]:
@@ -1415,7 +1425,7 @@ def pulse():
     else:
         _alerts["cpu_since"] = None
     for line in say:
-        speak(line)
+        announce(line)
     return jsonify(stats=s, say=say)
 
 

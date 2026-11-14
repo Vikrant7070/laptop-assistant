@@ -364,7 +364,9 @@ class Nova:
             def do_GET(self):
                 if not self._ours():
                     return
-                body = json.dumps({"ok": True, "pos": nova.pos, "visible": nova.visible,
+                b = nova.bubble
+                body = json.dumps({"ok": True, "pos": nova.pos, "visible": nova.visible, "talking": nova.base == "talk",
+                                   "bubble": b[0] if b and time.time() < b[1] else "",
                                    "reactions": [r for r in REACTIONS if r in nova.sp.images]}).encode()
                 self.send_response(200)
                 self.end_headers()
