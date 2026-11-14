@@ -27,7 +27,10 @@ LABELS = {"name": "Name", "nickname": "Call them", "work": "Work / studies", "ci
 KINDS = ("mistake", "improvement", "preference")
 MAX_LESSONS, MAX_LIST = 80, 30
 SECRET = re.compile(r"password|passcode|\bpin\b|otp|cvv|card number|aadhaar|aadhar|\bpan\b|api[ _-]?key|secret|token|"
-                    r"\b\d{12,19}\b", re.I)   # never stored
+                    r"\b\d{12,19}\b|"
+                    r"[\w.+-]+@[\w-]+\.[\w.-]+|"          # email addresses
+                    r"\+?\d(?:[\s().-]?\d){9,}", re.I)   # phone numbers (10+ digits)
+# None of the above is ever stored: the profile summary goes to the cloud brain with every message.
 
 
 def _blank():
@@ -88,7 +91,7 @@ def update_profile(field, value, remove=False):
     if not value:
         return "Nothing to save."
     if SECRET.search(value):
-        return "I don't keep passwords, PINs, card or ID numbers in my notes - that stays with you."
+        return "I don't keep passwords, PINs, card or ID numbers, emails or phone numbers in my notes - that stays with you."
     with _lock:
         k = load()
         p = k["profile"]
@@ -147,7 +150,7 @@ def learn_lesson(situation, lesson, kind="mistake", source="nova"):
     if not lesson:
         return "Nothing to save."
     if SECRET.search(situation + " " + lesson):
-        return "I don't keep passwords or ID numbers in my notes."
+        return "I don't keep passwords, ID numbers, emails or phone numbers in my notes."
     with _lock:
         k = load()
         for l in k["lessons"]:
