@@ -458,10 +458,24 @@ def power_action(action):
             "sleep": "rundll32.exe powrprof.dll,SetSuspendState 0,1,0", "cancel": "shutdown /a"}
     if action not in cmds:
         return "action must be shutdown, restart, sleep or cancel"
+    tidy = ""
+    if action in ("shutdown", "restart"):
+        # Leave a clean slate: close every open window (apps still get to ask about unsaved work) and clear the
+        # notifications waiting in the notification centre, then start the countdown.
+        tidy = close_all_windows() + " " + _clear_notifications() + " "
     subprocess.Popen(cmds[action], shell=True)
     if action in ("shutdown", "restart"):
-        return f"{action.title()} in 30 seconds. Say 'cancel shutdown' to stop it."
+        return f"{tidy}{action.title()} in 30 seconds. Say 'cancel shutdown' to stop it."
     return "Done." if action == "cancel" else "Going to sleep."
+
+
+def _clear_notifications():
+    try:
+        import notifications
+        notifications.clear_all()
+        return "Cleared your notifications."
+    except Exception as e:
+        return f"(Couldn't clear notifications: {e})"
 
 
 def run_powershell(command, as_admin=False):
@@ -555,6 +569,30 @@ def window_action(title_or_app, action):
     else:
         return "action must be focus, minimize, maximize or close"
     return f"{action.title()}d '{title}'." if action != "focus" else f"Switched to '{title}'."
+
+
+def _own_pids():
+    """Nova's own process and its children (the pywebview / WebView2 window) - never closed by close_all_windows."""
+    me = psutil.Process()
+    return {me.pid, *(c.pid for c in me.children(recursive=True))}
+
+
+def close_all_windows():
+    """Ask every open app window to close (WM_CLOSE, like clicking X), except Nova's own and the Windows shell."""
+    mine, closed = _own_pids(), 0
+    cls = ctypes.create_unicode_buffer(256)
+    for hwnd, title, proc in _windows():
+        pid = wintypes.DWORD()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value in mine:
+            continue
+        if proc.lower() == "explorer.exe":       # only File Explorer folder windows, never the taskbar/desktop
+            _user32.GetClassNameW(hwnd, cls, 256)
+            if cls.value != "CabinetWClass":
+                continue
+        _user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE: an app with unsaved work may still ask to save
+        closed += 1
+    return f"Closed {closed} window{'s' if closed != 1 else ''}." if closed else "No windows were open."
 
 
 def minimize_all_windows():
@@ -1173,6 +1211,92 @@ def recall_knowledge(about=""):
     return knowledge.recall(about)
 
 
+# ---------------------------------------------------------------- notifications and background co-worker jobs
+
+def _ago(secs):
+    secs = max(0, int(secs))
+    if secs < 90:
+        return "just now"
+    if secs < 5400:
+        return f"{secs // 60} min ago"
+    if secs < 86400 * 2:
+        return f"{secs // 3600} h ago"
+    return f"{secs // 86400} days ago"
+
+
+def read_notifications(count=5):
+    if not _setting("notifications"):
+        return ("Reading notifications is switched off. The user can switch it on in Nova's settings "
+                "(⚙ Model → Notifications).")
+    import notifications
+    items = notifications.latest(count)
+    if not items:
+        return "There are no notifications right now."
+    now = time.time()
+    return ("Notifications, newest first (read them to the user in a short, natural way; never read out codes, "
+            "passwords or OTPs):\n" + "\n".join(f"- {_ago(now - n['time'])}: {notifications.describe(n, 300)}"
+                                                for n in items))
+
+
+def draft_email(about, to="", subject=""):
+    import coworker
+    return coworker.draft_email(to=to, about=about, subject=subject)[1]
+
+
+def write_document(about, title=""):
+    import coworker
+    return coworker.write_document(title=title, about=about)[1]
+
+
+def show_finished_work(which="latest"):
+    import coworker
+    return coworker.show(coworker.find(which or "latest"))
+
+
+def go_to_sleep():
+    # app._execute_one handles this one itself (it ends the voice conversation); this is only the fallback.
+    return "Okay."
+
+
+def background_jobs():
+    import coworker
+    return coworker.summary()
+
+
+# ---------------------------------------------------------------- skills (skills/*.md - see skills.py)
+
+def run_skill(name, input=""):
+    # app.execute runs skills itself (each step needs the approval rules and the screen settling); this is only
+    # the fallback when called outside a conversation.
+    import skills
+    s = skills.get(name)
+    if not s:
+        return f"I have no skill called '{name}'. " + skills.describe()
+    if s["kind"] == "recipe":
+        return f"Follow your skill '{s['name']}' now, one tool call at a time:\n{s['body']}"
+    return f"Skill '{s['name']}' can only run inside a conversation."
+
+
+def save_skill(name, description, steps, when="", kind=""):
+    import skills
+    return skills.save(name, description, steps, when, kind)
+
+
+def list_skills():
+    import skills
+    return skills.describe()
+
+
+def delete_skill(name):
+    import skills
+    return skills.delete(name)
+
+
+def more_tools(need=""):
+    # app.execute answers this one itself (it changes which tools the brain sees); this is only the fallback.
+    return "All your tools are already available."
+
+
 # ---------------------------------------------------------------- reactions and dragging windows (3D Nova)
 
 def react(reaction, times=0):
@@ -1293,7 +1417,8 @@ TOOLS = [
     _tool("media_control", "Play/pause, next or previous track.", {"action": {"type": "string", "enum": ["play_pause", "next", "previous", "stop"]}}, ["action"]),
     _tool("set_brightness", "Set screen brightness 0-100.", {"percent": N}, ["percent"]),
     _tool("lock_screen", "Lock the computer."),
-    _tool("power_action", "Shutdown, restart, sleep, or cancel a pending shutdown.",
+    _tool("power_action", "Shutdown, restart, sleep, or cancel a pending shutdown. Shutdown/restart first closes "
+          "all open windows and clears notifications.",
           {"action": {"type": "string", "enum": ["shutdown", "restart", "sleep", "cancel"]}}, ["action"]),
     _tool("run_powershell", "Run any PowerShell command for anything the other tools can't do. as_admin=true runs it elevated (Windows shows a UAC prompt).",
           {"command": S, "as_admin": B}, ["command"]),
@@ -1301,6 +1426,7 @@ TOOLS = [
     _tool("window_action", "Focus, minimize, maximize or close an open window (match by title or app name).",
           {"title_or_app": S, "action": {"type": "string", "enum": ["focus", "minimize", "maximize", "close"]}}, ["title_or_app", "action"]),
     _tool("minimize_all_windows", "Show the desktop."),
+    _tool("close_all_windows", "Close every open app window (not Nova). Apps with unsaved work may ask to save."),
     _tool("type_text", "Type text with the keyboard, optionally into a window (focuses it first).", {"text": S, "into_window": S}, ["text"]),
     _tool("press_keys", "Press a key or shortcut, e.g. 'ctrl+s', 'alt+tab', 'enter', 'windows+e'.", {"keys": S}, ["keys"]),
     _tool("get_clipboard", "Read the clipboard text."),
@@ -1368,14 +1494,48 @@ TOOLS = [
     _tool("drag_window", "Move a window to another part of the screen - you walk over, grab its title bar and carry it.",
           {"window": S, "to": {"type": "string", "enum": ["left", "right", "center", "top", "bottom", "top-left",
                                                           "top-right", "bottom-left", "bottom-right"]}}, ["to"]),
+    _tool("read_notifications", "Read the user's newest Windows notifications (messages, mail, reminders from apps).",
+          {"count": N}),
+    _tool("draft_email", "Co-worker job in the BACKGROUND: you write an email and draft it in Gmail in a hidden browser "
+          "window (never sent). The user keeps working; you tell them when it's ready. Use for 'draft/write an email'.",
+          {"about": {"type": "string", "description": "what the email should say, with every detail the user gave"},
+           "to": {"type": "string", "description": "email address, or the person's name if no address"},
+           "subject": S}, ["about"]),
+    _tool("write_document", "Co-worker job in the BACKGROUND: write a document/notes/letter/list, save it in "
+          "Documents\\Nova and open it hidden; you tell the user when it's ready.",
+          {"about": {"type": "string", "description": "what to write, with every detail the user gave"}, "title": S},
+          ["about"]),
+    _tool("show_finished_work", "Bring a finished background job (drafted email, written document) to the front.",
+          {"which": {"type": "string", "description": "'latest' or words from its title"}}),
+    _tool("background_jobs", "List your background co-worker jobs and whether they're done."),
+    _tool("go_to_sleep", "Go to sleep: stop listening and nap in the corner of the screen. Call it whenever the user "
+          "tells you to sleep, rest, stop listening, or says goodnight/bye."),
+    _tool("run_skill", "Run one of your saved skills (a routine or recipe the user taught you) by its name.",
+          {"name": S, "input": {"type": "string", "description": "what it's for this time, if the skill needs it "
+                                                                 "(e.g. the song or search words)"}}, ["name"]),
+    _tool("save_skill", "Save a new skill (or replace one) when the user teaches you a routine, e.g. 'when I say "
+          "movie time, close everything and open Netflix'. Write steps one per line. Steps you can run exactly "
+          "make a routine: 'open_app name=Spotify', 'set_volume action=up, steps=5', 'say Enjoy!', 'wait 2' "
+          "('{input}' = what the user asks for each time). Plain-English steps make a recipe you follow.",
+          {"name": {"type": "string", "description": "short, like movie-time"},
+           "description": {"type": "string", "description": "what it does, in a few words"},
+           "steps": {"type": "string", "description": "one step per line"},
+           "when": {"type": "string", "description": "phrases the user will say to start it, comma-separated"},
+           "kind": {"type": "string", "enum": ["routine", "recipe"]}}, ["name", "description", "steps"]),
+    _tool("list_skills", "List the skills (routines and recipes) the user has taught you."),
+    _tool("delete_skill", "Delete one of your saved skills.", {"name": S}, ["name"]),
+    _tool("more_tools", "You only see some of your tools right now. If none of them can do what the user asked, call "
+          "this with the ability you need (e.g. 'change screen brightness', 'install an app') and you get more tools.",
+          {"need": S}, ["need"]),
 ]
 
 # Approval tiers, used by the autonomy setting in app.py:
 #   careful -> asks before RISKY and DANGEROUS;  trusted -> asks only before DANGEROUS;  full -> never asks.
 RISKY = {"kill_process", "organize_folder", "delete_to_recycle_bin", "clean_temp_files", "run_powershell",
          "window_action", "type_text", "press_keys", "write_text_file", "move_or_rename", "install_app",
-         "set_wallpaper", "power_action", "empty_recycle_bin", "uninstall_app", "toggle_wifi",
-         "click_element", "click_at", "click_nth", "fill_in"}
+         "set_wallpaper", "power_action", "close_all_windows", "empty_recycle_bin", "uninstall_app", "toggle_wifi",
+         "click_element", "click_at", "click_nth", "fill_in", "delete_skill"}
+# run_skill is checked step by step in app.is_risky: a routine needs an OK when any of its steps would.
 DANGEROUS = {"empty_recycle_bin", "uninstall_app", "toggle_wifi"}  # plus shutdown/restart and admin PowerShell
 
 

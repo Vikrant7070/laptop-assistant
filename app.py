@@ -12,10 +12,18 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 
+import ctypes
+
 import avatar_client
 import cloud
+import coworker
 import knowledge
 import llm
+import notifications
+import retrieval
+import sfx
+import skills
+import toolpick
 import tools
 import voice
 from shared import host_allowed, ps_escape
@@ -38,7 +46,8 @@ def _unspoken(text):
 
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}}
+         "provider": "ollama", "cloud_models": {}, "notifications": False, "suggest": False,
+         "reaction_sounds": True, "power_ok": False}
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
@@ -119,8 +128,18 @@ How you work:
   without reciting it, and never save passwords, PINs, ID numbers, email addresses or phone numbers.
 - Your 3D body can act things out. When the user asks you to dance, laugh, clap, spin, bow, wave and so on, call
   react - don't just say you did. (Your body also reacts by itself after you speak, so don't describe gestures.)
+- You have skills: routines and recipes the user taught you, saved as files. When one fits a request, its name is
+  at the end of these instructions - use run_skill. When the user teaches you something to do on a phrase ("when I
+  say movie time, do X, Y and Z", "remember how to ..."), save it with save_skill.
 - To move a window to a side or corner of the screen, use drag_window - you carry it there yourself.
 - For the time or date, call get_datetime. Never read out or repeat the [open windows ...] line.
+- You are also the user's co-worker. To draft an email use draft_email, and for a document, letter or notes use
+  write_document: both run in the BACKGROUND while the user keeps working - don't open Gmail or Notepad yourself.
+  Say in one short sentence that you're on it; you'll tell them when it's done, and "show it" = show_finished_work.
+- When the user wants you to sleep, rest, stop listening or says goodnight (speech recognition may garble it, e.g.
+  "got to sleep", "go too sleep"), call go_to_sleep - saying goodnight alone does NOT stop you listening.
+- "Read my notifications" / "any new messages?" = read_notifications. Summarise them briefly; never read out
+  one-time codes, OTPs or passwords.
 """
 
 
@@ -146,9 +165,21 @@ PERSONA = PERSONA.replace("{TALK}", TALK_ENGLISH if voice.ENGLISH_ONLY else TALK
     "{HEAR}", "" if voice.ENGLISH_ONLY else HEAR_MIXED)
 
 
+def active_tools(model):
+    """The tool schemas the brain sees this request. A local model gets the set picked for the request (toolpick.py:
+    a shorter prompt makes the small model on the laptop GPU much faster); a cloud brain gets all of them."""
+    task = state.get("task")
+    if cloud.parse(model) or not task or not task.get("tools"):
+        return [t for t in tools.TOOLS if t["name"] != "more_tools"] if cloud.parse(model) else tools.TOOLS
+    return toolpick.schemas(task["tools"])
+
+
 def system_prompt(model):
-    facts = knowledge.prompt_block()      # who the user is + lessons from her own mistakes (data/knowledge.json)
-    proto = "" if llm.supports_tools(model) else llm.text_protocol(tools.TOOLS)
+    # Who the user is + lessons from her own mistakes (data/knowledge.json), picked once per request for what it's
+    # about. Fixed for the whole task, so Ollama can reuse the prompt it has already read between steps.
+    task = state.get("task")
+    facts = task["facts"] if task and "facts" in task else knowledge.prompt_block()
+    proto = "" if llm.supports_tools(model) else llm.text_protocol(active_tools(model))
     # Without this she guesses her model from the chat history and repeats an old answer after a switch.
     c = cloud.parse(model)
     which = (f"{c[1]} ({cloud.PROVIDERS[c[0]]['label'].split()[0]}, in the cloud; if it fails, {settings()['model']} "
@@ -191,7 +222,7 @@ FRIENDLY = {
     "set_brightness": "Adjusted brightness", "lock_screen": "Locked the screen", "power_action": "Power action",
     "run_powershell": "Ran a command", "add_note": "Saved a note", "list_notes": "Read notes",
     "set_reminder": "Set a reminder", "remember_fact": "Remembered something", "forget_fact": "Forgot something",
-    "list_windows": "Looked at open windows", "window_action": "Managed a window", "minimize_all_windows": "Showed the desktop",
+    "list_windows": "Looked at open windows", "window_action": "Managed a window", "minimize_all_windows": "Showed the desktop", "close_all_windows": "Closed all windows",
     "type_text": "Typed text", "press_keys": "Pressed keys", "get_clipboard": "Read the clipboard",
     "set_clipboard": "Copied to clipboard", "take_screenshot": "Took a screenshot", "read_text_file": "Read a file",
     "write_text_file": "Wrote a file", "move_or_rename": "Moved/renamed", "copy_path": "Copied files",
@@ -204,29 +235,42 @@ FRIENDLY = {
     "video_control": "Pressed a video button",
     "look_at_screen": "Looked at your screen",
     "update_profile": "Updated your profile", "learn_lesson": "Saved a lesson", "recall_knowledge": "Checked my knowledge bank",
-    "react": "Acted it out", "drag_window": "Moved a window",
+    "react": "Acted it out", "drag_window": "Moved a window", "more_tools": "Found more tools",
+    "read_notifications": "Read your notifications", "draft_email": "Started drafting an email",
+    "write_document": "Started writing a document", "show_finished_work": "Showed finished work",
+    "background_jobs": "Checked background jobs", "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
+    "list_skills": "Listed my skills", "delete_skill": "Deleted a skill",
 }
 
 ASK = {
     "kill_process": "Close a program", "organize_folder": "Move files into category folders",
     "delete_to_recycle_bin": "Move something to the Recycle Bin", "clean_temp_files": "Delete old temp files",
-    "empty_recycle_bin": "Permanently empty the Recycle Bin", "power_action": "Change power state",
+    "empty_recycle_bin": "Permanently empty the Recycle Bin", "power_action": "Change power state", "close_all_windows": "Close all windows",
     "run_powershell": "Run a PowerShell command", "window_action": "Control a window", "type_text": "Type on your keyboard",
     "press_keys": "Press keys", "write_text_file": "Write a file", "move_or_rename": "Move/rename",
     "install_app": "Install an app", "uninstall_app": "Uninstall an app", "set_wallpaper": "Change your wallpaper",
     "toggle_wifi": "Switch Wi-Fi (admin)", "click_element": "Click something", "click_at": "Click on the screen",
-    "click_nth": "Click an item", "fill_in": "Type into a box",
+    "click_nth": "Click an item", "fill_in": "Type into a box", "delete_skill": "Delete a saved skill",
+    "run_skill": "Run a skill",
 }
 
 
 def is_risky(call):
     """Does this call need the user's OK under the current autonomy level?"""
     name, args = call["name"], call["args"]
+    s = settings()
     if name == "power_action" and args.get("action") == "cancel":
         return False
-    mode = settings()["autonomy"]
+    if name == "power_action" and s.get("power_ok"):    # ⚙ "Shut down without asking": the user said yes up front
+        return False
+    mode = s["autonomy"]
     if mode == "full":
         return False
+    if name == "run_skill":     # a routine asks once, up front, if any of its steps would ask on its own
+        s = skills.get(args.get("name", ""))
+        return bool(s and s["kind"] == "routine" and any(
+            is_risky({"name": st["tool"], "args": skills.fill(st["args"], str(args.get("input") or ""))})
+            for st in s["steps"] if "tool" in st))
     if mode == "trusted":
         return tools.is_dangerous(name, args)
     return name in tools.RISKY
@@ -266,10 +310,243 @@ def task_log(line):
         pass
 
 
+# ------------------------------------------------------------------ her thoughts, live: the chat's "💭 thinking" log
+# and the thought cloud over 3D Nova. Every step she takes (and a thinking model's own reasoning) is noted here while
+# a request runs. In memory only, like the chat itself; the task log keeps its usual copy.
+
+MAX_THOUGHTS = 300
+thoughts = {"next": 1, "turn": 0, "list": []}
+_thought_lock = threading.Lock()
+_cloud_q = []                           # the newest thought waiting for 3D Nova's cloud
+_cloud_wake = threading.Event()
+
+
+def think(text, cloud_too=True):
+    """Note one thought. cloud_too: also show it in the thought cloud over 3D Nova (plain results stay in the log)."""
+    text = " ".join(str(text or "").split())
+    if not text:
+        return
+    text = text if len(text) <= 300 else text[:297] + "…"
+    with _thought_lock:
+        thoughts["list"].append({"id": thoughts["next"], "turn": thoughts["turn"], "t": round(time.time(), 2),
+                                 "text": text})
+        thoughts["next"] += 1
+        del thoughts["list"][:-MAX_THOUGHTS]
+    task_log(f"THINK: {text}")
+    if cloud_too:
+        _cloud_q[:] = [text]
+        _cloud_wake.set()
+
+
+def thoughts_done():
+    """The answer is ready: the thought cloud goes away."""
+    _cloud_q[:] = [""]
+    _cloud_wake.set()
+
+
+def _cloud_worker():
+    """Sends only the newest thought to 3D Nova, at most one every ~1.5 s, so each one stays up long enough to read
+    and a fast run of steps never queues up behind her."""
+    while True:
+        _cloud_wake.wait()
+        _cloud_wake.clear()
+        if not _cloud_q:
+            continue
+        text = _cloud_q.pop()
+        avatar_client.send("thought", text=text[:140], secs=12 if text else 0, timeout=2)
+        if text:
+            time.sleep(1.5)
+
+
+threading.Thread(target=_cloud_worker, daemon=True).start()
+
+
+class ThoughtStream:
+    """A thinking model's reasoning, cut into sentences as it is written - one log line each."""
+
+    END = re.compile(r"(?<=[.!?])\s+|\n+")
+    LIMIT = 40                           # a long ramble: the first lines say enough, the task log has the rest
+
+    def __init__(self):
+        self.buf, self.n = "", 0
+
+    def feed(self, piece):
+        self.buf += piece
+        while True:
+            m = self.END.search(self.buf)
+            if not m:
+                return
+            line, self.buf = self.buf[:m.start()].strip(), self.buf[m.end():]
+            self._note(line)
+
+    def flush(self):
+        self._note(self.buf.strip())
+        self.buf = ""
+
+    def _note(self, line):
+        if len(line) < 3:
+            return
+        self.n += 1
+        if self.n <= self.LIMIT:
+            think("🧠 " + line)
+        elif self.n == self.LIMIT + 1:
+            think("🧠 …(still reasoning)", cloud_too=False)
+
+
+def _short_args(args):
+    """A tool call's arguments in a few words, for a thought line."""
+    if not isinstance(args, dict) or not args:
+        return ""
+    parts = []
+    for k, v in args.items():
+        v = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+        parts.append(f"{k}: {v[:60] + '…' if len(v) > 60 else v}")
+    s = ", ".join(parts)
+    return s[:140] + "…" if len(s) > 140 else s
+
+
+# ------------------------------------------------------------------ the Stop switch
+# Pressing Stop (chat page, Esc, or the tray menu) sets stop_flag. She checks it before every brain turn and every
+# tool, and slow waits (her brain thinking, a screen look) are watched so Stop never has to wait for them to finish.
+
+class Stopped(BaseException):
+    """The user pressed Stop. A BaseException, so the many `except Exception` fallbacks can't swallow it."""
+
+
+stop_flag = threading.Event()
+STOPPED_REPLY = "Okay, I stopped."
+
+
+def check_stop():
+    if stop_flag.is_set():
+        raise Stopped()
+
+
+def interruptible(fn, *args, **kwargs):
+    """Run a slow call so that Stop can cut the wait short. The call itself is left to finish in the background and
+    its result is thrown away (an HTTP request to the brain can't be pulled back once it's sent)."""
+    check_stop()
+    box, done = {}, threading.Event()
+
+    def run():
+        try:
+            box["v"] = fn(*args, **kwargs)
+        except BaseException as e:
+            box["e"] = e
+        finally:
+            done.set()
+    threading.Thread(target=run, daemon=True).start()
+    while not done.wait(0.15):
+        check_stop()
+    check_stop()
+    if "e" in box:
+        raise box["e"]
+    return box["v"]
+
+
+def unless_stopped(fn):
+    """A streaming callback that goes quiet once Stop is pressed (the abandoned brain call keeps writing)."""
+    return None if fn is None else (lambda piece: None if stop_flag.is_set() else fn(piece))
+
+
+def stop_now():
+    """Stop whatever Nova is doing: the task, her voice, the thought cloud."""
+    busy = lock.locked()
+    if busy:
+        stop_flag.set()
+    mouth.stop()
+    if busy:
+        think("🛑 You pressed Stop - dropping everything.", cloud_too=False)
+    thoughts_done()
+    task_log(f"STOP pressed ({'while working' if busy else 'while idle'})")
+    return busy
+
+
+def new_turn():
+    """Thoughts from here on belong to a new request (the chat groups them per request)."""
+    with _thought_lock:
+        thoughts["turn"] += 1
+
+
 def new_task(goal):
     task_log(f"\n=== {time.strftime('%Y-%m-%d')} REQUEST: {goal[:300]}")
-    state["task"] = {"goal": _unspoken(goal)[:300], "start": len(state["messages"]),
-                     "steps": 0, "did": [], "done": None, "screen": "", "nudged": False}
+    new_turn()
+    clean = _unspoken(goal)[:300]
+    last = state.get("task") or {}
+    try:
+        skill = skills.match(clean)
+        keep = (list(last.get("used", ())) + (skill["tools"] if skill else [])
+                + (["run_skill"] if skills.load() else []))       # her skill names are in the prompt, so is run_skill
+        picked = toolpick.pick(clean, keep=keep)
+        facts = knowledge.prompt_block(clean) + skills.prompt_block(clean, skill)
+        if skill:
+            think(f"📜 This sounds like my '{skill['name']}' skill.", cloud_too=False)
+    except Exception as e:      # never let picking stop her answering: all tools, the plain summary
+        task_log(f"PICK failed: {type(e).__name__}: {e}")
+        picked, facts = None, knowledge.prompt_block()
+    state["task"] = {"goal": clean, "start": len(state["messages"]), "steps": 0, "did": [], "done": None,
+                     "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": []}
+    task_log(f"PICKED {len(picked) if picked else 'all'} tools ({retrieval.status()}): "
+             + (", ".join(n for n in picked if n not in toolpick.CORE) if picked else "-"))
+
+
+def more_tools(task, need):
+    """She asked for abilities she doesn't see: add the closest tools for the rest of this request."""
+    if not task or not task.get("tools"):
+        return "All your tools are already available."
+    added, task["tools"] = toolpick.add(task["tools"], need)
+    task_log(f"MORE TOOLS for '{need[:80]}': {', '.join(added) or 'none'}")
+    if not added:
+        return "No other tool matches that. Use run_powershell if it can be done with a command, or tell the user."
+    return "You now also have these tools: " + ", ".join(added) + ". Use the right one now."
+
+
+def run_skill(args, approved, activity, model):
+    """Run a saved skill. A routine runs its steps here, one by one, without asking the brain; a recipe hands its
+    instructions (and the tools they need) to the brain, which then follows them."""
+    s = skills.get(args.get("name", ""))
+    if not s:
+        return f"There is no skill called '{args.get('name', '')}'. " + skills.describe()
+    if s["kind"] == "broken":
+        return f"The skill '{s['name']}' can't run: {s['error']}. Its file is {s['file']}."
+    task = state.get("task")
+    activity.append(FRIENDLY["run_skill"])
+    if s["kind"] == "recipe":
+        think(f"📜 Following my '{s['name']}' skill.")
+        if task and task.get("tools"):
+            task["tools"] = [t["name"] for t in tools.TOOLS if t["name"] in set(task["tools"]) | set(s["tools"])]
+        return f"Follow your skill '{s['name']}' now, one tool call at a time:\n{s['body']}"
+    text = str(args.get("input") or "").strip()
+    if s["needs_input"] and not text:
+        return f"The skill '{s['name']}' needs to know what it's for this time - ask the user, then call it with input."
+    think(f"📜 Running my '{s['name']}' skill ({len(s['steps'])} steps).")
+    report, said = [], []
+    for i, st in enumerate(s["steps"], 1):
+        check_stop()
+        if "say" in st:
+            said.append(st["say"].replace("{input}", text))
+            continue
+        if "wait" in st:
+            time.sleep(st["wait"])
+            continue
+        call = {"name": st["tool"], "args": skills.fill(st["args"], text)}
+        if is_risky(call) and not approved:
+            out = "Not done - it needs the user's OK."
+        else:
+            think(f"📜 Step {i}: {call['name']}" + (f" ({_short_args(call['args'])})" if call["args"] else ""))
+            out = tools.run_tool(call["name"], call["args"])
+            activity.append(FRIENDLY.get(call["name"], call["name"]))
+            if task is not None and call["name"] not in task.setdefault("used", []):
+                task["used"].append(call["name"])
+            if call["name"] in ACT_TOOLS and not out.startswith("Error"):
+                settle(call["name"], quick=True)      # the next step needs the window this one opened
+        task_log(f"  SKILL STEP {call['name']} {json.dumps(call['args'], ensure_ascii=False)[:200]} -> {out[:200]}")
+        report.append(f"{i}. {call['name']}: {out.strip().splitlines()[0][:160] if out.strip() else 'ok'}")
+    failed = sum("Error" in r or "Not done" in r for r in report)
+    return (f"Ran the skill '{s['name']}'" + (f" - {failed} step(s) didn't work" if failed else "") + ":\n"
+            + "\n".join(report)
+            + (f"\nNow tell the user: {' '.join(said)}" if said else "\nTell the user briefly that it's done.")
+            + " Don't redo any of these steps.")
 
 
 def settle(tool_name, quick=False):
@@ -279,6 +556,7 @@ def settle(tool_name, quick=False):
     time.sleep((1.2 if tool_name in SLOW_TOOLS else 0.5) if quick else (1.8 if tool_name in SLOW_TOOLS else 1.0))
     last, same, end = None, 0, time.time() + 5
     while True:
+        check_stop()
         try:
             now = tools.open_windows_summary(3)
         except Exception:
@@ -292,14 +570,17 @@ def settle(tool_name, quick=False):
 
 def look_check(task, step, result, windows, activity, model):
     """Screenshot + the local vision model's verdict on the task. Sets task['done'] / task['screen'], returns its text."""
-    avatar_client.send("say", text="👀 Checking that worked…", secs=6, timeout=2)
+    think("👀 Looking at the screen to check that worked…")
     img = tools._grab_screen_jpeg()   # in memory only, like every screen look
-    seen = llm.see(img, CHECK_PROMPT.format(goal=task["goal"], step=step, result=result[:200], windows=windows),
+    seen = interruptible(llm.see, img, CHECK_PROMPT.format(goal=task["goal"], step=step, result=result[:200], windows=windows),
                    preferred=model, kind="check")
     state["check_image"] = img        # the chat shows the last thing she looked at
     done = re.search(r"TASK DONE:\s*(yes|no)", seen, re.I)
     task["done"] = (done.group(1).lower() == "yes") if done else None
     task["screen"] = seen
+    what = re.search(r"SCREEN:\s*(.+)", seen)
+    think(("✅ The screen says it's done." if task["done"] else "❌ Not finished yet." if task["done"] is False
+           else "🤔 Can't tell from the screen.") + (f" I see: {what.group(1).strip()}" if what else ""))
     activity.append("Checked the screen")
     return seen
 
@@ -338,21 +619,49 @@ def check_step(call, out, activity, model):
 def execute(calls, approved, activity, model):
     outs = []
     for c in calls:
-        if is_risky(c) and not approved:
-            out = "The user declined this action. Do not do it."
-            activity.append(f"Skipped: {FRIENDLY.get(c['name'], c['name'])}")
-        else:
-            tools.LAST_IMAGE["jpg_b64"] = None
-            out = tools.run_tool(c["name"], c["args"])
-            activity.append(FRIENDLY.get(c["name"], c["name"]))
-            if tools.LAST_IMAGE["jpg_b64"]:  # show the user exactly what Nova looked at
-                state.setdefault("images", []).append(tools.LAST_IMAGE["jpg_b64"])
-                tools.LAST_IMAGE["jpg_b64"] = None
-            if c["name"] in ACT_TOOLS:
-                out = check_step(c, out, activity, model)
+        try:
+            out = _execute_one(c, approved, activity, model)
+        except Stopped:      # every call still gets a result, so the history stays valid for the next request
+            out = "The user pressed Stop before this step finished. It was not done (or only partly)."
         task_log(f"TOOL {c['name']} {json.dumps(c['args'], ensure_ascii=False)[:300]}\n   -> " + out.replace("\n", "\n      "))
         outs.append(out)
     return [llm.tool_result_message(model, c, out) for c, out in zip(calls, outs)]
+
+
+def _execute_one(c, approved, activity, model):
+    check_stop()
+    if is_risky(c) and not approved:
+        out = "The user declined this action. Do not do it."
+        activity.append(f"Skipped: {FRIENDLY.get(c['name'], c['name'])}")
+        think(f"🚫 Skipping: {ASK.get(c['name'], c['name']).lower()} (not allowed).")
+    elif c["name"] == "run_skill":
+        out = run_skill(c["args"] or {}, approved, activity, model)
+    elif c["name"] == "go_to_sleep":
+        state["sleep_after"] = True         # she says goodnight first; heard()/chat() then really end the conversation
+        activity.append(FRIENDLY["go_to_sleep"])
+        think("😴 You want me to sleep - I'll nap right after this answer.")
+        out = "Done: you'll go to sleep right after this answer. Just say a very short goodnight (a few words)."
+    elif c["name"] == "more_tools":
+        need = str((c["args"] or {}).get("need", ""))
+        think(f"🧰 None of my tools fit - looking for one that can {need[:80]}")
+        out = more_tools(state.get("task"), need)
+        activity.append(FRIENDLY["more_tools"])
+        think("🧰 " + out.split(". Use")[0], cloud_too=False)
+    else:
+        hint = _short_args(c["args"])
+        think(f"🔧 Using {c['name']}" + (f" ({hint})" if hint else ""))
+        tools.LAST_IMAGE["jpg_b64"] = None
+        out = tools.run_tool(c["name"], c["args"])
+        think("→ " + out.strip().split("\n")[0][:160], cloud_too=False)
+        activity.append(FRIENDLY.get(c["name"], c["name"]))
+        if state.get("task") is not None and c["name"] not in state["task"].setdefault("used", []):
+            state["task"]["used"].append(c["name"])     # kept for the next request ("now close it")
+        if tools.LAST_IMAGE["jpg_b64"]:  # show the user exactly what Nova looked at
+            state.setdefault("images", []).append(tools.LAST_IMAGE["jpg_b64"])
+            tools.LAST_IMAGE["jpg_b64"] = None
+        if c["name"] in ACT_TOOLS:
+            out = check_step(c, out, activity, model)
+    return out
 
 
 def _is_real_user(m):
@@ -411,7 +720,17 @@ class SpeechStream:
 
 
 def agent_loop(activity):
-    out = _agent_loop(activity)
+    try:
+        out = _agent_loop(activity)
+    except Stopped:
+        # Stopped while the brain was thinking or between steps: the history is complete up to here (every tool
+        # call has its result), so just close it with a short note and give control back.
+        msgs = state["messages"]
+        if msgs and msgs[-1]["role"] != "assistant":
+            msgs.append({"role": "assistant", "content": STOPPED_REPLY})
+        think("🛑 Stopped.", cloud_too=False)
+        activity.append("Stopped")
+        out = {"reply": STOPPED_REPLY, "activity": activity, "say": STOPPED_REPLY, "stopped": True}
     out["images"] = state.pop("images", [])
     if state.get("check_image"):
         out["images"].append(state.pop("check_image"))
@@ -420,7 +739,9 @@ def agent_loop(activity):
 
 PROMISE_RE = re.compile(
     r"\b(i'?ll|i will|i'?m|i am|let me|going to|now)\b[^.!?]{0,30}\b(click|open|search|play|scroll|type|press|clos|select|"
-    r"tap|launch|start|go to|navigat)", re.I)
+    r"tap|launch|start|go to|navigat|lock|mut|paus|turn|set|shut|restart|remind|delet|mov|install)"
+    r"|\b(lock|open|clos|play|search|launch|start|turn|mut|paus|set|shut|restart|delet|mov|install|clean)\w*ing\b"
+    r"[^.!?]{0,30}\b(now|right away)\b|\bi'?ll do (it|that) (right away|now)\b", re.I)
 
 
 def _agent_loop(activity):
@@ -439,6 +760,7 @@ def _agent_loop(activity):
 
     turns = 0
     while True:
+        check_stop()
         task = state.get("task")
         if turns >= (MAX_TASK_TURNS if task and task["steps"] else MAX_TURNS):
             break
@@ -447,13 +769,22 @@ def _agent_loop(activity):
         # Ordinary questions are spoken while the answer is still being written. During a multi-step screen task
         # she must not talk early - her "done!" may still be corrected by her own check of the screen.
         stream = SpeechStream() if not (task and task["steps"]) else None
+        think("💭 Working out what you need…" if turns == 1 and not did_something else "💭 Deciding the next step…")
+        reasoning = ThoughtStream()
         t0 = time.time()
-        stored, text, calls = llm.chat(model, msgs, tools.TOOLS, think=s["think"],
-                                       on_text=stream.feed if stream else None, fallback=s["model"])
+        stored, text, calls = interruptible(llm.chat, model, msgs, active_tools(model), think=s["think"],
+                                            on_text=unless_stopped(stream.feed if stream else None),
+                                            fallback=s["model"], on_think=unless_stopped(reasoning.feed))
+        reasoning.flush()
+        used = s["model"] if llm.LAST["fallback"] else model
         task_log(f"BRAIN {time.time() - t0:.1f}s ({'local fallback' if llm.LAST['fallback'] else model})")
+        think(f"⏱ Thought for {time.time() - t0:.1f}s ({used.replace('cloud:', '')})"
+              + (f" → {len(calls)} step{'s' if len(calls) > 1 else ''} to do" if calls else " → answering"),
+              cloud_too=False)
         if llm.LAST["fallback"] and "Used the local brain" not in activity:
             activity.append("Used the local brain")   # the cloud one failed; she carried on with the local model
             task_log(f"CLOUD BRAIN NOT USED ({model}): {llm.LAST['fallback']} -> local {s['model']}")
+            think("☁️ The cloud brain didn't answer, so I used my local one.")
         if stream:
             stream.flush()
         state["messages"].append(stored)
@@ -463,6 +794,7 @@ def _agent_loop(activity):
         if not calls and not nudged and not did_something and PROMISE_RE.search(text or ""):
             # Small models sometimes *say* "I'm clicking it now" without calling a tool. Make her follow through.
             nudged = True
+            think("🙈 I said I'd do it but didn't actually do anything - doing it properly now.")
             state["messages"].append({"role": "user", "content":
                 "[note from Nova's system] You said you'd do something but didn't call a tool, so nothing happened. "
                 "Call the right tool now. If no tool can do it, say so honestly in one sentence."})
@@ -480,6 +812,7 @@ def _agent_loop(activity):
         if not calls and task and task["steps"] >= 2 and task["done"] is False and not task["nudged"]:
             # She's about to stop, but her own last look at the screen says the task isn't finished. One more push.
             task["nudged"] = True
+            think("🔁 My check says part of it isn't done yet - going back to finish it.")
             state["messages"].append({"role": "user", "content":
                 "[note from Nova's system] Your last look at the screen says the task is not finished yet:\n"
                 f"{task['screen']}\nThe task: {task['goal']}\nThe only steps you have really done so far:\n- "
@@ -504,10 +837,13 @@ def _agent_loop(activity):
             return result(" ".join(spoken).strip() or "Done!")
         if any(is_risky(c) for c in calls):
             state["pending"] = calls
+            think("✋ I need your OK before I " + ", ".join(ASK.get(c["name"], c["name"]).lower()
+                                                            for c in calls if is_risky(c)) + ".")
             return result(" ".join(spoken).strip(),
                           pending=[{"tool": c["name"], "label": ASK.get(c["name"], c["name"]), "input": c["args"]}
                                    for c in calls if is_risky(c)])
         state["messages"].extend(execute(calls, True, activity, model))
+    think("🛑 That's a lot of steps - stopping here.")
     unsaid.append("I stopped there - that was a lot of steps!")
     return result(" ".join(spoken) + " (I stopped there - that was a lot of steps!)")
 
@@ -584,6 +920,8 @@ def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
                    autonomy=s["autonomy"], think=s["think"], camera=s["camera"], screen=s["screen"],
+                   notifications=s["notifications"], suggest=s.get("suggest", False), asleep=nap["asleep"],
+                   reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    autostart=STARTUP_LNK.exists(),
                    voice=s["voice"], wake=s["wake"], voice_name=mouth.voice_name, ears=ears.status, heard=ears.heard,
                    vision_model=llm.vision_model(s["model"]), **ready_info())
@@ -615,7 +953,17 @@ def setup():
         ears.start() if s["wake"] else ears.stop()
     if body.get("autonomy") in ("careful", "trusted", "full"):
         s["autonomy"] = body["autonomy"]
+    if "suggest" in body:
+        s["suggest"] = bool(body["suggest"])
+    if "notifications" in body:
+        s["notifications"] = bool(body["notifications"])
+    if "power_ok" in body:
+        s["power_ok"] = bool(body["power_ok"])
+    if "reaction_sounds" in body:
+        s["reaction_sounds"] = bool(body["reaction_sounds"])    # avatar.py reads it through sfx.enabled()
     save_settings(s)
+    if "notifications" in body:
+        notif_watcher.start() if s["notifications"] else notif_watcher.stop()
     if "autostart" in body:
         set_autostart(bool(body["autostart"]))
     return jsonify(ok=True, **ready_info())
@@ -696,6 +1044,7 @@ show_window_hook = None  # set by desktop.py
 
 @app.post("/api/show_window")
 def show_window():
+    wake_body()            # clicking her wakes her up
     if show_window_hook:
         show_window_hook()
     return jsonify(ok=True)
@@ -773,7 +1122,9 @@ CAMERA_ASK = re.compile(
 SCREEN_ASK = re.compile(
     r"\b(my screen|on (the |my )?screen|this screen|screen ?shot of|look at (this|my) (window|page|tab|error|code)|"
     r"read (this|that|the) (error|message|page)|what('?s| is) this error|this error|what am i looking at|"
-    r"what('?s| is) open|what do you see on)\b", re.I)
+    r"what('?s| is) open|what do you see on|"
+    r"(any |a |some )?(suggestions?|tips?|ideas?)\b[^.?!]{0,30}\b(screen|working on|doing|this)|"
+    r"what should i do next|help me with (this|what i'?m doing))\b", re.I)
 
 
 VIDEO_ASK = [  # clear video-player requests, done directly (the small model mixed up video vs window full screen)
@@ -795,13 +1146,16 @@ FACT_ASK = [
 
 
 def warm_brain():
-    """Run the long system prompt through the model once at start-up, so the first real question isn't the slow one."""
+    """Run the long system prompt through the model once at start-up, so the first real question isn't the slow one.
+    Also loads the small model that picks facts and tools for each request (CPU, a few seconds)."""
+    retrieval.load_in_background()
     try:
         model = settings()["model"]
         llm._post("/api/chat", {"model": model, "stream": False, "keep_alive": llm.KEEP_ALIVE,
                                 "messages": [{"role": "system", "content": system_prompt(model)},
                                              {"role": "user", "content": "hi"}],
-                                "tools": llm._to_ollama_tools(tools.TOOLS) if llm.supports_tools(model) else None,
+                                "tools": llm._to_ollama_tools(toolpick.schemas(toolpick.pick("hi")))
+                                if llm.supports_tools(model) else None,
                                 "options": {"num_ctx": llm.NUM_CTX, "num_predict": 1}}, timeout=300)
     except Exception:
         pass
@@ -825,6 +1179,10 @@ def look_first(text, activity):
         name, args = next(((tool, {}) for rx, tool in FACT_ASK if rx.search(text)), (None, None))
         if not name:
             return
+    think({"look_at_screen": "👀 You asked about your screen - I'll look at it first.",
+           "look_through_camera": "📷 You want me to see you - I'll look through the camera first.",
+           "video_control": "🎬 That's a video-player button - pressing it directly."}.get(
+        name, "📌 That's a plain fact - I'll check it instead of guessing."))
     model = brain()
     call = {"id": "look_0", "name": name, "args": args}
     state["messages"].append({"role": "assistant", "content": "",
@@ -850,7 +1208,10 @@ def _cap_history():
 
 def answer(text):
     """Run one user message through Nova. Returns (result dict, http status)."""
+    note_task()
     with lock:
+        stop_flag.clear()           # a Stop pressed for the last request doesn't cancel this one
+        state.pop("sleep_after", None)
         _cap_history()
         n, old_pending = len(state["messages"]), state["pending"]
         activity = []
@@ -874,14 +1235,19 @@ def answer(text):
             state["pending"] = old_pending
             state.pop("task", None)
             state.pop("images", None)
+            think(f"💥 Something went wrong: {e}", cloud_too=False)
+            thoughts_done()
             if isinstance(e, llm.OllamaError):
                 return {"error": str(e)}, 503
             task_log(f"ERROR in answer: {type(e).__name__}: {e}")
             return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
         _cap_history()
+    thoughts_done()
     speak(out.pop("say", out.get("reply")))
     bubble(out.get("reply"))
     after_turn(text, out)
+    if state.pop("sleep_after", False):     # her brain understood "go to sleep" (go_to_sleep tool): now really sleep
+        go_to_sleep("asked", quiet=True)
     return out, 200
 
 
@@ -947,7 +1313,9 @@ def react_later(reaction, wait_for_speech=True):
             while mouth.busy() and time.time() < end:
                 time.sleep(0.15)
         if not mouth.busy() or not wait_for_speech:
-            avatar_client.send("react", name=reaction, timeout=2)
+            out = avatar_client.send("react", name=reaction, timeout=2)
+            if out and out.get("played"):
+                mouth.hold(sfx.length(reaction) + 0.3)     # its sound effect: keep the mic from hearing it
             task_log(f"REACTION: {reaction}")
     threading.Thread(target=run, daemon=True).start()
 
@@ -1118,8 +1486,18 @@ def knowledge_edit():
 
 
 # English and Hindi/Hinglish (Whisper writes Hindi in English letters - see voice.HINGLISH_HINT).
-SLEEP_RE = re.compile(r"\b(go to sleep|go sleep|stop listening|good ?night|that'?s all|bye nova|so ?jao|sunna band|"
-                      r"shubh ratri|bas itna hi)\b", re.I)
+# Whisper often mishears it ("Noah got to sleep", "go too sleep"), so the verbs and the "to" are loose. Only short
+# utterances count (wants_sleep), so "I can't go to sleep at night, any tips?" is a normal question.
+SLEEP_RE = re.compile(r"\b((go|got|goes|going|gotta|gonna|gone)( (to|too|two|2|ta))? ?sleep|sleep now|(you can|time to|now) sleep|"
+                      r"sleep,? (nova|noah|now)|(nova|noah),? sleep|take a nap|nap time|go to bed|stop listening|"
+                      r"good ?night|that'?s all|bye,? (nova|noah)|so ?jao|sunna band|shubh ratri|bas itna hi)\b", re.I)
+SLEEP_MAX_WORDS = 8
+
+
+def wants_sleep(text):
+    """Is this the user telling her to go to sleep (not just a sentence that mentions sleep)?"""
+    clean = _unspoken(text)
+    return bool(SLEEP_RE.search(clean)) and len(clean.split()) <= SLEEP_MAX_WORDS
 YES_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|do it|go ahead|allow( it)?|please do|haan?|han|ji|"
                     r"th?ee?k hai|kar ?do|karo|chalega|bilkul)\b", re.I)
 NO_RE = re.compile(r"^\W*(no|nope|don'?t|cancel|stop|never ?mind|nahin?|nai|mat|rehne do|ruko?|chhodo)\b", re.I)
@@ -1194,9 +1572,9 @@ def silent_loop():
                 if listen_state["single"]:
                     listen_state["single"] = False
                     avatar_client.send("say", text="Sorry, I didn't catch that 🤔 Say “Hey Nova” again.", secs=4, timeout=2)
-                elif convo["on"] and time.time() - convo["last_heard"] > 60:
-                    go_to_sleep("quiet")
-                elif kind == "unclear" and convo["on"]:
+                elif convo["on"] and time.time() - max(convo["last_heard"], nap["last_task"]) > IDLE_NAP:
+                    go_to_sleep("idle")
+                elif kind == "unclear" and convo["on"] and time.time() - convo["last_heard"] < 60:
                     avatar_client.send("say", text="Hmm, say that again? 🤔", secs=3, timeout=2)
             else:
                 ears._note(f"background listening failed ({text})")
@@ -1213,21 +1591,22 @@ def silent_loop():
         listen_state["loop"] = False
 
 
-def _start_conversation():
+def _start_conversation(greet=True):
+    """From now on she keeps listening after every answer, until "Nova, go to sleep" or 5 minutes without a task."""
     if not convo["on"]:
         convo.update(on=True, last_heard=time.time())
-        announce("I'm awake! 👂 Talk to me. Say “Nova, go to sleep” when you're done.", spoken="I'm awake! I'm listening.")
+        if greet:
+            announce("I'm awake! 👂 Talk to me. Say “Nova, go to sleep” when you're done.", spoken="I'm awake! I'm listening.")
 
 
 def on_wake(conversation=False):
+    """'Hey Nova' (or 'Nova, wake up'): she wakes up and stays in the conversation until told to sleep."""
     mouth.stop()
+    note_task()
     if silent_ok():
-        if conversation:
-            _start_conversation()
-        elif convo["on"]:
+        if convo["on"] and listen_state["loop"]:
             return                        # already listening
-        else:
-            listen_state["single"] = True
+        _start_conversation(greet=conversation)
         threading.Thread(target=silent_loop, daemon=True).start()
         return
     if ear_hooks["show"] is None:      # no desktop app (plain browser): fall back to the chat page
@@ -1235,23 +1614,25 @@ def on_wake(conversation=False):
             show_window_hook()
         push_event({"listen": True})
         return
-    if conversation:
-        _start_conversation()
-        ear_listen_after_speech()
-    elif not convo["on"]:
-        ear_listen()
+    if not convo["on"]:
+        _start_conversation(greet=conversation)
+        ear_listen_after_speech() if conversation else ear_listen()
 
 
-def go_to_sleep(reason="asked"):
+def go_to_sleep(reason="asked", quiet=False):
+    """End the conversation and nap in the bottom-right corner of the screen.
+    reason: "asked" (the user said so), "idle" (5 minutes without a task), "quiet" (nobody talking).
+    quiet: she has already said goodnight herself."""
     was_on = convo["on"]
     convo["on"] = False
     listen_state["single"] = False
     ear_close()
-    if was_on or reason == "asked":
-        line = ("Okay, I'll take a nap. Say “Nova, wake up” when you need me 😴" if reason == "asked" else
-                "It's quiet, so I'll take a nap. Say “Nova, wake up” when you need me 😴")
-        avatar_client.send("anim", name="idle", timeout=2)
+    task_log(f"SLEEP ({reason})")
+    if (reason == "asked" or was_on) and not quiet:
+        line = ("Okay, I'll take a nap in the corner. Say “Hey Nova” when you need me 😴" if reason == "asked" else
+                "It's been quiet for a while, so I'll take a nap in the corner. Say “Hey Nova” when you need me 😴")
         announce(line)
+    sleep_body()
 
 
 def confirm_pending(approved):
@@ -1259,7 +1640,11 @@ def confirm_pending(approved):
     with lock:
         if not state["pending"]:
             return {"reply": "", "activity": []}, 200
+        stop_flag.clear()
+        nap["last_task"] = time.time()
         activity = []
+        new_turn()
+        think("👍 You said yes - going ahead." if approved else "👌 You said no - I'll leave it.")
         state["messages"].extend(execute(state["pending"], approved, activity, brain()))
         state["pending"] = None
         n = len(state["messages"])
@@ -1267,10 +1652,13 @@ def confirm_pending(approved):
             out = agent_loop(activity)
         except Exception as e:
             del state["messages"][n:]  # the approved action ran; only the half-finished follow-up is dropped
+            think(f"💥 Something went wrong: {e}", cloud_too=False)
+            thoughts_done()
             if isinstance(e, llm.OllamaError):
                 return {"error": str(e)}, 503
             task_log(f"ERROR in confirm: {type(e).__name__}: {e}")
             return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
+    thoughts_done()
     speak(out.pop("say", out.get("reply")))
     bubble(out.get("reply"))
     return out, 200
@@ -1282,8 +1670,16 @@ def heard(text, via="bubble"):
     text = text.strip()
     convo["last_heard"] = time.time()
     ears._note(f"heard: {text}"[:160])
-    if SLEEP_RE.search(text):
+    if wants_sleep(text):
         go_to_sleep("asked")
+        return
+    note_task()
+    said = take_offer(text)            # "yes" right after "your email is ready - want to see it?"
+    if said is not None:
+        push_event({"me": text, "reply": said})
+        announce(said)
+        if via != "silent":
+            ear_listen_after_speech() if convo["on"] else ear_close()
         return
     convo["thinking"] = True
     avatar_client.send("anim", name="think", timeout=2)
@@ -1315,8 +1711,10 @@ def on_voice(text):
 
 
 def on_request(text):
-    """'Hey Nova, <request>' said in one breath (Whisper heard both)."""
+    """'Hey Nova, <request>' said in one breath (Whisper heard both). Starts a conversation, like 'Hey Nova' alone."""
     mouth.stop()
+    note_task()
+    _start_conversation(greet=False)
     heard(text, via="silent")
     if _still_listening():            # she asked "yes or no?", or we're in a conversation
         threading.Thread(target=silent_loop, daemon=True).start()
@@ -1330,6 +1728,232 @@ else:
     ears = voice.Ears(mouth, on_voice)
 ears.on_wake = on_wake
 ears.on_sleep = lambda: go_to_sleep("asked")
+
+
+# ------------------------------------------------------------------ nap time: 5 minutes without a task -> she sleeps
+# Any request (typed or spoken), a wake word, or clicking her wakes her. While she sleeps she lies in the bottom-right
+# corner of the screen and only "Hey Nova" (or a typed message) gets her attention.
+
+IDLE_NAP = 300
+nap = {"asleep": False, "last_task": time.time()}
+
+
+def sleep_body():
+    nap["asleep"] = True
+    avatar_client.send("sleep", on=True, timeout=3)
+
+
+def wake_body():
+    if nap["asleep"]:
+        nap["asleep"] = False
+        avatar_client.send("sleep", on=False, timeout=3)
+
+
+def note_task():
+    """The user gave her something to do (or woke her): the 5-minute nap clock starts again."""
+    nap["last_task"] = time.time()
+    wake_body()
+
+
+def nap_due(now=None):
+    now = now or time.time()
+    return (not nap["asleep"] and now - nap["last_task"] >= IDLE_NAP and not lock.locked() and not mouth.busy()
+            and not convo["thinking"] and not coworker.running())
+
+
+def idle_watch():
+    while True:
+        time.sleep(10)
+        try:
+            if nap_due():
+                go_to_sleep("idle")
+        except Exception as e:
+            task_log(f"idle watch: {type(e).__name__}: {e}")
+
+
+# ------------------------------------------------------------------ co-worker jobs (coworker.py): done -> "want to see it?"
+
+offer = {"job": None, "until": 0.0}
+SHOW_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|haan?|show( it| me)?|open it|let me see|please)\b", re.I)
+OFFER_SECS = 900
+
+
+def write_text(prompt, max_tokens=700):
+    """Her brain as a writer (emails, documents) - no tools, a longer answer than a spoken reply."""
+    s = settings()
+    msgs = [{"role": "system", "content": "You are a skilled writer helping the user. Follow the requested format exactly."},
+            {"role": "user", "content": prompt}]
+    _, text, _ = llm.chat(brain(s), msgs, [], fallback=s["model"], num_predict=max_tokens)
+    return text
+
+
+def job_done(job):
+    nap["last_task"] = time.time()
+    if job["status"] != "done":
+        line = f"Sorry, the {job['kind'].replace('_', ' ')} didn't work: {job['error']}"
+        push_event({"reply": line, "kind": "job"})
+        announce(line)
+        return
+    wake_body()
+    offer.update(job=job, until=time.time() + OFFER_SECS)
+    line = job["result"] + " Want to see it?"
+    push_event({"reply": "✅ " + line, "kind": "job", "offer": {"id": job["id"], "label": "Show it"}})
+    announce("✅ " + line, spoken=line)
+    react_later("happy")
+    if settings()["wake"] and not convo["on"] and silent_ok():     # listen for the "yes"
+        listen_state["single"] = True
+        threading.Thread(target=silent_loop, daemon=True).start()
+
+
+def take_offer(text, force=None):
+    """'yes' / 'no' right after "want to see it?". Returns her answer, or None if this isn't about the offer."""
+    job = offer["job"]
+    if not job or time.time() > offer["until"]:
+        return None
+    clean = _unspoken(text).strip()
+    short = len(clean.split()) <= 8
+    yes = force is True or (force is None and short and SHOW_RE.search(clean))
+    no = force is False or (force is None and short and NO_RE.search(clean) and not yes)
+    if not (yes or no):
+        return None
+    offer.update(job=None, until=0.0)
+    note_task()
+    if yes:
+        think(f"🪟 Bringing '{job['title']}' to the front.")
+        return coworker.show(job)
+    return "Okay! It's waiting for you whenever you want it."
+
+
+coworker.configure(write=write_text, on_done=job_done, on_note=lambda t: think(t, cloud_too=False))
+
+
+# ------------------------------------------------------------------ notifications (notifications.py): she reads new ones out
+
+SECRETY = re.compile(r"\b(otp|one[- ]time|code|password|passcode|pin|verification|cvv)\b", re.I)
+
+
+def _speakable(n):
+    """A notification as she says it: one-time codes and passwords are never read out."""
+    line = notifications.describe(n, 200)
+    if SECRETY.search(line):
+        line = re.sub(r"\b[\dA-Z]{4,8}\b(?=[^\w]|$)", "(hidden)", line)
+    return line
+
+
+def on_notifications(items):
+    if not settings()["notifications"] or not items:
+        return
+    for n in items:
+        push_event({"reply": "🔔 " + _speakable(n), "kind": "notification"})
+        task_log(f"NOTIFICATION from {n['app']}")
+    if len(items) == 1:
+        line = "🔔 " + _speakable(items[0])
+    else:
+        line = f"🔔 {len(items)} new notifications. " + " … ".join(_speakable(n) for n in items[:3])
+        if len(items) > 3:
+            line += f" … and {len(items) - 3} more."
+    end = time.time() + 30
+    while (lock.locked() or mouth.busy()) and time.time() < end:    # don't talk over her own answer
+        time.sleep(0.5)
+    announce(line, spoken=line.replace("🔔 ", "", 1))
+
+
+notif_watcher = notifications.Watcher(on_notifications, on_note=lambda s: task_log(s))
+
+
+# ------------------------------------------------------------------ suggestions about what the user is working on
+
+SUGGEST_EVERY = 600            # at most one suggestion every 10 minutes
+# The whole prompt goes to the vision model as written (kind="check"). Asking first WHAT they're doing makes the small
+# model's tip specific; with a bare "or answer NONE" escape it answered NONE every time.
+SUGGEST_PROMPT = """This is a screenshot of the user's screen. You are their helpful co-worker sitting next to them.
+Answer in exactly two lines:
+WORKING ON: <what the user is doing, a few words>
+SUGGESTION: <one specific, useful tip for that work: a shortcut, a faster way, a next step, or a problem you can see such as an error or typo. Talk to them directly, under 25 words. Don't describe the screen.>
+Only if the screen shows nothing to work on (an empty desktop, a video or a game playing), write SUGGESTION: NONE
+Never mention passwords or private details."""
+suggest_state = {"last": 0.0, "title": "", "running": False}
+
+
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+
+def user_idle_secs():
+    """Seconds since the user last touched the keyboard or mouse."""
+    info = _LASTINPUTINFO(ctypes.sizeof(_LASTINPUTINFO), 0)
+    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+        return 0.0
+    return max(0.0, (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000)
+
+
+NOVA_WINDOWS = ("Nova", "Nova 3D", "Nova ear", "tk")
+
+
+def _front_title():
+    """The user's front-most window (Nova's own windows - her body, chat, ear - don't count)."""
+    for _, title, proc in tools._windows():
+        if title not in NOVA_WINDOWS and proc.lower() not in ("textinputhost.exe", "shellexperiencehost.exe"):
+            return title
+    return ""
+
+
+def suggest_now(force=False):
+    """Look at the screen and offer one suggestion. Returns it (or None). The picture stays on this laptop: only the
+    local vision model sees it, never a cloud brain."""
+    if suggest_state["running"] or not tools._screen_allowed():
+        return None
+    title = _front_title()
+    if not force and (not title or
+                      (title == suggest_state["title"] and time.time() - suggest_state["last"] < 1800)):
+        return None
+    suggest_state.update(running=True, last=time.time(), title=title)
+    try:
+        img = tools._grab_screen_jpeg()
+        text = llm.see(img, SUGGEST_PROMPT, preferred=settings()["model"], kind="check").strip()
+    finally:
+        suggest_state["running"] = False
+    line = re.search(r"suggestion\s*:\s*(.+)", text, re.I)
+    if line:
+        text = line.group(1).strip()
+    elif re.search(r"working on\s*:", text, re.I):
+        text = ""                                    # only the first line came back: nothing to suggest
+    text = re.sub(r"^\W*(suggestion|tip)\s*:\s*", "", text, flags=re.I).strip()
+    if not text or re.match(r"^\W*none\b", text, re.I) or len(text) < 8:
+        task_log(f"SUGGEST: nothing for '{title[:60]}'")
+        return None
+    text = text[:220]
+    task_log(f"SUGGEST for '{title[:60]}': {text}")
+    push_event({"reply": "💡 " + text, "kind": "suggestion"})
+    avatar_client.send("say", text="💡 " + text, secs=min(14, 4 + len(text) / 15), timeout=2)
+    return text
+
+
+def suggest_watch():
+    while True:
+        time.sleep(30)
+        try:
+            s = settings()
+            if (s.get("suggest") and s["screen"] and not nap["asleep"] and not lock.locked() and not mouth.busy()
+                    and time.time() - suggest_state["last"] >= SUGGEST_EVERY and user_idle_secs() < 90):
+                suggest_now()
+        except Exception as e:
+            task_log(f"suggest watch: {type(e).__name__}: {e}")
+
+
+_background = {"started": False}
+
+
+def start_background():
+    """The things that run while Nova lives in the tray: nap clock, suggestions, notifications.
+    Started by the running app (desktop.py / __main__), never just by importing this module."""
+    if _background["started"]:
+        return
+    _background["started"] = True
+    threading.Thread(target=idle_watch, daemon=True).start()
+    threading.Thread(target=suggest_watch, daemon=True).start()
+    if settings()["notifications"]:
+        notif_watcher.start()
 # The listener is started by the running app (desktop.py / __main__ below), never as a side effect of importing
 # this module - a stray second listener would answer "Hey Nova" at the same time as the real one.
 
@@ -1357,10 +1981,10 @@ def ear_said():
 @app.post("/api/ear_idle")
 def ear_idle():
     """The bubble heard nothing for a while."""
-    if convo["on"] and time.time() - convo["last_heard"] < 60:
+    if convo["on"] and time.time() - max(convo["last_heard"], nap["last_task"]) < IDLE_NAP:
         ear_listen()                      # keep listening
     elif convo["on"]:
-        go_to_sleep("quiet")              # a minute of silence: nap
+        go_to_sleep("idle")               # 5 minutes without a task: nap
     else:
         ear_close()
     return jsonify(ok=True)
@@ -1372,8 +1996,38 @@ def chat():
     if not text:
         return jsonify(error="empty message"), 400
     mouth.stop()  # don't talk over the user
+    if wants_sleep(text):
+        go_to_sleep("asked")
+        return jsonify(reply="Okay, I'll take a nap in the corner 😴 Message me or say “Hey Nova” when you need me.",
+                       activity=[])
+    said = take_offer(text)
+    if said is not None:
+        announce(said)
+        return jsonify(reply=said, activity=[])
     out, status = answer(text)
     return jsonify(out), status
+
+
+@app.post("/api/offer")
+def offer_answer():
+    """The chat page's "Show it" / "Not now" buttons under a finished background job."""
+    yes = _body().get("show") is True
+    said = take_offer("", force=yes)
+    return jsonify(reply=said or "That one isn't waiting any more.", activity=[])
+
+
+@app.post("/api/suggest")
+def suggest_api():
+    """💡 button: a suggestion about what's on the screen right now."""
+    if not tools._screen_allowed():
+        return jsonify(reply="I need permission to look at your screen first (⚙ Model → Screen).", activity=[])
+    note_task()
+    try:
+        tip = suggest_now(force=True)
+    except Exception as e:
+        return jsonify(error=f"Couldn't look at the screen: {e}"), 500
+    return jsonify(reply=None if tip else "I looked - nothing to suggest right now, you're doing great! 👍",
+                   activity=["Looked at your screen"], shown=bool(tip))
 
 
 @app.post("/api/confirm")
@@ -1387,6 +2041,23 @@ def get_events():
     out = events[:]
     events.clear()
     return jsonify(events=out, speaking=mouth.lips, ears=ears.status, heard=ears.heard[-1:] if settings()["wake"] else [])
+
+
+@app.post("/api/stop")
+def stop():
+    """The Stop switch: ends the task she's working on (and her voice). Safe to press any time."""
+    return jsonify(ok=True, was_busy=stop_now())
+
+
+@app.get("/api/thoughts")
+def get_thoughts():
+    """Her thoughts after id `after` (the chat's live "💭 thinking" log). Without `after`: just where the list ends,
+    so a freshly opened chat starts from now instead of replaying old requests."""
+    with _thought_lock:
+        last = thoughts["next"] - 1
+        after = request.args.get("after", type=int)
+        new = [] if after is None else [t for t in thoughts["list"] if t["id"] > after]
+    return jsonify(thoughts=new, last=last, busy=lock.locked())
 
 
 @app.post("/api/voice_stop")
@@ -1437,5 +2108,6 @@ if __name__ == "__main__":
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
     if settings()["wake"]:
         ears.start()
+    start_background()
     print(f"\n  {ASSISTANT_NAME} is awake at {url}  (brain: {brain()}; local: {settings()['model']} via Ollama at {llm.HOST})\n")
     app.run(host="127.0.0.1", port=port, debug=False)

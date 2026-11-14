@@ -45,6 +45,9 @@ class FakeMouth:
     def stop(self):
         pass
 
+    def hold(self, secs):
+        pass
+
     def busy(self):
         return False
 
@@ -57,6 +60,7 @@ import tools  # noqa: E402
 import knowledge  # noqa: E402
 import cloud  # noqa: E402
 import app  # noqa: E402
+import skills  # noqa: E402
 
 
 def _point_data_at(folder):
@@ -70,6 +74,8 @@ def _point_data_at(folder):
     cloud.KEYS_FILE = folder / "keys.json"
     app.SETTINGS_FILE = folder / "settings.json"
     app.TASK_LOG = folder / "task_log.txt"
+    skills.DIR = folder / "skills"
+    skills._cache.update(key=None, skills=[])
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +92,18 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "_screen_allowed", lambda: False)
     monkeypatch.setattr(app, "react_later", lambda *a, **k: None)
     monkeypatch.setattr(app, "review_turn", lambda why: None)
+    # background co-worker jobs, naps and offers start fresh, and never open real windows
+    import coworker
+    coworker.jobs.clear()
+
+    def no_real_windows(*a, **k):
+        raise AssertionError("a test tried to open a real window")
+    monkeypatch.setattr(coworker, "open_hidden", no_real_windows)
+    app.nap.update(asleep=False, last_task=__import__("time").time())
+    app.offer.update(job=None, until=0.0)
+    app.convo.update(on=False, last_heard=0.0, thinking=False)
+    app.listen_state.update(loop=False, single=False)
+    app.mouth.said.clear()
     app.llm.reset_cloud()
     yield tmp_path / "data"
 
@@ -97,7 +115,7 @@ class FakeBrain:
         self.script = list(script)
         self.seen = []
 
-    def __call__(self, model, messages, tools_, think=False, on_text=None, fallback=None):
+    def __call__(self, model, messages, tools_, think=False, on_text=None, fallback=None, on_think=None, **kw):
         self.seen.append(messages)
         text, calls = self.script.pop(0) if self.script else ("Done!", [])
         if isinstance(text, Exception):

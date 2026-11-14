@@ -283,7 +283,9 @@ def _openai_chat(provider, name, key, messages, tools):
         if params is not None:
             fn["parameters"] = params
         defs.append({"type": "function", "function": fn})
-    body = {"model": name, "messages": msgs, "tools": defs}
+    body = {"model": name, "messages": msgs}
+    if defs:                       # a plain writing job has no tools, and an empty list is rejected
+        body["tools"] = defs
     body["max_completion_tokens" if provider == "openai" else "max_tokens"] = MAX_TOKENS
     url = PROVIDERS[provider]["base"] + "/chat/completions"
     full = dict(body, reasoning_effort="low")       # quicker replies for a voice assistant
@@ -371,8 +373,10 @@ def _anthropic_chat(name, key, messages, tools):
             m["content"].sort(key=lambda b: b["type"] != "tool_result")
 
     client = _anthropic_client(key)
-    base = {"model": name, "max_tokens": MAX_TOKENS, "messages": msgs,
-            "tools": [{"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]} for t in tools]}
+    base = {"model": name, "max_tokens": MAX_TOKENS, "messages": msgs}
+    if tools:
+        base["tools"] = [{"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}
+                         for t in tools]
     if system:
         base["system"] = system
     extra_body = {"output_config": {"effort": "low"}}           # quick replies for a voice assistant

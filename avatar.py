@@ -6,7 +6,9 @@ walks over to buttons to "press" them when the assistant clicks something.
 
 Control API (used by tools.py / app.py):  POST http://127.0.0.1:5056/cmd  {"do": ..., ...}
   anim {name}            base animation: idle | talk | think | sleepy
+  sleep {on}             on: walk to the bottom-right corner and doze there (no wandering); off: wake up and wave
   say {text, secs}       speech bubble
+  thought {text, secs}   thought cloud: what she's working on right now (empty text clears it)
   walk_to {x, y}         walk so her feet are at (x, y)          (waits until she arrives)
   go_point {x, y}        walk next to (x, y) and raise her hand to it (waits until the "tap")
   finish_point           finish the tap, then a happy hop
@@ -45,6 +47,7 @@ SCALE = 0.8          # character size on screen
 SPEED = 420          # walking speed, pixels per second
 TICK_MS = 33
 from shared import REACTIONS, host_allowed, work_area  # noqa: E402
+import sfx  # noqa: E402
 
 user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
 
@@ -160,10 +163,12 @@ class Nova:
         self.base = "idle"
         self.oneshot = None          # dict(name, start, hold_at, done_event, after)
         self.bubble = None           # (text, until)
+        self.thought = None          # (text, until): the thought cloud - what she's working on. Speech wins over it.
         self.visible = True
         self.next_wander = time.time() + random.uniform(8, 16)
         self.arrive_event = None
         self.carrying = False        # walking while holding a window: uses the "carry" animation, never turns around
+        self.asleep = False          # napping in the bottom-right corner (5 minutes without a task, or "go to sleep")
         self.next_fidget = time.time() + random.uniform(20, 40)
         self.dibs = {}
         self.q = queue.Queue()
@@ -179,6 +184,7 @@ class Nova:
         self.root.bind("<Button-3>", lambda e: self.react(random.choice(("laugh", "dance", "spin", "love", "clap", "wave"))))
         threading.Thread(target=self.serve, daemon=True).start()
         threading.Thread(target=self.watch_battery, daemon=True).start()
+        threading.Thread(target=sfx.build, daemon=True).start()     # makes data/sfx/*.wav the first time
         self.start_oneshot("wave")
         self.say("Hi! I'm Nova. I'll be right here on your screen ✨", 5)
         self.tick()
@@ -190,14 +196,20 @@ class Nova:
                         "repeat": max(1, int(repeat))}
         return ev
 
-    def react(self, name, repeat=None):
-        """Play a reaction. Dancing and laughing look best a few times over."""
+    def react(self, name, repeat=None, sound=True):
+        """Play a reaction. Dancing and laughing look best a few times over. `sound`: with its sound effect."""
         if name not in self.sp.images or name not in REACTIONS:
             return None
+        if sound:
+            self.sound(name)
         if repeat is None:
             repeat = {"dance": 3, "laugh": 2, "clap": 2}.get(name, 1)
         self.target = None if not self.carrying else self.target      # stop strolling to do it
         return self.start_oneshot(name, repeat=min(int(repeat), 8))
+
+    def sound(self, name):
+        """A reaction's sound effect (sfx.py). Idle fidgets pass sound=False, so this only runs for real reactions."""
+        self.last_sound = sfx.play(name)
 
     def fidget(self):
         """Small things she does by herself when nothing is happening."""
@@ -205,21 +217,54 @@ class Nova:
         sleepy_time = hour >= 23 or hour < 6
         r = random.random()
         if sleepy_time and r < .45:
-            self.react("yawn")
+            self.react("yawn", sound=False)
         elif r < .75:
-            self.react("look")
+            self.react("look", sound=False)
         elif r < .85:
-            self.react("spin")
+            self.react("spin", sound=False)
         elif r < .93:
-            self.react("nod")
+            self.react("nod", sound=False)
         else:
-            self.react("yawn")
+            self.react("yawn", sound=False)
 
     def say(self, text, secs=6):
         text = " ".join(str(text).split())
         if len(text) > 170:
             text = text[:167] + "…"
         self.bubble = (text, time.time() + secs) if text else None
+
+    def think_aloud(self, text, secs=12):
+        # Segoe UI has no emoji: they'd show as empty boxes, and the cloud's shape already says "thinking".
+        text = "".join(ch for ch in str(text) if ord(ch) < 0x2190 or ch in "→…")
+        text = " ".join(text.split())
+        if len(text) > 140:
+            text = text[:137] + "…"
+        self.thought = (text, time.time() + secs) if text else None
+
+    def corner(self):
+        """Where her feet go when she naps: the bottom-right corner of the screen."""
+        left, top, right, bottom = work_area()
+        return right - self.sp.w * .42, bottom      # far enough in that her hair and "z" aren't cut off
+
+    def nap(self):
+        if self.asleep:
+            return
+        self.asleep = True
+        self.oneshot = None
+        self.thought = None
+        self.base = "idle"               # walk over first, then lie down
+        self.next_wander = self.next_fidget = time.time() + 10 ** 9
+        ev = self.walk_to(*self.corner())
+        threading.Thread(target=lambda: (ev.wait(20), self.q.put(({"do": "_doze"}, None, None))), daemon=True).start()
+
+    def wake_up(self):
+        if not self.asleep:
+            return
+        self.asleep = False
+        self.base = "idle"
+        self.start_oneshot("wave")      # no "Hey!" here: she's usually woken to listen, and the mic would hear it
+        self.next_wander = time.time() + random.uniform(20, 40)
+        self.next_fidget = time.time() + random.uniform(25, 60)
 
     def walk_to(self, x, y):
         left, top, right, bottom = work_area()
@@ -256,7 +301,7 @@ class Nova:
                 low = bool(b and b.percent <= 15 and not b.power_plugged)
                 if low and self.base == "idle":
                     self.q.put(({"do": "anim", "name": "sleepy"}, None, None))
-                elif not low and self.base == "sleepy":
+                elif not low and self.base == "sleepy" and not self.asleep:
                     self.q.put(({"do": "anim", "name": "idle"}, None, None))
             except Exception:
                 pass
@@ -266,9 +311,20 @@ class Nova:
     def handle(self, cmd, done, result):
         do = cmd.get("do")
         if do == "anim" and cmd.get("name") in self.sp.images:
-            self.base = cmd["name"]
+            name = cmd["name"]
+            if self.asleep and name != "talk":
+                name = "sleepy"          # napping: only talking (in her sleep) changes the pose
+            self.base = name
+        elif do == "sleep":
+            self.nap() if cmd.get("on") else self.wake_up()
+        elif do == "_doze":
+            if self.asleep:
+                self.base = "sleepy"
+                self.start_oneshot("yawn")
         elif do == "say":
             self.say(cmd.get("text", ""), float(cmd.get("secs", 6)))
+        elif do == "thought":
+            self.think_aloud(cmd.get("text", ""), float(cmd.get("secs", 12)))
         elif do == "walk_to":
             ev = self.walk_to(float(cmd["x"]), float(cmd["y"]))
             threading.Thread(target=lambda: (ev.wait(15), done.set()), daemon=True).start()
@@ -296,9 +352,11 @@ class Nova:
                 self.start_oneshot("happy")
         elif do in ("happy", "wave"):
             self.start_oneshot(do)
+            self.sound(do)
         elif do == "react":
             ev = self.react(cmd.get("name", ""), cmd.get("repeat"))
             result["played"] = bool(ev)
+            result["sound"] = bool(ev) and getattr(self, "last_sound", False)
             if ev and cmd.get("wait"):
                 threading.Thread(target=lambda: (ev.wait(20), done.set()), daemon=True).start()
                 return
@@ -329,7 +387,8 @@ class Nova:
                 self.root.deiconify()
         elif do == "reload":
             self.sp.load()
-        result["pos"] = self.pos
+        if result is not None:       # commands she queues for herself (battery, dozing off) have no caller waiting
+            result["pos"] = self.pos
         if done:
             done.set()
 
@@ -366,6 +425,7 @@ class Nova:
                     return
                 b = nova.bubble
                 body = json.dumps({"ok": True, "pos": nova.pos, "visible": nova.visible, "talking": nova.base == "talk",
+                                   "asleep": nova.asleep, "base": nova.base,
                                    "bubble": b[0] if b and time.time() < b[1] else "",
                                    "reactions": [r for r in REACTIONS if r in nova.sp.images]}).encode()
                 self.send_response(200)
@@ -395,7 +455,8 @@ class Nova:
             except Exception:
                 pass
         self.drag = None
-        self.next_wander = time.time() + random.uniform(20, 40)
+        if not self.asleep:
+            self.next_wander = time.time() + random.uniform(20, 40)
 
     # ------------------------------------------------------------ main loop
     def tick(self):
@@ -426,7 +487,7 @@ class Nova:
             self.walk_to(*self.wander())
             self.next_wander = now + random.uniform(15, 35)
         elif (not self.oneshot and self.base == "idle" and now > self.next_fidget and not self.drag and not self.target
-              and not (self.bubble and now < self.bubble[1])):
+              and not (self.bubble and now < self.bubble[1]) and not (self.thought and now < self.thought[1])):
             self.fidget()
             self.next_fidget = now + random.uniform(25, 60)
 
@@ -467,23 +528,30 @@ class Nova:
     def render(self, name, idx, flip):
         sw, sh = self.sp.w, self.sp.h
         fx, fy = self.sp.feet
-        if self.bubble and time.time() < self.bubble[1]:
-            canvas, xoff, yoff = self.compose_bubble(self.sp.image(name, idx, flip))
+        now = time.time()
+        if self.bubble and now >= self.bubble[1]:
+            self.bubble = None
+        if self.thought and now >= self.thought[1]:
+            self.thought = None
+        if self.bubble or self.thought:       # speaking beats thinking: the cloud waits under the speech bubble
+            text, thought = (self.bubble[0], False) if self.bubble else (self.thought[0], True)
+            canvas, xoff, yoff = self.compose_bubble(self.sp.image(name, idx, flip), text, thought)
             data, w, h = premultiplied_bgra(canvas), canvas.width, canvas.height
         else:
-            self.bubble = None
             data, w, h, xoff, yoff = self.sp.bytes(name, idx, flip), sw, sh, 0, 0
         x = round(self.pos[0] - xoff - fx)
         y = round(self.pos[1] - yoff - fy)
         self.blit(data, w, h, x, y)
 
-    def compose_bubble(self, frame):
-        text = textwrap.fill(self.bubble[0], 30)
+    def compose_bubble(self, frame, text, thought=False):
+        """Her frame with a bubble above it: a speech bubble with a pointed tail, or (thought=True) a thought cloud -
+        rounder, tinted, with little circles rising from her head instead of a tail."""
+        text = textwrap.fill(text, 30)
         d = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
         l, t, r, b = d.multiline_textbbox((0, 0), text, font=self.font, spacing=4)
-        pad = 12
+        pad = 14 if thought else 12
         bw, bh = r - l + pad * 2, b - t + pad * 2
-        tail = 14
+        tail = 22 if thought else 14
         cw = max(frame.width, bw + 4)
         ch = frame.height + bh + tail
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
@@ -491,11 +559,19 @@ class Nova:
         canvas.alpha_composite(frame, (xoff, bh + tail))
         g = ImageDraw.Draw(canvas)
         bx = (cw - bw) // 2
-        g.rounded_rectangle((bx, 0, bx + bw - 1, bh - 1), radius=14, fill=(250, 248, 255, 245), outline=(124, 92, 255, 255), width=2)
         mx = cw // 2
-        g.polygon([(mx - 9, bh - 2), (mx + 9, bh - 2), (mx + 2, bh + tail)], fill=(250, 248, 255, 245))
-        g.line([(mx - 9, bh - 1), (mx + 2, bh + tail), (mx + 9, bh - 1)], fill=(124, 92, 255, 255), width=2)
-        g.multiline_text((bx + pad - l, pad - t), text, font=self.font, fill=(30, 24, 60, 255), spacing=4)
+        line = (124, 92, 255, 255)
+        if thought:
+            fill = (236, 250, 254, 240)
+            g.rounded_rectangle((bx, 0, bx + bw - 1, bh - 1), radius=min(bh // 2, 24), fill=fill, outline=(34, 190, 220, 255), width=2)
+            for cx, cy, rad in ((mx + 4, bh + 6, 6), (mx + 12, bh + 17, 4)):     # the trail of little thought circles
+                g.ellipse((cx - rad, cy - rad, cx + rad, cy + rad), fill=fill, outline=(34, 190, 220, 255), width=2)
+            g.multiline_text((bx + pad - l, pad - t), text, font=self.font, fill=(20, 60, 80, 255), spacing=4)
+        else:
+            g.rounded_rectangle((bx, 0, bx + bw - 1, bh - 1), radius=14, fill=(250, 248, 255, 245), outline=line, width=2)
+            g.polygon([(mx - 9, bh - 2), (mx + 9, bh - 2), (mx + 2, bh + tail)], fill=(250, 248, 255, 245))
+            g.line([(mx - 9, bh - 1), (mx + 2, bh + tail), (mx + 9, bh - 1)], fill=line, width=2)
+            g.multiline_text((bx + pad - l, pad - t), text, font=self.font, fill=(30, 24, 60, 255), spacing=4)
         return canvas, xoff, bh + tail
 
     def blit(self, data, w, h, x, y):
