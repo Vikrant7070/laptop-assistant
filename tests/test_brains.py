@@ -115,3 +115,10 @@ def test_tool_result_truncated(monkeypatch):
     monkeypatch.setattr(llm, "supports_tools", lambda m: True)
     m = llm.tool_result_message("x", {"name": "t"}, "a" * 5000)
     assert len(m["content"]) < 1700
+
+
+def test_contact_details_never_stored():
+    for v in ("Email: someone@example.com", "my number is +91 98765 43210", "call 9876543210"):
+        assert "don't keep" in knowledge.update_profile("facts", v), v
+    assert "Noted" in knowledge.update_profile("facts", "Birthday is on 2026-11-14")   # dates are fine
+    assert "don't keep" in knowledge.learn_lesson("mailing", "Send it to a@b.co")

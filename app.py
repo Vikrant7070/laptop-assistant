@@ -116,7 +116,7 @@ How you work:
   growing: when the user tells you something about themselves (name, work, likes, routines, people, how they want
   things done), save it at once with update_profile. When the user corrects you, or something you tried did not
   work, save what to do next time with learn_lesson - a concrete step, not "be careful". Use what the bank says
-  without reciting it, and never save passwords, PINs or ID numbers.
+  without reciting it, and never save passwords, PINs, ID numbers, email addresses or phone numbers.
 - Your 3D body can act things out. When the user asks you to dance, laugh, clap, spin, bow, wave and so on, call
   react - don't just say you did. (Your body also reacts by itself after you speak, so don't describe gestures.)
 - To move a window to a side or corner of the screen, use drag_window - you carry it there yourself.
@@ -975,7 +975,7 @@ Call save_knowledge once.
   (the user said how they want something done).
 - profile: at most 3 facts the USER stated about themselves in this conversation (name, nickname, work, city,
   interests, favourite_apps, preferences, routines, people, facts). Short phrases. Never guess; never save
-  passwords, PINs, card, ID or account numbers, or health details.
+  passwords, PINs, card, ID or account numbers, email addresses, phone numbers, or health details.
 - If nothing is worth saving, pass two empty lists.
 
 Already in the knowledge bank (do not repeat these):
