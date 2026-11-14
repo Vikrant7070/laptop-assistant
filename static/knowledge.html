@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova's knowledge bank</title>
+<style>
+  :root{--bg:#0d0f1a;--panel:#151829;--line:#272c48;--text:#e9ebff;--muted:#8d93b8;--accent:#7c5cff;--accent2:#6ee7f9;--warn:#ff8fa6}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14.5px/1.5 "Segoe UI",system-ui,sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:18px 16px 60px}
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:21px;margin:0;flex:1;text-wrap:balance}
+  h2{font-size:16px;margin:26px 0 4px}
+  p.lead{color:var(--muted);margin:2px 0 10px;max-width:70ch}
+  a.back,button{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font:inherit;cursor:pointer;text-decoration:none}
+  a.back:hover,button:hover{border-color:var(--accent)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:8px 0}
+  .field{display:grid;grid-template-columns:190px 1fr;gap:6px 14px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .field:last-child{border-bottom:0}
+  .field>.name{color:var(--muted)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .chip{background:#1d2140;border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 11px;display:inline-flex;gap:6px;align-items:center;max-width:100%;overflow-wrap:anywhere}
+  .chip button,.lesson button.del{border:0;background:transparent;color:var(--muted);padding:0 5px;border-radius:50%;font-size:15px;line-height:1}
+  .chip button:hover,.lesson button.del:hover{color:var(--warn)}
+  input,select{background:#0f1222;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font:inherit;min-width:0}
+  input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--accent2);outline-offset:1px}
+  form.add{display:flex;gap:6px;flex:1 1 220px}
+  form.add input{flex:1}
+  .lesson{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .lesson:last-child{border-bottom:0}
+  .lesson .what{font-weight:600;overflow-wrap:anywhere}
+  .lesson .meta{color:var(--muted);font-size:12.5px;grid-column:1/-1;overflow-wrap:anywhere}
+  .tag{display:inline-block;border-radius:6px;padding:0 7px;font-size:12px;margin-right:6px;border:1px solid var(--line)}
+  .tag.mistake{color:var(--warn)} .tag.improvement{color:var(--accent2)} .tag.preference{color:#ffd25e}
+  .empty{color:var(--muted);padding:8px 0}
+  form.newlesson{display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;margin-top:10px}
+  #msg{color:var(--accent2);min-height:1.4em;margin-top:8px}
+  .note{color:var(--muted);font-size:12.5px;margin-top:18px;overflow-wrap:anywhere}
+  @media (max-width:640px){.field{grid-template-columns:1fr}.newlesson{grid-template-columns:1fr!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🧠 Nova's knowledge bank</h1>
+    <a class="back" href="/">← Back to chat</a>
+  </header>
+  <p class="lead">What Nova knows about you and what she has learned from her own mistakes. She reads this before every answer and adds to it as you talk. You can correct or remove anything here.</p>
+  <div id="msg" role="status" aria-live="polite"></div>
+
+  <h2>About you</h2>
+  <p class="lead">Tell Nova in chat ("I'm a trader", "call me boss", "I like lo-fi music") or add it here.</p>
+  <div class="card" id="profile"></div>
+
+  <h2>Lessons Nova has learned</h2>
+  <p class="lead">Written when you correct her, when a task fails, or when she finds what works. Lessons that come up again count for more.</p>
+  <div class="card">
+    <div id="lessons"></div>
+    <form class="newlesson" id="newlesson">
+      <input name="situation" placeholder="When… (e.g. opening YouTube)" aria-label="When this applies">
+      <input name="lesson" placeholder="Nova should… (e.g. use Chrome, not Edge)" aria-label="What Nova should do" required>
+      <select name="kind" aria-label="Kind of lesson"><option value="preference">How I like it</option><option value="mistake">A mistake to avoid</option><option value="improvement">A better way</option></select>
+      <button>Add lesson</button>
+    </form>
+  </div>
+  <div class="note" id="where"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+let flash;
+function say(t) { $("msg").textContent = t; clearTimeout(flash); flash = setTimeout(() => $("msg").textContent = "", 4000); }
+async function send(body) {
+  const r = await fetch("/api/knowledge", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const j = await r.json(); say(j.message || j.error || ""); load();
+}
+async function load() {
+  const k = await (await fetch("/api/knowledge")).json();
+  $("profile").innerHTML = [...k.one, ...k.many].map(f => {
+    const vals = k.one.includes(f) ? (k.profile[f] ? [k.profile[f]] : []) : k.profile[f];
+    const chips = vals.map(v => `<span class="chip">${esc(v)}<button title="Remove" aria-label="Remove ${esc(v)}" data-f="${f}" data-v="${esc(v)}">×</button></span>`).join("");
+    return `<div class="field"><div class="name">${esc(k.labels[f])}</div><div class="chips">${chips}
+      <form class="add" data-f="${f}"><input placeholder="${k.one.includes(f) ? (vals.length ? "Change…" : "Add…") : "Add…"}" aria-label="Add to ${esc(k.labels[f])}"><button>Add</button></form></div></div>`;
+  }).join("");
+  $("lessons").innerHTML = k.lessons.length ? k.lessons.map(l => `<div class="lesson">
+      <div class="what"><span class="tag ${esc(l.kind)}">${esc(l.kind)}</span>${esc(l.lesson)}</div>
+      <button class="del" title="Delete this lesson" aria-label="Delete this lesson" data-id="${l.id}">×</button>
+      <div class="meta">${l.situation ? "When: " + esc(l.situation) + " · " : ""}learned ${esc(l.when || "")}${l.hits > 1 ? " · came up " + l.hits + " times" : ""}${l.source === "auto" ? " · noticed by herself" : l.source === "user" ? " · added by you" : l.source === "starter" ? " · starter lesson" : ""}</div>
+    </div>`).join("") : `<div class="empty">No lessons yet. She will write one the first time something goes wrong.</div>`;
+  $("where").textContent = "Saved in this file on your laptop: " + k.file + ". When Nova thinks with a cloud brain (Gemini, ChatGPT or Claude), a short summary of this page is sent along with each message so she can use it; with the local brain nothing leaves the laptop.";
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.v !== undefined) send({do: "profile_remove", field: b.dataset.f, value: b.dataset.v});
+  else if (b.dataset.id) send({do: "lesson_delete", id: +b.dataset.id});
+});
+document.addEventListener("submit", e => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.id === "newlesson") { send({do: "lesson_add", situation: f.situation.value, lesson: f.lesson.value, kind: f.kind.value}); f.reset(); }
+  else if (f.dataset.f) { const v = f.querySelector("input").value.trim(); if (v) send({do: "profile_add", field: f.dataset.f, value: v}); }
+});
+load();
+</script>
+</body>
+</html>

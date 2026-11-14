@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova ear</title>
+<style>
+  :root{--bg:#151829;--line:#7c5cff;--text:#e9ebff;--muted:#a9aed0;--accent2:#22d3ee}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px "Segoe UI",system-ui,sans-serif;overflow:hidden}
+  .wrap{box-sizing:border-box;height:100%;border:2px solid var(--line);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+  .top{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+  .dot{width:10px;height:10px;border-radius:50%;background:#555}
+  .listening .dot{background:#f87171;animation:pulse 1s infinite}
+  .thinking .dot{background:var(--accent2);animation:pulse .6s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  input{flex:1;background:#0d0f1a;border:1px solid #2c3160;border-radius:10px;padding:9px 11px;color:var(--text);font:inherit;outline:none}
+  input:focus{border-color:var(--accent2)}
+  .x{margin-left:auto;cursor:pointer;color:var(--muted);border:0;background:none;font:inherit}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="top"><span class="dot"></span><span id="status">Nova is listening…</span><button class="x" id="sleep" title="Stop listening">😴 sleep</button></div>
+  <input id="said" autocomplete="off" placeholder="Speak now… (or type and press Enter)">
+</div>
+<script>
+const $ = s => document.querySelector(s), said = $("#said"), wrap = $("#wrap");
+let watch = null, listening = false;
+
+function setState(cls, text) { wrap.className = "wrap " + cls; $("#status").textContent = text; }
+
+async function startListening() {
+  clearInterval(watch);
+  said.value = ""; listening = true;
+  window.focus(); said.focus();
+  setState("listening", "Nova is listening… speak now");
+  await fetch("/api/voice_typing?fresh=1", {method: "POST"});   // Windows voice typing types into this box
+  let last = "", still = 0, quiet = 0;
+  watch = setInterval(() => {
+    const v = said.value.trim();
+    if (!v) { if (++quiet >= 30) { stop(); fetch("/api/ear_idle", {method: "POST"}); } return; }   // 15 s of nothing
+    if (v === last) { if (++still >= 4) { submit(v); } } else { still = 0; last = v; }            // 2 s pause = done
+  }, 500);
+}
+
+function stop() { clearInterval(watch); listening = false; }
+
+function submit(text) {
+  stop();
+  said.value = "";
+  setState("thinking", "“" + text.slice(0, 60) + "” - thinking…");
+  fetch("/api/ear_said", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text})});
+}
+
+said.addEventListener("keydown", e => { if (e.key === "Enter" && said.value.trim()) submit(said.value.trim()); });
+$("#sleep").onclick = () => { stop(); fetch("/api/ear_said", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text: "go to sleep"})}); };
+
+async function poll() {
+  try {
+    const j = await (await fetch("/api/ear")).json();
+    for (const c of j.cmds) {
+      if (c.do === "listen") startListening();
+      if (c.do === "stop") { stop(); setState("", "Sleeping"); }
+    }
+    if (!listening) {
+      if (j.thinking) setState("thinking", "Nova is thinking…");
+      else if (j.speaking) setState("thinking", "Nova is talking…");
+    }
+  } catch {}
+  setTimeout(poll, 400);
+}
+poll();
+</script>
+</body>
+</html>

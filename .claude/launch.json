@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nova",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app.py"],
+      "env": { "NOVA_NO_BROWSER": "1" },
+      "port": 5055
+    }
+  ]
+}
