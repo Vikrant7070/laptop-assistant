@@ -184,18 +184,20 @@ def reset_cloud():
     _cloud_down.update(until=0.0, why="")
 
 
-def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_think=None, num_predict=200):
+def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_think=None, num_predict=200,
+         reasoning="low"):
     """One model turn. Returns (assistant_message_to_store, text, [ {id,name,args} ]).
     on_text(piece) gets the reply piece by piece while it is being written, so Nova can start speaking the first
     sentence before the last one exists. on_think(piece) gets the model's own reasoning, when it shows any (a local
-    thinking model; cloud models keep theirs hidden), for the chat's "what Nova is thinking" log.
+    thinking model, or a summary from Gemini / Claude), for the chat's "what Nova is thinking" log.
+    reasoning ("low" | "high" | "max") sets how hard a cloud model thinks first.
     For a cloud model ("cloud:provider:name"), any failure (no internet, bad key, credit ran out...) makes this
     turn run on the local Ollama model `fallback` instead; LAST["fallback"] then says why."""
     LAST["fallback"] = None
     if cloud.parse(model):
         if time.time() >= _cloud_down["until"]:
             try:
-                stored, text, calls = cloud.chat(model, messages, tools)
+                stored, text, calls = cloud.chat(model, messages, tools, reasoning=reasoning, on_think=on_think)
                 if on_text and text:
                     on_text(text)
                 return stored, text, calls

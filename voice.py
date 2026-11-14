@@ -380,6 +380,11 @@ class Mouth:
         return (self.speaking or self.pending > 0 or not self.q.empty() or not self.audio.empty()
                 or time.time() - self.last_end < 0.8 or time.time() < self.hold_until)
 
+    def talking(self):
+        """Is she saying something right now (or about to)? Unlike busy(), no grace period after the last word."""
+        return (self.speaking or self.pending > 0 or not self.q.empty() or not self.audio.empty()
+                or time.time() < self.hold_until)
+
     def hold(self, secs):
         """3D Nova is making a sound (a reaction's giggle, claps...): don't listen over it."""
         self.hold_until = max(self.hold_until, time.time() + secs)

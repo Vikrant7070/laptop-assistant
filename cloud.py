@@ -31,6 +31,16 @@ MAX_TOKENS = 4096   # room for the model's own (hidden) reasoning; Nova's prompt
 # after this long, give up and let the local model answer.
 CHAT_TIMEOUT = 25
 
+# How hard the cloud brain thinks before answering (settings "reasoning"; "auto" is resolved in app.py).
+# low = quick voice replies; high/max = real step-by-step reasoning for hard tasks - slower, more tokens.
+LEVELS = ("low", "high", "max")
+LEVEL_TOKENS = {"low": MAX_TOKENS, "high": 16000, "max": 32000}
+# Healthy deep replies took 8-35 s (gemini-4-argon on max); a stuck one hung the full 180 s before the local model
+# took over. Past these limits, waiting longer rarely ends in an answer, so the local brain steps in.
+LEVEL_TIMEOUT = {"low": CHAT_TIMEOUT, "high": 50, "max": 75}
+# reasoning_effort values to try, best first (Gemini's OpenAI endpoint has no "xhigh"; OpenAI's newer models do)
+_OPENAI_EFFORT = {"low": ["low"], "high": ["high"], "max": ["xhigh", "high"]}
+
 
 class CloudError(Exception):
     pass
@@ -246,6 +256,7 @@ def _stored(text, calls):
 # ------------------------------------------------------------------ Gemini + OpenAI (chat completions)
 
 _plain = set()    # models that refused an optional setting (e.g. reasoning_effort): sent without extras from then on
+_works = {}       # (model, level, show) -> index of the first request extra that model accepted
 
 
 def _schema(t, provider):
@@ -257,7 +268,7 @@ def _schema(t, provider):
     return params
 
 
-def _openai_chat(provider, name, key, messages, tools):
+def _openai_chat(provider, name, key, messages, tools, level="low", show=False):
     system, turns = _neutral(messages)
     msgs = [{"role": "system", "content": system}] if system else []
     for t in turns:
@@ -286,16 +297,23 @@ def _openai_chat(provider, name, key, messages, tools):
     body = {"model": name, "messages": msgs}
     if defs:                       # a plain writing job has no tools, and an empty list is rejected
         body["tools"] = defs
-    body["max_completion_tokens" if provider == "openai" else "max_tokens"] = MAX_TOKENS
+    body["max_completion_tokens" if provider == "openai" else "max_tokens"] = LEVEL_TOKENS[level]
     url = PROVIDERS[provider]["base"] + "/chat/completions"
-    full = dict(body, reasoning_effort="low")       # quicker replies for a voice assistant
-    try:
-        r = _http("POST", url, key, body if name in _plain else full, timeout=CHAT_TIMEOUT)
-    except CloudError as e:
-        if name in _plain or "400" not in str(e) or not re.search(r"reason|effort|thinking|unknown|unsupported|unrecognized", str(e), re.I):
-            raise
-        _plain.add(name)
-        r = _http("POST", url, key, body, timeout=CHAT_TIMEOUT)
+    r = None
+    tries = _openai_tries(provider, name, level, show)
+    for i, extra in enumerate(tries):
+        try:
+            r = _http("POST", url, key, dict(body, **extra), timeout=LEVEL_TIMEOUT[level])
+        except CloudError as e:
+            last = i == len(tries) - 1
+            if last or "400" not in str(e) or not re.search(
+                    r"reason|effort|thinking|thought|extra_body|unknown|unsupported|unrecognized|invalid", str(e), re.I):
+                raise
+            continue
+        _works[(name, level, show)] = i        # next time start with what worked
+        if not extra:
+            _plain.add(name)                   # takes no reasoning settings at all
+        break
     choice = (r.get("choices") or [{}])[0]
     m = choice.get("message") or {}
     calls = []
@@ -310,7 +328,26 @@ def _openai_chat(provider, name, key, messages, tools):
     text = m.get("content") or ""
     if isinstance(text, list):   # some models return content parts
         text = "".join(p.get("text", "") for p in text if isinstance(p, dict))
-    return text, calls
+    # Gemini (include_thoughts) puts a summary of its reasoning in <thought> tags; some models use reasoning_content.
+    thoughts = re.findall(r"<thought>(.*?)</thought>", text, re.S)
+    text = re.sub(r"<thought>.*?</thought>", "", text, flags=re.S).strip()
+    thoughts += [m.get("reasoning_content") or m.get("reasoning") or ""]
+    return text, calls, "\n".join(t.strip() for t in thoughts if isinstance(t, str) and t.strip())
+
+
+def _openai_tries(provider, name, level, show):
+    """Request extras to try in order, from the full reasoning setup down to none (an older model rejects them)."""
+    if name in _plain:
+        return [{}]
+    tries = []
+    for effort in _OPENAI_EFFORT[level]:
+        if provider == "google" and show:     # ask Gemini for a summary of its thoughts, for the thinking log
+            tries.append({"reasoning_effort": effort,
+                          "extra_body": {"google": {"thinking_config": {"include_thoughts": True}}}})
+        tries.append({"reasoning_effort": effort})
+    tries.append({})
+    start = _works.get((name, level, show), 0)
+    return tries[start:] if start < len(tries) else tries
 
 
 # ------------------------------------------------------------------ Anthropic (official SDK)
@@ -347,7 +384,7 @@ def _anthropic_error(e):
     return f"Claude error: {e}"[:300]
 
 
-def _anthropic_chat(name, key, messages, tools):
+def _anthropic_chat(name, key, messages, tools, level="low", show=False):
     import anthropic
     system, turns = _neutral(messages)
     msgs = []
@@ -372,14 +409,17 @@ def _anthropic_chat(name, key, messages, tools):
         if m["role"] == "user":
             m["content"].sort(key=lambda b: b["type"] != "tool_result")
 
-    client = _anthropic_client(key)
-    base = {"model": name, "max_tokens": MAX_TOKENS, "messages": msgs}
+    client = _anthropic_client(key).with_options(timeout=LEVEL_TIMEOUT[level])
+    # Non-streaming requests over ~21k max_tokens are refused by the SDK, so high and max both get 16k.
+    base = {"model": name, "max_tokens": min(LEVEL_TOKENS[level], 16000), "messages": msgs}
     if tools:
         base["tools"] = [{"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}
                          for t in tools]
     if system:
         base["system"] = system
-    extra_body = {"output_config": {"effort": "low"}}           # quick replies for a voice assistant
+    extra_body = {"output_config": {"effort": level}}           # low = quick voice replies; high/max = deep reasoning
+    if show:   # adaptive thinking is on by default on current models; this only makes its summary readable
+        extra_body["thinking"] = {"type": "adaptive", "display": "summarized"}
     extra_headers = {}
     if name in _FALLBACK_MODELS:      # if Claude declines a request, the API retries it on another Claude model
         extra_body["fallbacks"] = "default"
@@ -396,25 +436,33 @@ def _anthropic_chat(name, key, messages, tools):
     except Exception as e:
         raise CloudError(_anthropic_error(e)) from e
     if r.stop_reason == "refusal":
-        return "Sorry yaar, I can't help with that one.", []
+        return "Sorry yaar, I can't help with that one.", [], ""
     text = "".join(b.text for b in r.content if b.type == "text")
     calls = [{"id": b.id, "name": b.name, "args": b.input if isinstance(b.input, dict) else {}}
              for b in r.content if b.type == "tool_use"]
-    return text, calls
+    # Shown in the thinking log only - never stored (Nova edits her history, which preserved thinking forbids).
+    thoughts = "\n".join((getattr(b, "thinking", "") or "") for b in r.content if b.type == "thinking").strip()
+    return text, calls, thoughts
 
 
 # ------------------------------------------------------------------ one turn
 
-def chat(model, messages, tools):
-    """Returns (assistant_message_in_ollama_format, text, calls[{id,name,args}])."""
+def chat(model, messages, tools, reasoning="low", on_think=None):
+    """Returns (assistant_message_in_ollama_format, text, calls[{id,name,args}]).
+    reasoning: "low" | "high" | "max" - how hard the model thinks first. on_think(text) gets a readable summary of
+    that reasoning when the provider returns one (Gemini and Claude do; OpenAI's chat endpoint keeps it hidden)."""
     provider, name = parse(model)
+    level = reasoning if reasoning in LEVELS else "low"
+    show = on_think is not None
     key = get_key(provider)
     if not key:
         raise CloudError(f"No API key saved for {PROVIDERS[provider]['label']}.")
     if provider == "anthropic":
-        text, calls = _anthropic_chat(name, key, messages, tools)
+        text, calls, thoughts = _anthropic_chat(name, key, messages, tools, level, show)
     elif provider in PROVIDERS:
-        text, calls = _openai_chat(provider, name, key, messages, tools)
+        text, calls, thoughts = _openai_chat(provider, name, key, messages, tools, level, show)
     else:
         raise CloudError(f"Unknown provider '{provider}'.")
+    if thoughts and on_think:
+        on_think(thoughts)
     return _stored(text, calls), text, [{"id": c["id"], "name": c["name"], "args": c["args"]} for c in calls]

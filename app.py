@@ -26,7 +26,7 @@ import skills
 import toolpick
 import tools
 import voice
-from shared import host_allowed, ps_escape
+from shared import REACTIONS, host_allowed, ps_escape
 
 ROOT = Path(__file__).parent
 PORT = int(os.environ.get("PORT", 5055))
@@ -47,7 +47,7 @@ def _unspoken(text):
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
          "provider": "ollama", "cloud_models": {}, "notifications": False, "suggest": False,
-         "reaction_sounds": True, "power_ok": False}
+         "reaction_sounds": True, "power_ok": False, "reasoning": "auto"}
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
@@ -163,6 +163,26 @@ HEAR_MIXED = """- The user may speak Hindi or Hinglish. It reaches you written i
 """
 PERSONA = PERSONA.replace("{TALK}", TALK_ENGLISH if voice.ENGLISH_ONLY else TALK_MIXED).replace(
     "{HEAR}", "" if voice.ENGLISH_ONLY else HEAR_MIXED)
+
+
+# How hard her brain thinks first (settings "reasoning"): low / high / max, or auto = low for everyday chat and
+# quick actions, high for questions that need working out and for long or failing tasks. The same choice also turns
+# a local thinking model's "think" on, so the backup brain follows it too.
+REASONING_CHOICES = ("auto", *cloud.LEVELS)
+HARD_ASK = re.compile(
+    r"\b(why|explain|compare|plan|analy[sz]e|reason|step[- ]by[- ]step|think (it|this) through|figure out|calculate|"
+    r"solve|debug|code|script|program|research|draft|essay|summari[sz]e|pros and cons|best way|strategy|"
+    r"difference between|optimi[sz]e|troubleshoot|math|proof|puzzle)\b|\bhow (do|does|can|should|would|to)\b", re.I)
+
+
+def reasoning_level(s, task=None):
+    pick = s.get("reasoning", "auto")
+    if pick in cloud.LEVELS:
+        return pick
+    goal = (task or {}).get("goal", "")
+    if task and (task.get("steps", 0) >= 3 or task.get("done") is False):   # a long task, or a check said "not done"
+        return "high"
+    return "high" if len(goal) > 160 or HARD_ASK.search(goal) else "low"
 
 
 def active_tools(model):
@@ -471,6 +491,7 @@ def new_turn():
 def new_task(goal):
     task_log(f"\n=== {time.strftime('%Y-%m-%d')} REQUEST: {goal[:300]}")
     new_turn()
+    state.pop("react_after", None)
     clean = _unspoken(goal)[:300]
     last = state.get("task") or {}
     try:
@@ -636,6 +657,8 @@ def _execute_one(c, approved, activity, model):
         think(f"🚫 Skipping: {ASK.get(c['name'], c['name']).lower()} (not allowed).")
     elif c["name"] == "run_skill":
         out = run_skill(c["args"] or {}, approved, activity, model)
+    elif c["name"] == "react" and avatar_client.running():
+        out = queue_reaction(c["args"] or {}, activity)
     elif c["name"] == "go_to_sleep":
         state["sleep_after"] = True         # she says goodnight first; heard()/chat() then really end the conversation
         activity.append(FRIENDLY["go_to_sleep"])
@@ -771,13 +794,17 @@ def _agent_loop(activity):
         stream = SpeechStream() if not (task and task["steps"]) else None
         think("💭 Working out what you need…" if turns == 1 and not did_something else "💭 Deciding the next step…")
         reasoning = ThoughtStream()
+        level = reasoning_level(s, task)
+        if level != "low" and cloud.parse(model):
+            think(f"🧠 Thinking this through carefully ({level} reasoning)…", cloud_too=False)
         t0 = time.time()
-        stored, text, calls = interruptible(llm.chat, model, msgs, active_tools(model), think=s["think"],
+        stored, text, calls = interruptible(llm.chat, model, msgs, active_tools(model),
+                                            think=s["think"] or level != "low", reasoning=level,
                                             on_text=unless_stopped(stream.feed if stream else None),
                                             fallback=s["model"], on_think=unless_stopped(reasoning.feed))
         reasoning.flush()
         used = s["model"] if llm.LAST["fallback"] else model
-        task_log(f"BRAIN {time.time() - t0:.1f}s ({'local fallback' if llm.LAST['fallback'] else model})")
+        task_log(f"BRAIN {time.time() - t0:.1f}s ({'local fallback' if llm.LAST['fallback'] else model}, {level})")
         think(f"⏱ Thought for {time.time() - t0:.1f}s ({used.replace('cloud:', '')})"
               + (f" → {len(calls)} step{'s' if len(calls) > 1 else ''} to do" if calls else " → answering"),
               cloud_too=False)
@@ -919,7 +946,7 @@ def index():
 def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
-                   autonomy=s["autonomy"], think=s["think"], camera=s["camera"], screen=s["screen"],
+                   autonomy=s["autonomy"], think=s["think"], reasoning=s.get("reasoning", "auto"), camera=s["camera"], screen=s["screen"],
                    notifications=s["notifications"], suggest=s.get("suggest", False), asleep=nap["asleep"],
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    autostart=STARTUP_LNK.exists(),
@@ -940,6 +967,8 @@ def setup():
         s["cloud_models"] = dict(s.get("cloud_models") or {}, **{s["provider"]: cloud_model})
     if "think" in body:
         s["think"] = bool(body["think"])
+    if body.get("reasoning") in REASONING_CHOICES:
+        s["reasoning"] = body["reasoning"]
     if "camera" in body:
         s["camera"] = bool(body["camera"])
     if "screen" in body:
@@ -1301,19 +1330,35 @@ def pick_reaction(user_text, out):
     return None
 
 
-def react_later(reaction, wait_for_speech=True):
-    """Play a reaction once she has finished speaking (so her lips and the sound stay together)."""
+def queue_reaction(args, activity):
+    """The react tool during a chat: don't act it out now (she hasn't said anything yet) - after_turn plays it the
+    moment she finishes speaking, so a laugh comes after the joke."""
+    name = tools.reaction_name(args.get("reaction"))
+    if name not in REACTIONS:
+        return f"I can't do '{args.get('reaction')}'. I can: {', '.join(REACTIONS)}."
+    try:
+        times = int(args.get("times") or 0) or None
+    except (TypeError, ValueError):
+        times = None
+    state["react_after"] = {"name": name, "repeat": times}
+    activity.append(FRIENDLY["react"])
+    return (f"OK: you'll {name} right after you finish speaking this answer. Now give your answer; "
+            f"don't say you already did it.")
+
+
+def react_later(reaction, wait_for_speech=True, repeat=None):
+    """Play a reaction the moment she has finished speaking - a laugh right after the joke's punchline, not before."""
     if not reaction:
         return
 
     def run():
         if wait_for_speech:
-            time.sleep(0.6)
-            end = time.time() + 40
-            while mouth.busy() and time.time() < end:
-                time.sleep(0.15)
-        if not mouth.busy() or not wait_for_speech:
-            out = avatar_client.send("react", name=reaction, timeout=2)
+            time.sleep(0.2)                      # speak() has queued the answer by now
+            end = time.time() + 60
+            while mouth.talking() and time.time() < end:
+                time.sleep(0.05)
+        if not mouth.talking() or not wait_for_speech:
+            out = avatar_client.send("react", name=reaction, repeat=repeat, timeout=2)
             if out and out.get("played"):
                 mouth.hold(sfx.length(reaction) + 0.3)     # its sound effect: keep the mic from hearing it
             task_log(f"REACTION: {reaction}")
@@ -1445,7 +1490,13 @@ def after_turn(user_text, out):
     try:
         clean_text = _unspoken(user_text)
         corrected = bool(CORRECTION_RE.search(clean_text))
-        react_later("facepalm" if corrected else pick_reaction(clean_text, out), wait_for_speech=not corrected)
+        asked = state.pop("react_after", None)      # the brain's own pick (react tool) wins over the automatic one
+        if corrected:
+            react_later("facepalm", wait_for_speech=False)
+        elif asked:
+            react_later(asked["name"], repeat=asked["repeat"])
+        else:
+            react_later(pick_reaction(clean_text, out))
         why = why_review(user_text, out)
         if why:
             review_turn(why)
