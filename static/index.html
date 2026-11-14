@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%237c5cff'/><circle cx='35' cy='45' r='7' fill='white'/><circle cx='65' cy='45' r='7' fill='white'/><path d='M35 65 Q50 75 65 65' stroke='white' stroke-width='5' fill='none' stroke-linecap='round'/></svg>">
+<style>
+:root{
+  --bg:#0d0f1a; --panel:#151829; --panel2:#1c2036; --line:#272c48; --text:#e9ebff; --muted:#8d93b8;
+  --accent:#7c5cff; --accent2:#22d3ee; --good:#34d399; --warn:#fbbf24; --bad:#f87171;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+.app{display:grid;grid-template-columns:300px 1fr 300px;height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:20px;overflow:auto}
+aside.right{border-right:0;border-left:1px solid var(--line)}
+h3{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:22px 0 10px}
+h3:first-child{margin-top:0}
+
+/* ---------- avatar ---------- */
+.avatar-wrap{display:flex;flex-direction:column;align-items:center;padding:6px 0 4px}
+.orb{width:210px;height:240px;position:relative;animation:float 5s ease-in-out infinite;transition:filter .4s}
+.orb::before{content:"";position:absolute;left:10%;right:10%;top:12%;bottom:8%;border-radius:50%;
+  background:radial-gradient(circle,#7c5cff55,transparent 70%);filter:blur(18px);z-index:-1;transition:.4s}
+.orb.listening::before{background:radial-gradient(circle,#22d3ee77,transparent 70%)}
+.orb.sleepy{filter:saturate(.55) brightness(.85)}
+.orb svg{width:100%;height:100%;overflow:visible}
+@keyframes float{50%{transform:translateY(-7px)}}
+.orb svg *{transform-box:fill-box}
+.eye{transform-origin:center;transition:transform .12s}
+.orb.blink .eye{transform:scaleY(.08)}
+.orb.sleepy .eye{transform:scaleY(.35)}
+.iris-g{transform:translate(var(--ex,0px),var(--ey,0px));transition:transform .15s}
+.orb.thinking .iris-g{transform:translate(3px,-4px)}
+.happy-eyes,.mouth-open{display:none}
+.orb.happy .eyes{display:none}.orb.happy .happy-eyes{display:inline}
+.orb.talking .mouth-closed{display:none}
+.orb.talking .mouth-open{display:inline;transform-origin:center;animation:talk .18s ease-in-out infinite alternate}
+@keyframes talk{from{transform:scaleY(.35)}to{transform:scaleY(1.05)}}
+.blush{opacity:.35;transition:opacity .3s}.orb.happy .blush{opacity:.8}
+.orb.thinking .brows{transform:translateY(-2px)}
+.sway{transform-origin:top center;animation:sway 4s ease-in-out infinite}
+.sway2{transform-origin:top center;animation:sway 4s ease-in-out infinite reverse}
+@keyframes sway{50%{transform:rotate(1.5deg)}}
+.ahoge{transform-origin:bottom center;animation:boing 3s ease-in-out infinite}
+.orb.happy .ahoge{animation:boing .5s ease-in-out infinite}
+@keyframes boing{50%{transform:rotate(-8deg)}}
+.cup-glow{opacity:.45;transition:.3s}
+.orb.listening .cup-glow{animation:glow .8s ease-in-out infinite}
+.orb.talking .cup-glow{opacity:.9}
+@keyframes glow{50%{opacity:1}}
+.think-dots,.zzz{opacity:0;transition:opacity .3s}
+.orb.thinking .think-dots{opacity:1}
+.think-dots circle{animation:dot 1s infinite}
+.think-dots circle:nth-child(2){animation-delay:.15s}.think-dots circle:nth-child(3){animation-delay:.3s}
+.orb.sleepy .zzz{opacity:1;animation:zz 2.5s ease-in-out infinite}
+@keyframes zz{50%{transform:translate(6px,-8px)}}
+.name{font-size:22px;font-weight:600;margin-top:18px}
+.mood{color:var(--muted);font-size:13px}
+
+/* ---------- stats ---------- */
+.stat{margin-bottom:12px}
+.stat .row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+.bar{height:8px;background:var(--panel2);border-radius:6px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .6s}
+.bar i.warn{background:var(--warn)}.bar i.bad{background:var(--bad)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:13px}
+.chip:hover{border-color:var(--accent);background:#7c5cff22}
+.memo{font-size:13px;color:var(--muted);padding-left:16px;margin:0}
+
+/* ---------- chat ---------- */
+main{display:flex;flex-direction:column;min-width:0}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;border-bottom:1px solid var(--line)}
+header .title{font-weight:600}
+header .tools button{padding:6px 10px;border-radius:8px;color:var(--muted)}
+header .tools button:hover,header .tools button.on{color:var(--text);background:var(--panel2)}
+#log{flex:1;overflow:auto;padding:24px;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:72%;padding:11px 15px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word;animation:pop .25s ease-out}
+@keyframes pop{from{transform:translateY(6px);opacity:0}}
+.msg.me{align-self:flex-end;background:var(--accent);border-bottom-right-radius:4px}
+.msg.nova{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.err{align-self:center;background:#f8717122;border:1px solid var(--bad);font-size:14px}
+.acts{align-self:flex-start;display:flex;flex-wrap:wrap;gap:6px;margin-top:-6px}
+.acts span{font-size:12px;color:var(--accent2);background:#22d3ee14;border-radius:6px;padding:2px 8px}
+.confirm{align-self:flex-start;background:#fbbf2414;border:1px solid var(--warn);border-radius:14px;padding:12px 14px;max-width:72%}
+.confirm b{color:var(--warn)}
+.confirm code{display:block;font-size:12px;color:var(--muted);margin:6px 0 10px;white-space:pre-wrap}
+.confirm button{padding:7px 14px;border-radius:8px;margin-right:8px;font-weight:600}
+.yes{background:var(--good);color:#06281c}.no{background:var(--panel2);border:1px solid var(--line)}
+.seen{align-self:flex-start;width:220px;max-width:60%;border-radius:12px;border:2px solid var(--accent2);margin-top:-6px;cursor:zoom-in}
+.seen.big{width:100%;max-width:100%;cursor:zoom-out}
+.typing{align-self:flex-start;color:var(--muted);font-size:14px}
+.typing i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);margin:0 2px;animation:dot 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes dot{50%{transform:translateY(-4px);opacity:.4}}
+form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
+#input{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:13px 16px;color:var(--text);font:inherit;outline:none}
+#input:focus{border-color:var(--accent)}
+.round{width:48px;height:48px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:grid;place-items:center;font-size:20px}
+.round.send{background:var(--accent);border:0}
+.round.rec{background:var(--bad);animation:ring2 1s infinite}
+@keyframes ring2{50%{box-shadow:0 0 0 8px #f8717133}}
+
+/* ---------- capabilities ---------- */
+.cap{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.cap b{display:block;font-size:14px}
+.cap small{color:var(--muted);font-size:12.5px}
+.cap button{display:block;text-align:left;color:var(--accent2);font-size:12.5px;padding:2px 0}
+.cap button:hover{text-decoration:underline}
+
+/* ---------- setup modal ---------- */
+.modal{position:fixed;inset:0;background:#000a;display:none;place-items:center;z-index:9}
+.modal.show{display:grid}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:26px;width:min(460px,92vw)}
+.card h2{margin:0 0 6px}.card p{color:var(--muted);font-size:14px}
+.card input:not([type=radio]):not([type=checkbox]){width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px;color:var(--text);font:inherit;margin:10px 0}
+.card .yes{width:100%;padding:11px}
+.card a{color:var(--accent2)}
+.card code{background:var(--panel2);padding:1px 6px;border-radius:5px;color:var(--text)}
+.opt{display:block;font-size:13px;color:var(--muted);margin:6px 0;cursor:pointer}.opt b{color:var(--text)}
+.card{max-height:92vh;overflow:auto}
+.sel{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px;color:var(--text);font:inherit;margin:6px 0}
+
+@media (max-width:1100px){.app{grid-template-columns:260px 1fr}aside.right{display:none}}
+@media (max-width:720px){.app{grid-template-columns:1fr}aside.left{display:none}.msg,.confirm{max-width:88%}#log{padding:16px}form,header{padding:12px 16px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="left">
+    <div class="avatar-wrap">
+      <div class="orb" id="orb">
+        <svg viewBox="0 0 200 230" aria-label="Nova">
+          <defs>
+            <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b6cff"/><stop offset=".55" stop-color="#5a3fc4"/><stop offset="1" stop-color="#2fb8d8"/></linearGradient>
+            <linearGradient id="iris" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b218f"/><stop offset=".55" stop-color="#7c5cff"/><stop offset="1" stop-color="#5fe3f5"/></linearGradient>
+            <linearGradient id="hood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c3160"/><stop offset="1" stop-color="#191c38"/></linearGradient>
+            <clipPath id="clipL"><ellipse cx="80" cy="104" rx="11.5" ry="13.5"/></clipPath>
+            <clipPath id="clipR"><ellipse cx="120" cy="104" rx="11.5" ry="13.5"/></clipPath>
+          </defs>
+
+          <!-- back hair -->
+          <path class="sway" fill="url(#hair)" d="M100 18C52 18 30 55 32 100C33 140 30 175 20 208L180 208C170 175 167 140 168 100C170 55 148 18 100 18Z"/>
+          <!-- body -->
+          <rect x="89" y="143" width="22" height="26" fill="#f2c9b8"/>
+          <path fill="url(#hood)" d="M36 232C40 192 64 172 100 170C136 172 160 192 164 232Z"/>
+          <path d="M78 174Q100 192 122 174" stroke="#5fe3f5" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <path fill="#ffd25e" d="M100 200l3.5 7 7.7 1.1-5.6 5.4 1.3 7.7-6.9-3.6-6.9 3.6 1.3-7.7-5.6-5.4 7.7-1.1z"/>
+          <!-- face -->
+          <path fill="#ffe8dc" d="M58 92C58 60 76 44 100 44C124 44 142 60 142 92C142 122 124 150 100 154C76 150 58 122 58 92Z"/>
+          <!-- brows -->
+          <path class="brows" d="M70 86Q80 81 89 85M111 85Q120 81 130 86" stroke="#4a2f8f" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <!-- open eyes -->
+          <g class="eyes">
+            <g class="eye">
+              <ellipse cx="80" cy="104" rx="11.5" ry="13.5" fill="#fff"/>
+              <g clip-path="url(#clipL)"><g class="iris-g">
+                <ellipse cx="80" cy="105" rx="9" ry="11.5" fill="url(#iris)"/>
+                <ellipse cx="80" cy="106" rx="4.3" ry="6" fill="#1b1040"/>
+                <circle cx="83.5" cy="99" r="3.3" fill="#fff"/><circle cx="76" cy="110" r="1.5" fill="#fff" opacity=".85"/>
+              </g></g>
+              <path d="M66 96Q79 86 94 95" stroke="#251650" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+              <path d="M66 96L62 93" stroke="#251650" stroke-width="2.4" stroke-linecap="round"/>
+            </g>
+            <g class="eye">
+              <ellipse cx="120" cy="104" rx="11.5" ry="13.5" fill="#fff"/>
+              <g clip-path="url(#clipR)"><g class="iris-g">
+                <ellipse cx="120" cy="105" rx="9" ry="11.5" fill="url(#iris)"/>
+                <ellipse cx="120" cy="106" rx="4.3" ry="6" fill="#1b1040"/>
+                <circle cx="123.5" cy="99" r="3.3" fill="#fff"/><circle cx="116" cy="110" r="1.5" fill="#fff" opacity=".85"/>
+              </g></g>
+              <path d="M106 95Q121 86 134 96" stroke="#251650" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+              <path d="M134 96L138 93" stroke="#251650" stroke-width="2.4" stroke-linecap="round"/>
+            </g>
+          </g>
+          <!-- happy ^ ^ eyes -->
+          <g class="happy-eyes" stroke="#251650" stroke-width="3.6" fill="none" stroke-linecap="round">
+            <path d="M69 107Q80 94 91 107"/><path d="M109 107Q120 94 131 107"/>
+          </g>
+          <!-- blush, nose, mouth -->
+          <ellipse class="blush" cx="72" cy="124" rx="8" ry="3.6" fill="#ff8fb1"/>
+          <ellipse class="blush" cx="128" cy="124" rx="8" ry="3.6" fill="#ff8fb1"/>
+          <path d="M100 119l-1.5 3" stroke="#e0a090" stroke-width="1.5" stroke-linecap="round"/>
+          <path class="mouth-closed" d="M93 133Q100 139 107 133" stroke="#b4475f" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+          <g class="mouth-open"><ellipse cx="100" cy="135" rx="5.5" ry="5" fill="#8f2f48"/><ellipse cx="100" cy="138" rx="3.5" ry="2" fill="#ff8fa6"/></g>
+          <!-- front hair: bangs + side locks -->
+          <path class="sway" fill="url(#hair)" d="M58 88C53 115 55 142 62 162C67 142 67 118 67 100Z"/>
+          <path class="sway2" fill="url(#hair)" d="M142 88C147 115 145 142 138 162C133 142 133 118 133 100Z"/>
+          <path fill="url(#hair)" d="M55 98C50 58 74 33 100 33C128 33 152 56 145 100C141 85 136 75 128 68C126 80 120 87 113 90C115 79 112 70 106 65C102 78 92 87 81 90C85 81 86 73 84 66C73 74 63 85 55 98Z"/>
+          <path d="M78 46Q100 36 122 46" stroke="#fff" stroke-width="2.5" fill="none" opacity=".25" stroke-linecap="round"/>
+          <path class="ahoge" d="M101 34C96 21 103 11 114 9C105 17 104 25 101 34Z" fill="url(#hair)"/>
+          <!-- star hair clip -->
+          <path fill="#ffd25e" stroke="#e9a93a" stroke-width="1" d="M131 56l3 6.2 6.8.9-5 4.7 1.2 6.8-6-3.2-6 3.2 1.2-6.8-5-4.7 6.8-.9z"/>
+          <!-- headphones -->
+          <path d="M47 98C42 38 158 38 153 98" stroke="#20243f" stroke-width="7" fill="none" stroke-linecap="round"/>
+          <path d="M50 92C47 45 153 45 150 92" stroke="#5fe3f5" stroke-width="1.6" fill="none" opacity=".6"/>
+          <rect x="37" y="86" width="19" height="34" rx="9" fill="#20243f"/>
+          <rect x="144" y="86" width="19" height="34" rx="9" fill="#20243f"/>
+          <rect class="cup-glow" x="41" y="93" width="4" height="20" rx="2" fill="#5fe3f5"/>
+          <rect class="cup-glow" x="155" y="93" width="4" height="20" rx="2" fill="#5fe3f5"/>
+          <!-- thinking dots & sleepy z -->
+          <g class="think-dots" fill="#5fe3f5"><circle cx="160" cy="40" r="3.5"/><circle cx="172" cy="30" r="4.5"/><circle cx="186" cy="18" r="5.5"/></g>
+          <text class="zzz" x="152" y="44" fill="#a99cff" font-size="18" font-weight="700">z</text>
+        </svg>
+      </div>
+      <div class="name" id="nm">Nova</div>
+      <div class="mood" id="mood">waking up…</div>
+    </div>
+
+    <h3>My home (your laptop)</h3>
+    <div class="stat"><div class="row"><span>CPU</span><span id="cpuV">–</span></div><div class="bar"><i id="cpuB"></i></div></div>
+    <div class="stat"><div class="row"><span>Memory</span><span id="ramV">–</span></div><div class="bar"><i id="ramB"></i></div></div>
+    <div class="stat"><div class="row"><span>Disk</span><span id="diskV">–</span></div><div class="bar"><i id="diskB"></i></div></div>
+    <div class="stat"><div class="row"><span>Battery</span><span id="batV">–</span></div><div class="bar"><i id="batB"></i></div></div>
+    <div class="mood" id="upV"></div>
+
+    <h3>Quick asks</h3>
+    <div class="chips">
+      <button class="chip">How are you feeling?</button>
+      <button class="chip">Why is my laptop slow?</button>
+      <button class="chip">Tidy my Downloads</button>
+      <button class="chip">Free up some space</button>
+      <button class="chip">Remind me to drink water in 30 min</button>
+      <button class="chip">Play/pause music</button>
+    </div>
+
+    <h3>What I remember about you</h3>
+    <ul class="memo" id="mem"><li>Nothing yet - tell me about yourself!</li></ul>
+  </aside>
+
+  <main>
+    <header>
+      <div class="title">Chat with <span id="nm2">Nova</span></div>
+      <div class="tools">
+        <button id="voiceBtn" class="on" title="Speak replies aloud">🔊 Voice</button>
+        <button id="handsBtn" title="Listen for “Hey Nova”">👂 Hey Nova</button>
+        <button id="resetBtn" title="Start a fresh conversation">↺ New chat</button>
+        <button id="kbBtn" title="What Nova knows about you, and what she has learned" onclick="location.href='/knowledge'">🧠 Knowledge</button>
+        <button id="keyBtn" title="Choose model">⚙ Model</button>
+      </div>
+    </header>
+    <div id="earLine" style="display:none;padding:6px 22px;font-size:12.5px;color:var(--accent2);border-bottom:1px solid var(--line)"></div>
+    <div id="log"></div>
+    <form id="f">
+      <button type="button" class="round" id="mic" title="Talk to me">🎤</button>
+      <input id="input" autocomplete="off" placeholder="Ask me anything, or tell me what to do with your laptop…">
+      <button class="round send" title="Send">➤</button>
+    </form>
+  </main>
+
+  <aside class="right">
+    <h3>What I can do</h3>
+    <div id="caps"></div>
+  </aside>
+</div>
+
+<div class="modal" id="setup">
+  <div class="card">
+    <h2>Choose my brain 🧠</h2>
+    <div id="noOllama">
+      <p>My local brain runs in <b>Ollama</b>, but I can't find it yet. (You can still pick a cloud brain below.)</p>
+      <p>1. Install Ollama from <a href="https://ollama.com/download" target="_blank">ollama.com/download</a> and open it.<br>
+         2. In a terminal run: <code id="pullCmd">ollama pull deepseek-r1:8b</code><br>
+         3. Click Retry.</p>
+      <button class="yes" id="retry">Retry</button>
+    </div>
+    <div id="pick" style="display:none">
+      <p style="margin-bottom:2px"><b>Who thinks for me?</b></p>
+      <select id="provider" class="sel">
+        <option value="ollama">💻 Local model (Ollama) - free, stays on this laptop</option>
+        <option value="google">Google Gemini</option>
+        <option value="openai">OpenAI ChatGPT</option>
+        <option value="anthropic">Anthropic Claude</option>
+      </select>
+      <div id="cloudBox" style="display:none;border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px;margin:6px 0 10px">
+        <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API key">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button id="saveKey" class="yes" style="width:auto;padding:8px 14px">Save key &amp; load models</button>
+          <a id="keyLink" target="_blank" style="font-size:13px">Get a key</a>
+          <a id="forgetKey" href="#" style="font-size:13px;display:none">Forget saved key</a>
+        </div>
+        <select id="cloudModel" class="sel"></select>
+        <p id="cloudNote" class="mood" style="margin:4px 0 0"></p>
+      </div>
+      <p id="localLabel">Pick an installed Ollama model. Everything stays on your laptop.</p>
+      <select id="model" class="sel"></select>
+      <p id="toolNote" class="mood"></p>
+      <label class="mood"><input type="checkbox" id="think"> Let DeepSeek "think" before answering (smarter, slower)</label>
+      <h3 style="margin-top:16px">How much should I ask first?</h3>
+      <label class="opt"><input type="radio" name="aut" value="careful"> <b>Careful</b> - ask before anything that changes things (typing, files, windows, installs, commands)</label>
+      <label class="opt"><input type="radio" name="aut" value="trusted"> <b>Trusted</b> - just do it; ask only before shutdown, uninstalling, emptying the bin or admin commands</label>
+      <label class="opt"><input type="radio" name="aut" value="full"> <b>Full access</b> - never ask <span style="color:var(--warn)">(a small local model can misunderstand - use with care)</span></label>
+      <label class="mood" style="display:block;margin-top:10px"><input type="checkbox" id="autostart"> Start Nova with Windows (in the tray)</label>
+      <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="camera"> 📷 Let Nova see me through the camera (only when I ask; photos stay in memory, never saved)</label>
+      <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="screen"> 🖥 Let Nova see my screen (only when I ask; screenshots stay in memory, never saved)</label>
+      <p id="visionNote" class="mood" style="margin:4px 0 0 22px"></p>
+      <button class="yes" id="saveModel" style="margin-top:12px">Save &amp; wake up Nova</button>
+    </div>
+    <p id="keyErr" style="color:var(--bad)"></p>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const log = $("#log"), orb = $("#orb"), input = $("#input");
+let voiceOn = true, handsFree = false, busy = false, NAME = "Nova";
+
+/* ---------------- capabilities panel ---------------- */
+const CAPS = [
+  ["🩺 Health check", "CPU, memory, disk, battery, network", ["How is my laptop doing?", "Am I connected to Wi-Fi?"]],
+  ["🐢 Speed doctor", "Find & close programs hogging resources", ["What's using all my memory?", "Close Chrome"]],
+  ["🚀 Launcher", "Open apps, folders and websites", ["Open VS Code", "Open YouTube", "Search the web for cheap flights to Goa"]],
+  ["🗂 File helper", "Search, list, organize, recycle", ["Find my resume", "Show the newest files in Downloads", "Organize my Downloads folder"]],
+  ["🧹 Cleaner", "Big files, temp files, Recycle Bin", ["Find files bigger than 500 MB", "How much junk is in temp files?"]],
+  ["🎚 Controls", "Volume, media, brightness, lock", ["Turn the volume down", "Set brightness to 40%", "Lock my laptop"]],
+  ["⚡ Power", "Sleep, restart, shutdown", ["Shut down in a bit", "Cancel the shutdown"]],
+  ["🪟 Windows & keyboard", "Switch, close, type, shortcuts, clipboard", ["What windows are open?", "Open Notepad and type a poem about rain", "Show the desktop"]],
+  ["📦 Apps", "Install, uninstall, list (winget)", ["Install VLC", "What apps start with Windows?", "Is Python installed?"]],
+  ["🎨 Windows settings", "Dark mode, wallpaper, Wi-Fi, any Settings page", ["Turn on dark mode", "Open Bluetooth settings", "Take a screenshot"]],
+  ["📄 Read & write files", "Read, write, move, copy", ["Read my todo.txt on the desktop", "Make a shopping list file on my desktop"]],
+  ["📝 Notes & reminders", "I'll nudge you when it's time", ["Note: call mom on Sunday", "Remind me about my meeting in 15 minutes"]],
+  ["🖥 Screen eyes", "Reads your screen when you ask (turn on in ⚙ Model)", ["What's on my screen?", "Read this error for me", "What am I looking at?"]],
+  ["📷 Camera eyes", "Sees you when you ask (turn on in ⚙ Model)", ["How do I look today?", "What am I holding up?"]],
+  ["💬 Companion", "Chat, remember you, keep you company", ["Remember that I'm a student and I love cricket", "Tell me a joke", "I'm bored"]],
+  ["🛠 Power user", "Any PowerShell command, even as admin", ["What Windows version am I on?", "List my installed Wi-Fi profiles"]],
+];
+$("#caps").innerHTML = CAPS.map(([t, d, ex]) =>
+  `<div class="cap"><b>${t}</b><small>${d}</small>${ex.map(e => `<button>“${e}”</button>`).join("")}</div>`).join("") +
+  `<p class="mood">How often I ask <b>Allow / No</b> first is up to you - change it under ⚙ Model.</p>`;
+document.addEventListener("click", e => {
+  const b = e.target.closest(".cap button, .chip");
+  if (b) send(b.textContent.replace(/[“”]/g, ""));
+});
+
+/* ---------------- avatar life ---------------- */
+function face(state) { orb.classList.remove("talking", "thinking", "listening", "happy"); if (state) orb.classList.add(state); body3d(state); }
+// Keep the 3D Nova on the desktop in sync with the chat.
+let last3d = null;
+function body3d(state, say) {
+  const s = {talking: "talk", thinking: "think", happy: "happy"}[state] || "idle";
+  if (s === last3d && !say) return;
+  last3d = s;
+  fetch("/api/avatar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({state: s, say})}).catch(() => {});
+}
+setInterval(() => { orb.classList.add("blink"); setTimeout(() => orb.classList.remove("blink"), 140); }, 3800);
+document.addEventListener("mousemove", e => {
+  const r = orb.getBoundingClientRect(), dx = (e.clientX - r.x - r.width / 2) / 120, dy = (e.clientY - r.y - r.height / 2) / 120;
+  orb.style.setProperty("--ex", Math.max(-3, Math.min(3, dx)) + "px");
+  orb.style.setProperty("--ey", Math.max(-3, Math.min(3, dy)) + "px");
+});
+
+/* ---------------- voice ----------------
+   Nova speaks from the laptop itself (server side, Windows voice), so she talks even when this window is hidden.
+   Things said to her with "Hey Nova" show up here too. */
+let speakingNow = false;
+async function pollVoice() {
+  try {
+    const j = await (await fetch("/api/events")).json();
+    for (const ev of j.events) {
+      if (ev.listen) { if (!busy) { window.focus(); setTimeout(winVoice, 300); } continue; }  // "Hey Nova" → voice typing
+      add("me", "🎙 " + ev.me); ev.error ? add("err", ev.error) : render(ev);
+    }
+    if (j.speaking !== speakingNow) { speakingNow = j.speaking; if (!busy) face(speakingNow ? "talking" : undefined); }
+    $("#handsBtn").title = `Listen for “Hey Nova” - ${j.ears}`;
+    const ear = $("#earLine");
+    ear.style.display = handsFree ? "block" : "none";
+    ear.textContent = handsFree ? `👂 ${j.ears === "listening" ? "Listening for “Hey Nova”" : j.ears}` +
+      (j.heard.length ? ` · last: ${j.heard[0].slice(9)}` : "") : "";
+  } catch {}
+}
+setInterval(pollVoice, 1000);
+
+/* ---------------- speech in ---------------- */
+// The desktop app's window (WebView2) *claims* to support browser speech recognition, but it has no speech service:
+// it asks for the mic, then stops after a second. So in the desktop app always use Windows voice typing (Win+H).
+const inDesktopApp = "pywebview" in window || /WebView2|pywebview/i.test(navigator.userAgent) || location.hostname === "127.0.0.1";
+const SR = inDesktopApp ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
+let rec = null, recording = false;
+if (SR) {
+  rec = new SR(); rec.lang = "en-IN"; rec.interimResults = true;
+  rec.onresult = e => { const t = [...e.results].map(r => r[0].transcript).join(""); input.value = t;
+    if (e.results[e.results.length - 1].isFinal) { stopRec(); send(t); } };
+  rec.onend = stopRec;
+  rec.onerror = e => { stopRec(); rec = null; winVoice(); };  // browser speech failed: use Windows voice typing instead
+}
+// In the desktop window there's no browser speech recognition: use Windows voice typing (Win+H) into the box.
+async function winVoice() {
+  input.focus();
+  await fetch("/api/voice_typing", {method: "POST"});
+  $("#mood").textContent = "listening… speak now, then press Enter";
+  $("#mic").classList.add("rec"); setTimeout(() => $("#mic").classList.remove("rec"), 8000);
+  // Send automatically once you stop talking: when the typed text stops changing for 2.5 s.
+  let last = input.value, still = 0;
+  const watch = setInterval(() => {
+    if (document.activeElement !== input && !input.value) { clearInterval(watch); return; }
+    if (input.value && input.value === last) { if (++still >= 5) { clearInterval(watch); send(input.value); } }
+    else { still = 0; last = input.value; }
+  }, 500);
+  setTimeout(() => clearInterval(watch), 60000);
+}
+function startRec() { fetch("/api/voice_stop", {method: "POST"}); if (!rec) return winVoice(); if (busy) return; recording = true; $("#mic").classList.add("rec"); face("listening"); $("#mood").textContent = "listening…"; try { rec.start(); } catch {} }
+function stopRec() { if (!recording) return; recording = false; $("#mic").classList.remove("rec"); face(); setMood(); try { rec.stop(); } catch {} }
+$("#mic").onclick = () => recording ? stopRec() : startRec();
+
+/* ---------------- chat ---------------- */
+function add(cls, text) { const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text; log.append(d); log.scrollTop = 1e9; return d; }
+function acts(list) { if (!list?.length) return; const d = document.createElement("div"); d.className = "acts"; d.innerHTML = list.map(a => `<span>✓ ${a}</span>`).join(""); log.append(d); }
+function typing(on) { $("#typing")?.remove(); if (on) { const d = document.createElement("div"); d.id = "typing"; d.className = "typing"; d.innerHTML = `${NAME} is thinking <i></i><i></i><i></i>`; log.append(d); log.scrollTop = 1e9; } }
+
+async function api(path, body) {
+  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+  const j = await r.json().catch(() => ({error: "Server didn't answer."}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function render(j) {
+  acts(j.activity);
+  for (const b64 of j.images || []) {  // what Nova saw through the camera
+    const im = document.createElement("img"); im.className = "seen"; im.src = "data:image/jpeg;base64," + b64;
+    im.title = "What Nova saw (not saved) - click to enlarge"; im.onclick = () => im.classList.toggle("big");
+    log.append(im); log.scrollTop = 1e9;
+  }
+  if (j.reply) { add("nova", j.reply); last3d = null; body3d("happy", j.reply); }
+  if (j.pending) showConfirm(j.pending);
+}
+
+async function handle(promise) {
+  busy = true; face("thinking"); typing(true); $("#mood").textContent = "thinking…";
+  try {
+    const j = await promise;
+    typing(false); render(j);
+    face("happy"); setTimeout(() => face(), 1500);
+    busy = false; setMood(); loadStatus();
+  } catch (e) {
+    typing(false); add("err", e.message); face(); busy = false; setMood();
+    if (/Ollama|not found/i.test(e.message)) loadStatus().then(openSetup);
+  }
+}
+
+function send(text) {
+  text = (text || "").trim(); if (!text || busy) return;
+  document.querySelectorAll(".confirm button").forEach(b => b.disabled = true);
+  add("me", text); input.value = "";
+  handle(api("/api/chat", {text}));
+}
+$("#f").onsubmit = e => { e.preventDefault(); send(input.value); };
+
+function showConfirm(items) {
+  const d = document.createElement("div"); d.className = "confirm";
+  d.innerHTML = `<b>May I?</b> ${items.map(i => i.label).join(", ")}<code>${items.map(i => esc(JSON.stringify(i.input))).join("\n")}</code>
+    <button class="yes">Allow</button><button class="no">No thanks</button>`;
+  const go = ok => { d.querySelectorAll("button").forEach(b => b.disabled = true); d.style.opacity = .6;
+    d.querySelector("b").textContent = ok ? "Allowed ✓" : "Declined ✗"; handle(api("/api/confirm", {approved: ok})); };
+  d.querySelector(".yes").onclick = () => go(true); d.querySelector(".no").onclick = () => go(false);
+  log.append(d); log.scrollTop = 1e9;
+}
+const esc = s => s.replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+
+/* ---------------- header buttons ---------------- */
+$("#voiceBtn").onclick = async e => { voiceOn = !voiceOn; e.target.classList.toggle("on", voiceOn); await api("/api/setup", {voice: voiceOn}); };
+$("#handsBtn").onclick = async e => {
+  handsFree = !handsFree; e.target.classList.toggle("on", handsFree); await api("/api/setup", {wake: handsFree});
+  if (handsFree) add("nova", "I'm listening for “Hey Nova” now. Say it, wait for my bubble, then tell me what you need!");
+};
+$("#resetBtn").onclick = async () => { await api("/api/reset"); log.innerHTML = ""; greet(); };
+$("#keyBtn").onclick = async () => openSetup(await loadStatus());
+$("#setup").onclick = e => { if (e.target.id === "setup" && window.__ready) $("#setup").classList.remove("show"); };
+/* ---- brain choice: local Ollama model, or a cloud model with the user's own API key ---- */
+let st = null;
+const KEY_LINKS = {google: "https://aistudio.google.com/app/apikey", openai: "https://platform.openai.com/api-keys",
+                   anthropic: "https://platform.claude.com/settings/keys"};
+const PRIVACY = "Our chat (and window titles) goes to this company. Screenshots and camera photos never do - they stay on the local model.";
+function fillCloud(ids, sel) {
+  $("#cloudModel").innerHTML = ids.length ? ids.map(m => `<option ${m === sel ? "selected" : ""}>${esc(m)}</option>`).join("")
+    : `<option value="">Save a key to see the models</option>`;
+}
+function keyPlaceholder(p) {
+  $("#apiKey").value = "";
+  $("#apiKey").placeholder = st.keys[p] ? "Key saved ✓ (paste a new one to replace it)" : `Paste your ${st.providers[p]} API key`;
+  $("#forgetKey").style.display = st.keys[p] ? "inline" : "none";
+}
+async function loadCloudModels(p, sel) {
+  $("#cloudNote").textContent = "Loading models…";
+  try {
+    const j = await (await fetch("/api/cloud/models?provider=" + p)).json();
+    if (j.error) throw new Error(j.error);
+    if ($("#provider").value !== p) return;
+    fillCloud(sel && !j.models.includes(sel) ? [sel, ...j.models] : j.models, sel || j.suggested);
+    $("#cloudNote").textContent = PRIVACY;
+  } catch (e) { if ($("#provider").value === p) $("#cloudNote").textContent = e.message; }
+}
+function showProvider() {
+  const p = $("#provider").value, onCloud = p !== "ollama";
+  $("#cloudBox").style.display = onCloud ? "block" : "none";
+  $("#localLabel").innerHTML = onCloud
+    ? "<b>Backup brain</b> - this local model takes over whenever the cloud fails (no internet, key or credit problem):"
+    : "Pick an installed Ollama model. Everything stays on your laptop.";
+  if (!onCloud) return;
+  $("#keyLink").href = KEY_LINKS[p];
+  keyPlaceholder(p);
+  const saved = st.cloud_models[p] || st.cloud_defaults[p] || "";
+  fillCloud(saved ? [saved] : [], saved);
+  $("#cloudNote").textContent = st.keys[p] ? "" : PRIVACY;
+  if (st.keys[p]) loadCloudModels(p, saved);
+}
+$("#provider").onchange = () => { $("#keyErr").textContent = ""; showProvider(); };
+$("#saveKey").onclick = async () => {
+  const p = $("#provider").value, key = $("#apiKey").value.trim();
+  if (!key) { $("#keyErr").textContent = "Paste a key first."; return; }
+  $("#keyErr").textContent = ""; $("#cloudNote").textContent = "Checking the key…"; $("#saveKey").disabled = true;
+  try {
+    const j = await api("/api/cloud/key", {provider: p, key});
+    st.keys[p] = true; keyPlaceholder(p);
+    const want = st.cloud_models[p] || st.cloud_defaults[p];
+    fillCloud(j.models, want && j.models.includes(want) ? want : j.suggested);
+    $("#cloudNote").textContent = "✓ Key works. " + PRIVACY;
+  } catch (e) { $("#cloudNote").textContent = ""; $("#keyErr").textContent = e.message; }
+  $("#saveKey").disabled = false;
+};
+$("#forgetKey").onclick = async e => {
+  e.preventDefault();
+  const p = $("#provider").value;
+  await api("/api/cloud/key", {provider: p, key: ""});
+  st.keys[p] = false; keyPlaceholder(p); fillCloud([], ""); $("#cloudNote").textContent = "Key forgotten.";
+};
+function openSetup(s) {
+  st = s;
+  $("#keyErr").textContent = "";
+  $("#noOllama").style.display = s.ollama ? "none" : "block";
+  $("#pick").style.display = "block";
+  $("#pullCmd").textContent = "ollama pull " + s.default_model;
+  $("#provider").value = s.provider || "ollama"; showProvider();
+  if (!s.ollama) $("#model").innerHTML = `<option value="">Ollama isn't running - no local brain right now</option>`;
+  if (s.ollama) {
+    $("#model").innerHTML = s.models.length ? s.models.map(m => `<option ${m === s.model || m === s.model + ":latest" ? "selected" : ""}>${esc(m)}</option>`).join("")
+      : `<option value="">No models yet - run: ollama pull ${esc(s.default_model)}</option>`;
+    $("#toolNote").textContent = s.ready ? (s.tools ? "✓ This model supports tool calling." : "This model has no native tool calling - I'll use a text-based fallback (works, but less reliably).") : "";
+    $("#think").checked = s.think; $("#autostart").checked = s.autostart; $("#camera").checked = s.camera; $("#screen").checked = s.screen;
+    $("#visionNote").innerHTML = s.vision_model ? `Eyes: <b>${esc(s.vision_model)}</b> ✓`
+      : `She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`;
+    document.querySelectorAll("[name=aut]").forEach(r => r.checked = r.value === s.autonomy);
+  }
+  $("#setup").classList.add("show");
+}
+$("#retry").onclick = async () => { const s = await loadStatus(); s.ollama ? openSetup(s) : ($("#keyErr").textContent = "Still can't reach Ollama on port 11434."); };
+$("#saveModel").onclick = async () => {
+  const p = $("#provider").value;
+  if (p === "ollama" && !$("#model").value) { $("#keyErr").textContent = "Pull a model first, then click Retry."; return; }
+  if (p !== "ollama" && !st.keys[p]) { $("#keyErr").textContent = "Save your API key first."; return; }
+  if (p !== "ollama" && !$("#cloudModel").value) { $("#keyErr").textContent = "Pick a model."; return; }
+  try {
+    const s = await api("/api/setup", {model: $("#model").value || undefined, think: $("#think").checked,
+      provider: p, cloud_model: p !== "ollama" ? $("#cloudModel").value : undefined,
+      autonomy: document.querySelector("[name=aut]:checked")?.value, autostart: $("#autostart").checked,
+      camera: $("#camera").checked, screen: $("#screen").checked});
+    if (!s.ready) { $("#keyErr").textContent = "That model isn't available."; return; }
+    $("#setup").classList.remove("show"); const first = !window.__ready; window.__ready = true; loadStatus(); if (first) greet();
+  } catch (e) { $("#keyErr").textContent = e.message; }
+};
+
+/* ---------------- status, stats & proactive pulse ---------------- */
+let lastStats = null;
+function setMood() {
+  if (busy || recording) return;
+  const s = lastStats, h = new Date().getHours();
+  let m = "happy to help ✨";
+  if (s?.battery != null && s.battery <= 20 && !s.plugged) m = "feeling sleepy 🔋";
+  else if (s?.cpu > 85) m = "working hard 💦";
+  else if (h >= 0 && h < 5) m = "it's late… go to sleep? 🌙";
+  else if (s?.plugged) m = "charging & cheerful ⚡";
+  $("#mood").textContent = m;
+  orb.classList.toggle("sleepy", s?.battery != null && s.battery <= 15 && !s.plugged);
+}
+function bar(id, v, label, invert) {
+  $("#" + id + "V").textContent = label; const b = $("#" + id + "B"); b.style.width = (v ?? 0) + "%";
+  const bad = invert ? v < 20 : v > 85, warn = invert ? v < 40 : v > 65;
+  b.className = bad ? "bad" : warn ? "warn" : "";
+}
+async function pulse() {
+  try {
+    const j = await (await fetch("/api/pulse")).json(), s = lastStats = j.stats;
+    bar("cpu", s.cpu, s.cpu + "%"); bar("ram", s.ram, s.ram + "%"); bar("disk", s.disk, s.disk + "%");
+    if (s.battery == null) bar("bat", 100, "desktop power");
+    else bar("bat", s.battery, s.battery + "%" + (s.plugged ? " ⚡" : ""), true);
+    $("#upV").textContent = `Awake for ${s.uptime_h} h`;
+    setMood();
+    for (const line of j.say) { add("nova", line); last3d = null; body3d("happy", line); }
+  } catch {}
+}
+async function loadStatus() {
+  const s = await (await fetch("/api/status")).json();
+  NAME = s.name; $("#nm").textContent = $("#nm2").textContent = NAME; document.title = NAME;
+  voiceOn = s.voice; handsFree = s.wake;
+  $("#voiceBtn").classList.toggle("on", voiceOn); $("#handsBtn").classList.toggle("on", handsFree);
+  if (s.voice_name) $("#voiceBtn").title = "Nova's voice: " + s.voice_name;
+  $("#keyBtn").title = "Brain: " + (s.brain || "").replace(/^cloud:/, "") + (s.brain !== s.model ? `  (backup: ${s.model})` : "");
+  $("#mem").innerHTML = s.memories.length ? s.memories.map(m => `<li>${esc(m)}</li>`).join("") : "<li>Nothing yet - tell me about yourself!</li>";
+  return s;
+}
+function greet() {
+  const h = new Date().getHours();
+  const part = h < 5 ? "You're up late" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  const t = `${part}! I'm ${NAME}, I live in your laptop and keep it running smoothly. What can I do for you?`;
+  add("nova", t); face("happy"); setTimeout(() => face(), 1500);
+}
+
+(async () => {
+  const s = await loadStatus(); window.__ready = s.ready;
+  pulse(); setInterval(pulse, 15000);
+  if (!s.ready) openSetup(s); else greet();
+  input.focus();
+})();
+</script>
+</body>
+</html>

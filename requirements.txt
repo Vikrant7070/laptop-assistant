@@ -1,0 +1,18 @@
+flask
+psutil
+pywebview      # the Nova desktop window
+pystray        # tray icon
+pillow         # tray icon, screenshots, 3D Nova sprites
+keyboard       # Ctrl+Alt+N hotkey, typing, shortcuts
+pyperclip      # clipboard
+uiautomation   # finding buttons in other apps so Nova can click them
+opencv-python-headless  # webcam, so Nova can see you (only when switched on)
+faster-whisper  # offline speech-to-text (Whisper large-v3-turbo on the GPU, small.en on the CPU as backup)
+ctranslate2>=4.0,<5
+sounddevice     # microphone audio for Whisper
+nvidia-cublas-cu12        # lets Whisper use the NVIDIA graphics card
+nvidia-cudnn-cu12>=9,<10
+kokoro-onnx     # Nova's natural voice (offline, CPU). Model files go in ~/.cache/nova-voice - see README
+soundfile
+anthropic       # only for the optional Claude cloud brain (Gemini/OpenAI need no package)
+# The AI model runs in Ollama (https://ollama.com) - no Python package needed for it.
