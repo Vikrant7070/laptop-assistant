@@ -157,3 +157,21 @@ def test_review_triggers():
     assert app.why_review("that's wrong", {"reply": "ok"})
     assert app.why_review("my name is Asha", {"reply": "Hi"})
     assert app.why_review("hello", {"reply": "Hi"}) is None
+
+
+def test_deep_cloud_task_gets_more_steps_and_offers_to_keep_going(brain, monkeypatch):
+    fake, ran = brain([("", [("scroll", {"direction": "down"})])] * 80)
+    monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-test")
+    s = app.settings()
+    s["reasoning"] = "max"
+    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    out, _ = app.answer("find my github username and set up the repo")
+    assert app.MAX_TASK_TURNS < len(ran) <= app.DEEP_TASK_TURNS
+    assert "lot of steps" in out["reply"] and "keep going" in out["reply"]
+
+
+def test_long_task_does_not_count_as_quiet_time(brain):
+    fake, ran = brain([("All done!", [])])
+    app.nap["last_task"] = app.time.time() - app.IDLE_NAP - 60     # the ask came in over 5 minutes ago
+    app.answer("a long job")
+    assert not app.nap_due()                                       # she just finished: no nap straight away
