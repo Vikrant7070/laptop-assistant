@@ -11,7 +11,7 @@ import time
 import urllib.error
 import urllib.request
 
-import cloud
+from nova.brain import cloud
 
 HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 if not HOST.startswith("http"):

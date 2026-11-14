@@ -1,5 +1,5 @@
 """What Nova is thinking: the live log the chat shows per request, and the thought cloud over 3D Nova."""
-import app
+from nova.core import app
 
 
 def texts_since(last):

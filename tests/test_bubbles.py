@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-import app
-import voice
+from nova.core import app
+from nova.audio import voice
 
 
 @pytest.fixture

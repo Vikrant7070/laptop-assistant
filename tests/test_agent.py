@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-import app
+from nova.core import app
 
 
 def set_autonomy(mode):

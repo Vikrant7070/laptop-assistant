@@ -1,6 +1,6 @@
 """The brain's react tool waits until she has finished speaking (a laugh comes after the joke, not before)."""
-import app
-import voice
+from nova.core import app
+from nova.audio import voice
 
 
 def test_react_tool_is_saved_for_after_the_answer(monkeypatch):

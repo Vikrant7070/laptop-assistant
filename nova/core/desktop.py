@@ -1,6 +1,6 @@
 """Nova desktop app: native window + tray icon + Ctrl+Alt+N hotkey.
 
-Run:  pythonw desktop.py            (or double-click "Start Nova.bat")
+Run:  pythonw desktop.py            (the launcher in the project folder; or double-click "Start Nova.bat")
       pythonw desktop.py --hidden   (start in the tray, used for auto-start)
 """
 import ctypes
@@ -16,10 +16,9 @@ import webview
 from PIL import Image, ImageDraw
 from werkzeug.serving import make_server
 
-import app as server
-from shared import work_area
+from nova.core import app as server
+from nova.shared import ROOT, work_area
 
-ROOT = Path(__file__).parent
 PORT = 5055
 URL = f"http://127.0.0.1:{PORT}"
 HOTKEY = "ctrl+alt+n"
@@ -59,7 +58,7 @@ def main():
                                 hidden=True, resizable=False, background_color="#151829")
     quitting = {"v": False}
     ducked = {"v": False}
-    import tools
+    from nova.actions import tools
     u32 = ctypes.windll.user32
 
     def chat_hwnd():
@@ -97,7 +96,7 @@ def main():
     tools.SCREEN_HOOKS.update(hide=duck, show=unduck)
 
     # 3D Nova walking around the desktop runs as her own process (avatar.py).
-    import avatar_client
+    from nova.avatar import avatar_client
 
     def show_ear():
         """Put the listening bubble beside 3D Nova and give it the keyboard focus (voice typing types there)."""
@@ -118,7 +117,7 @@ def main():
     body = {"proc": None, "shown": True}
     if not avatar_client.running():
         pyw = Path(sys.executable).with_name("pythonw.exe")
-        body["proc"] = subprocess.Popen([str(pyw if pyw.exists() else sys.executable), str(ROOT / "avatar.py")], cwd=str(ROOT))
+        body["proc"] = subprocess.Popen([str(pyw if pyw.exists() else sys.executable), "-m", "nova.avatar.avatar"], cwd=str(ROOT))
     server.avatar_reload_hook = lambda: avatar_client.send("reload", timeout=5)
 
     def toggle_body(icon, _):

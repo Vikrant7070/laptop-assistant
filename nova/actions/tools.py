@@ -20,7 +20,7 @@ from pathlib import Path
 
 import psutil
 
-from shared import DATA, REACTIONS, ps_escape, work_area
+from nova.shared import DATA, REACTIONS, ps_escape, work_area
 
 try:  # real pixel coordinates, so clicks land where UI Automation says
     import ctypes as _c
@@ -471,7 +471,7 @@ def power_action(action):
 
 def _clear_notifications():
     try:
-        import notifications
+        from nova.actions import notifications
         notifications.clear_all()
         return "Cleared your notifications."
     except Exception as e:
@@ -968,7 +968,7 @@ def _mouse_click(x, y, button="left", double=False):
 
 def _nova_click(x, y, button="left", double=False, label=""):
     """Nova walks over, points at the spot, and the real mouse clicks it."""
-    import avatar_client
+    from nova.avatar import avatar_client
     if avatar_client.running():
         if label:
             avatar_client.send("say", text=f"Clicking “{label[:40]}”!", secs=3)
@@ -1080,8 +1080,8 @@ def _grab_camera_jpeg(max_width=768):
 def look_through_camera(question="What do you see?"):
     if not _camera_allowed():
         return "The camera is switched off. The user can allow it in Nova's settings (⚙ Model → Camera)."
-    import avatar_client
-    import llm
+    from nova.avatar import avatar_client
+    from nova.brain import llm
     avatar_client.send("say", text="Let me take a look 👀", secs=3, timeout=2)
     img = _grab_camera_jpeg()  # kept in memory only, never saved to disk
     LAST_IMAGE["jpg_b64"] = img
@@ -1102,7 +1102,7 @@ def _grab_screen_jpeg(what="screen", window="", max_width=1400):
     import base64
     import io
     from PIL import ImageGrab
-    import avatar_client
+    from nova.avatar import avatar_client
     bbox = None
     if what == "window":
         w = _target_window(window)
@@ -1132,7 +1132,7 @@ def _grab_screen_jpeg(what="screen", window="", max_width=1400):
 def look_at_screen(question="What's on my screen?", what="screen", window=""):
     if not _screen_allowed():
         return "Screen viewing is switched off. The user can allow it in Nova's settings (⚙ Model → Screen)."
-    import llm
+    from nova.brain import llm
     img = _grab_screen_jpeg(what, window)  # kept in memory only, never saved to disk
     LAST_IMAGE["jpg_b64"] = img
     model = _setting("model")
@@ -1182,32 +1182,32 @@ def due_reminders():
 
 
 def remember_fact(fact):
-    import knowledge
+    from nova.actions import knowledge
     return knowledge.update_profile("facts", fact)
 
 
 def forget_fact(fact_contains):
-    import knowledge
+    from nova.actions import knowledge
     return knowledge.forget(fact_contains)
 
 
 def memories():
-    import knowledge
+    from nova.actions import knowledge
     return knowledge.facts()
 
 
 def update_profile(field, value, remove=False):
-    import knowledge
+    from nova.actions import knowledge
     return knowledge.update_profile(field, value, remove in (True, "true"))
 
 
 def learn_lesson(situation, lesson, kind="mistake"):
-    import knowledge
+    from nova.actions import knowledge
     return knowledge.learn_lesson(situation, lesson, kind)
 
 
 def recall_knowledge(about=""):
-    import knowledge
+    from nova.actions import knowledge
     return knowledge.recall(about)
 
 
@@ -1228,7 +1228,7 @@ def read_notifications(count=5):
     if not _setting("notifications"):
         return ("Reading notifications is switched off. The user can switch it on in Nova's settings "
                 "(⚙ Model → Notifications).")
-    import notifications
+    from nova.actions import notifications
     items = notifications.latest(count)
     if not items:
         return "There are no notifications right now."
@@ -1239,17 +1239,17 @@ def read_notifications(count=5):
 
 
 def draft_email(about, to="", subject=""):
-    import coworker
+    from nova.actions import coworker
     return coworker.draft_email(to=to, about=about, subject=subject)[1]
 
 
 def write_document(about, title=""):
-    import coworker
+    from nova.actions import coworker
     return coworker.write_document(title=title, about=about)[1]
 
 
 def show_finished_work(which="latest"):
-    import coworker
+    from nova.actions import coworker
     return coworker.show(coworker.find(which or "latest"))
 
 
@@ -1259,7 +1259,7 @@ def go_to_sleep():
 
 
 def background_jobs():
-    import coworker
+    from nova.actions import coworker
     return coworker.summary()
 
 
@@ -1268,7 +1268,7 @@ def background_jobs():
 def run_skill(name, input=""):
     # app.execute runs skills itself (each step needs the approval rules and the screen settling); this is only
     # the fallback when called outside a conversation.
-    import skills
+    from nova.actions import skills
     s = skills.get(name)
     if not s:
         return f"I have no skill called '{name}'. " + skills.describe()
@@ -1278,17 +1278,17 @@ def run_skill(name, input=""):
 
 
 def save_skill(name, description, steps, when="", kind=""):
-    import skills
+    from nova.actions import skills
     return skills.save(name, description, steps, when, kind)
 
 
 def list_skills():
-    import skills
+    from nova.actions import skills
     return skills.describe()
 
 
 def delete_skill(name):
-    import skills
+    from nova.actions import skills
     return skills.delete(name)
 
 
@@ -1309,7 +1309,7 @@ def reaction_name(reaction):
 
 def react(reaction, times=0):
     """Make 3D Nova act something out on screen right now. (In a chat, app.queue_reaction plays it after she speaks.)"""
-    import avatar_client
+    from nova.avatar import avatar_client
     name = reaction_name(reaction)
     if name not in REACTIONS:
         return f"I can't do '{reaction}'. I can: {', '.join(REACTIONS)}."
@@ -1320,13 +1320,13 @@ def react(reaction, times=0):
 
 
 def _avatar_pos():
-    import avatar_client
+    from nova.avatar import avatar_client
     return avatar_client.position()
 
 
 def drag_window(window="", to="center"):
     """Move a window to another part of the screen. 3D Nova walks over, takes hold of its title bar and carries it."""
-    import avatar_client
+    from nova.avatar import avatar_client
     w = _target_window(window)
     if not w:
         return f"No open window matches '{window}'."

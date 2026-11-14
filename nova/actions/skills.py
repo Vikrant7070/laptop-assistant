@@ -33,8 +33,8 @@ import shutil
 import time
 from pathlib import Path
 
-import retrieval
-from shared import ROOT
+from nova.brain import retrieval
+from nova.shared import ROOT
 
 DIR = Path(os.environ.get("NOVA_SKILLS") or ROOT / "skills")
 MAX_STEPS = 25
@@ -51,7 +51,7 @@ def slug(name):
 # ------------------------------------------------------------------ parsing
 
 def _tool_names():
-    import tools
+    from nova.actions import tools
     return {t["name"] for t in tools.TOOLS}
 
 
@@ -262,7 +262,7 @@ def _render(name, description, when, kind, body):
 
 def save(name, description, steps, when="", kind=""):
     """Write (or replace) a skill file. Returns a message for the brain."""
-    from knowledge import SECRET
+    from nova.actions.knowledge import SECRET
     name = slug(name)
     if not name:
         return "Give the skill a short name, like 'movie-time'."

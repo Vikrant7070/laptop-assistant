@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-import app
+from nova.core import app
 
 
 @pytest.fixture
@@ -188,5 +188,5 @@ def test_silent_loop_stops_after_sleep(monkeypatch, body):
 
 
 def test_go_to_sleep_tool_is_always_offered():
-    import toolpick
+    from nova.brain import toolpick
     assert "go_to_sleep" in toolpick.pick("okay nova you can rest now")

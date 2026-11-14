@@ -1,6 +1,6 @@
 """The ⚙ 'shut down without asking' flag, and the tidy-up (close windows, clear notifications) before shutdown."""
-import app
-import tools
+from nova.core import app
+from nova.actions import tools
 
 
 def _set(**kw):

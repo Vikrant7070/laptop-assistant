@@ -23,12 +23,12 @@ os.environ.pop("GOOGLE_API_KEY", None)
 os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("ANTHROPIC_API_KEY", None)
 
-import avatar_client  # noqa: E402
+from nova.avatar import avatar_client  # noqa: E402
 
 avatar_client.send = lambda *a, **k: None
 avatar_client.running = lambda: False
 
-import voice  # noqa: E402
+from nova.audio import voice  # noqa: E402
 
 
 class FakeMouth:
@@ -59,11 +59,11 @@ voice.RealMouth = voice.Mouth     # tests of the real voice class use this
 voice.Mouth = FakeMouth
 voice.WhisperTranscriber.available = staticmethod(lambda: False)
 
-import tools  # noqa: E402
-import knowledge  # noqa: E402
-import cloud  # noqa: E402
-import app  # noqa: E402
-import skills  # noqa: E402
+from nova.actions import tools  # noqa: E402
+from nova.actions import knowledge  # noqa: E402
+from nova.brain import cloud  # noqa: E402
+from nova.core import app  # noqa: E402
+from nova.actions import skills  # noqa: E402
 
 
 def _point_data_at(folder):
@@ -96,7 +96,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "react_later", lambda *a, **k: None)
     monkeypatch.setattr(app, "review_turn", lambda why: None)
     # background co-worker jobs, naps and offers start fresh, and never open real windows
-    import coworker
+    from nova.actions import coworker
     coworker.jobs.clear()
 
     def no_real_windows(*a, **k):

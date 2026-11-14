@@ -4,9 +4,9 @@ import time
 
 import pytest
 
-import app
-import notifications
-import tools
+from nova.core import app
+from nova.actions import notifications
+from nova.actions import tools
 
 
 def set_settings(**kw):

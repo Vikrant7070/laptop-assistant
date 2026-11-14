@@ -14,21 +14,22 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 
 import ctypes
 
-import avatar_client
-import cloud
-import coworker
-import knowledge
-import llm
-import notifications
-import retrieval
-import sfx
-import skills
-import toolpick
-import tools
-import voice
-from shared import REACTIONS, host_allowed, ps_escape
+from nova.avatar import avatar_client
+from nova.brain import cloud
+from nova.actions import coworker
+from nova.actions import knowledge
+from nova.brain import llm
+from nova.actions import notifications
+from nova.brain import retrieval
+from nova.audio import sfx
+from nova.actions import skills
+from nova.brain import toolpick
+from nova.actions import tools
+from nova.audio import voice
+from nova import shared
+from nova.shared import REACTIONS, host_allowed, ps_escape
 
-ROOT = Path(__file__).parent
+ROOT = shared.ROOT
 PORT = int(os.environ.get("PORT", 5055))
 SETTINGS_FILE = tools.DATA / "settings.json"
 DEFAULT_MODEL = "qwen3-vl:4b-instruct"  # fits a 6 GB laptop GPU; tools + vision, no hidden thinking

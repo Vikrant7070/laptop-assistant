@@ -11,9 +11,9 @@ import threading
 import time
 from pathlib import Path
 
-import avatar_client
+from nova.avatar import avatar_client
+from nova.shared import ROOT
 
-ROOT = Path(__file__).parent
 LISTENING = "👂 I'm listening…"   # the one "speak now" bubble (several places used to show slightly different ones)
 PREFERRED_VOICES = ("Heera", "Zira", "Aria", "Jenny")
 ONECORE = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices"

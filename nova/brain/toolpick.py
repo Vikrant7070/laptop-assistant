@@ -12,8 +12,8 @@ The set is chosen once per request and kept for the whole task: Ollama re-reads 
 token, so changing tools between steps would throw away its cache every step.
 Cloud brains get every tool (they have room, and they are smart enough not to get confused by 64).
 """
-import retrieval
-import tools
+from nova.brain import retrieval
+from nova.actions import tools
 
 CORE = ["get_datetime", "get_system_status", "open_app", "open_website", "open_path", "list_windows", "window_action",
         "press_keys", "type_text", "run_powershell", "react", "update_profile", "learn_lesson", "recall_knowledge",

@@ -4,9 +4,9 @@ import urllib.parse
 
 import pytest
 
-import app
-import coworker
-import tools
+from nova.core import app
+from nova.actions import coworker
+from nova.actions import tools
 
 
 def wait_for(cond, secs=5):
@@ -162,7 +162,7 @@ def test_nova_does_not_nap_while_a_job_runs(fake_desktop, monkeypatch):
 
 
 def test_tools_are_picked_for_email_requests():
-    import toolpick
+    from nova.brain import toolpick
     assert "draft_email" in toolpick.pick("draft an email to my manager asking for leave on friday")
     assert "read_notifications" in toolpick.pick("read my notifications")
     assert "show_finished_work" in toolpick.pick("show me the email draft")

@@ -1,9 +1,9 @@
 """How hard the brain thinks: the Low/High/Max/Auto setting, sent to each cloud provider, with its reasoning shown."""
 import types
 
-import app
-import cloud
-import llm
+from nova.core import app
+from nova.brain import cloud
+from nova.brain import llm
 
 
 def _ok(content="Done!", **msg):

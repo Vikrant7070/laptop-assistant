@@ -1,10 +1,10 @@
 """The tool registry, approval tiers and UI labels must agree with each other."""
 import inspect
 
-import app
-import avatar
-import tools
-import shared
+from nova.core import app
+from nova.avatar import avatar
+from nova.actions import tools
+from nova import shared
 
 
 def test_every_tool_has_a_function_with_matching_params():

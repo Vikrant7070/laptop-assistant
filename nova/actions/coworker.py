@@ -19,7 +19,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-import tools
+from nova.actions import tools
 
 _user32 = ctypes.windll.user32
 SW_MINIMIZE, SW_SHOWMINNOACTIVE, SW_RESTORE, SW_MAXIMIZE = 6, 7, 9, 3
