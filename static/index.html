@@ -315,7 +315,15 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
       <p id="localLabel">Pick an installed Ollama model. Everything stays on your laptop.</p>
       <select id="model" class="sel"></select>
       <p id="toolNote" class="mood"></p>
-      <label class="mood"><input type="checkbox" id="think"> Let DeepSeek "think" before answering (smarter, slower)</label>
+      <p style="margin:12px 0 2px"><b>How hard should I think?</b></p>
+      <select id="reasoning" class="sel">
+        <option value="auto">🤖 Auto - quick for chat, deep for hard questions and long tasks</option>
+        <option value="low">⚡ Low - fastest answers (2-3 s)</option>
+        <option value="high">🧠 High - reasons step by step (slower, more tokens)</option>
+        <option value="max">🔥 Max - the model's deepest reasoning (slowest, most tokens)</option>
+      </select>
+      <p class="mood" style="margin:2px 0 0">Used by the cloud brain (Gemini, ChatGPT, Claude); a local thinking model also thinks on High/Max. Her reasoning shows in the 💭 thinking log.</p>
+      <label class="mood"><input type="checkbox" id="think"> Always let a local thinking model (e.g. DeepSeek) "think", even on Low/Auto</label>
       <h3 style="margin-top:16px">How much should I ask first?</h3>
       <label class="opt"><input type="radio" name="aut" value="careful"> <b>Careful</b> - ask before anything that changes things (typing, files, windows, installs, commands)</label>
       <label class="opt"><input type="radio" name="aut" value="trusted"> <b>Trusted</b> - just do it; ask only before shutdown, uninstalling, emptying the bin or admin commands</label>
@@ -674,6 +682,7 @@ function openSetup(s) {
       : `She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`;
     document.querySelectorAll("[name=aut]").forEach(r => r.checked = r.value === s.autonomy);
   }
+  $("#reasoning").value = s.reasoning || "auto";
   $("#sounds").checked = s.reaction_sounds !== false; $("#powerOk").checked = !!s.power_ok;
   $("#setup").classList.add("show");
 }
@@ -684,7 +693,7 @@ $("#saveModel").onclick = async () => {
   if (p !== "ollama" && !st.keys[p]) { $("#keyErr").textContent = "Save your API key first."; return; }
   if (p !== "ollama" && !$("#cloudModel").value) { $("#keyErr").textContent = "Pick a model."; return; }
   try {
-    const s = await api("/api/setup", {model: $("#model").value || undefined, think: $("#think").checked,
+    const s = await api("/api/setup", {model: $("#model").value || undefined, think: $("#think").checked, reasoning: $("#reasoning").value,
       provider: p, cloud_model: p !== "ollama" ? $("#cloudModel").value : undefined,
       autonomy: document.querySelector("[name=aut]:checked")?.value, autostart: $("#autostart").checked,
       camera: $("#camera").checked, screen: $("#screen").checked,

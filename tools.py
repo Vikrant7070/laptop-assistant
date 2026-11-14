@@ -1299,13 +1299,18 @@ def more_tools(need=""):
 
 # ---------------------------------------------------------------- reactions and dragging windows (3D Nova)
 
-def react(reaction, times=0):
-    """Make 3D Nova act something out on screen."""
-    import avatar_client
+def reaction_name(reaction):
+    """The brain's word for a reaction -> one of REACTIONS (or the cleaned word if there's no such reaction)."""
     name = str(reaction or "").lower().strip()
-    name = {"laughing": "laugh", "dancing": "dance", "twirl": "spin", "applaud": "clap", "cheer": "happy", "jump": "happy",
+    return {"laughing": "laugh", "dancing": "dance", "twirl": "spin", "applaud": "clap", "cheer": "happy", "jump": "happy",
             "cry": "sad", "shrug": "confused", "yes": "nod", "no": "shake", "oops": "facepalm", "thanks": "bow",
             "heart": "love", "stretch": "yawn", "hello": "wave", "hi": "wave"}.get(name, name)
+
+
+def react(reaction, times=0):
+    """Make 3D Nova act something out on screen right now. (In a chat, app.queue_reaction plays it after she speaks.)"""
+    import avatar_client
+    name = reaction_name(reaction)
     if name not in REACTIONS:
         return f"I can't do '{reaction}'. I can: {', '.join(REACTIONS)}."
     if not avatar_client.running():
@@ -1489,7 +1494,8 @@ TOOLS = [
           "about one topic.", {"about": S}),
     _tool("react", "Act something out with your 3D body on screen: laugh, dance, spin, clap, surprised, sad, confused, nod, "
           "shake (no), facepalm (oops), bow (thanks), love, yawn, look, happy (jump), wave. Use it when the user asks "
-          "you to dance, laugh, clap and so on.",
+          "you to dance, laugh, clap and so on. It plays right after you finish speaking your answer (a laugh "
+          "after the joke), so call it first, then answer.",
           {"reaction": {"type": "string", "enum": list(REACTIONS)}, "times": N}, ["reaction"]),
     _tool("drag_window", "Move a window to another part of the screen - you walk over, grab its title bar and carry it.",
           {"window": S, "to": {"type": "string", "enum": ["left", "right", "center", "top", "bottom", "top-left",

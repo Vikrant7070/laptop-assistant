@@ -48,6 +48,9 @@ class FakeMouth:
     def hold(self, secs):
         pass
 
+    def talking(self):
+        return False
+
     def busy(self):
         return False
 

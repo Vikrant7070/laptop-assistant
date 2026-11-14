@@ -90,7 +90,7 @@ def test_no_key_raises_cloud_error():
 
 
 def test_cloud_failure_falls_back_to_local(monkeypatch):
-    monkeypatch.setattr(cloud, "chat", lambda *a: (_ for _ in ()).throw(cloud.CloudError("429")))
+    monkeypatch.setattr(cloud, "chat", lambda *a, **k: (_ for _ in ()).throw(cloud.CloudError("429")))
     monkeypatch.setattr(llm, "supports_tools", lambda m: False)
     monkeypatch.setattr(llm, "capabilities", lambda m: set())
     monkeypatch.setattr(llm, "_run", lambda path, body: {"message": {"content": "local says hi"}})
