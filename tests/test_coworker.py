@@ -8,6 +8,8 @@ from nova.core import app
 from nova.actions import coworker
 from nova.actions import tools
 
+REAL_OPEN_HIDDEN = coworker.open_hidden       # conftest blocks it; one test drives it with a fake Popen
+
 
 def wait_for(cond, secs=5):
     end = time.time() + secs
@@ -169,3 +171,86 @@ def test_tools_are_picked_for_email_requests():
     assert "draft_email" in toolpick.pick("draft an email to my manager asking for leave on friday")
     assert "read_notifications" in toolpick.pick("read my notifications")
     assert "show_finished_work" in toolpick.pick("show me the email draft")
+
+
+# ------------------------------------------------------------------ several jobs at once
+
+def _job(i, title, kind="research"):
+    return {"id": i, "kind": kind, "title": title, "status": "done", "result": f"{title} is done.", "hwnd": None}
+
+
+def test_stop_a_running_job(fake_desktop, monkeypatch):
+    import threading
+    said = []
+    monkeypatch.setattr(app, "announce", lambda line, spoken=None: said.append(line))
+    gate = threading.Event()
+    coworker.configure(write=lambda p, n: (gate.wait(5), "Subject: x\n\nlong enough body")[1], on_done=app.job_done)
+    job, _ = coworker.draft_email(about="the party")
+    assert wait_for(lambda: "Writing" in job["step"])
+    assert "now: Writing the email" in coworker.summary()          # "how's it going?" has an answer
+    assert coworker.stop("research") .startswith("None of the running jobs")
+    assert coworker.stop("party").startswith("Stopped #")
+    assert wait_for(lambda: job["status"] == "stopped")             # without waiting for the brain to finish
+    gate.set()
+    time.sleep(0.05)
+    assert job["status"] == "stopped" and not said and app.offer["job"] is not job
+    assert coworker.stop() == "No background job is running."
+
+
+def test_old_jobs_are_trimmed_but_running_ones_kept(monkeypatch):
+    import threading
+    monkeypatch.setattr(coworker, "jobs", [])
+    monkeypatch.setattr(coworker, "KEEP_JOBS", 2)
+    coworker.configure(on_done=None)
+    gate = threading.Event()
+    slow = coworker.start("research", "slow", lambda j: gate.wait(5))
+    quick = [coworker.start("research", f"q{i}", lambda j: None) for i in range(4)]
+    assert wait_for(lambda: all(j["status"] == "done" for j in quick))
+    coworker.start("research", "last", lambda j: None)
+    assert slow in coworker.jobs and quick[0] not in coworker.jobs
+    gate.set()
+
+
+def test_two_jobs_opening_windows_get_their_own(monkeypatch):
+    """Jobs find their new window by 'which window wasn't there before' - at the same moment they mustn't swap."""
+    import threading
+    wins, ids = set(), iter(range(100, 200))
+
+    def popen(args, **kw):
+        h = next(ids)
+        threading.Timer(0.05, lambda: wins.add(h)).start()         # the window shows up a moment later
+    monkeypatch.setattr(coworker.subprocess, "Popen", popen)
+    monkeypatch.setattr(coworker, "_windows_of", lambda proc: set(wins))
+    monkeypatch.setattr(coworker, "keep_hidden", lambda h, front=None: None)
+    got = []
+    ts = [threading.Thread(target=lambda: got.append(REAL_OPEN_HIDDEN(["x"], "chrome.exe"))) for _ in range(3)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(10)
+    assert len(got) == 3 and len(set(got)) == 3, got
+
+
+def test_two_finished_jobs_are_both_offered(monkeypatch):
+    shown = []
+    monkeypatch.setattr(coworker, "show", lambda j: (shown.append(j), f"Here's {j['title']}.")[1])
+    monkeypatch.setattr(app, "announce", lambda line, spoken=None: None)
+    a, b = _job(1, "Laptops"), _job(2, "Phones")
+    app.job_done(a)
+    app.job_done(b)
+    reply = app.take_offer("yes")
+    assert shown == [b] and "Laptops" in reply and "want to see it?" in reply
+    assert app.take_offer("yes") == "Here's Laptops." and shown == [b, a]
+    assert app.offer["job"] is None and not app.offers_waiting
+
+
+def test_show_button_picks_its_own_job(client, monkeypatch):
+    shown = []
+    monkeypatch.setattr(coworker, "show", lambda j: (shown.append(j), "Here it is.")[1])
+    monkeypatch.setattr(app, "announce", lambda line, spoken=None: None)
+    a, b = _job(1, "Laptops"), _job(2, "Phones")
+    app.job_done(a)
+    app.job_done(b)
+    assert client.post("/api/offer", json={"show": True, "id": 1}).get_json()["reply"] == "Here it is."
+    assert shown == [a] and app.offer["job"] is b                  # the newer one is still waiting for its answer
+    app.offer.update(job=None, until=0.0)

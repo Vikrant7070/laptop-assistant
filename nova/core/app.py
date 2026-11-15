@@ -1959,7 +1959,8 @@ def idle_watch():
 
 # ------------------------------------------------------------------ co-worker jobs (coworker.py): done -> "want to see it?"
 
-offer = {"job": None, "until": 0.0}
+offer = {"job": None, "until": 0.0}      # the "want to see it?" she asked last - a bare "yes" answers this one
+offers_waiting = []                      # earlier finished jobs whose offer wasn't answered yet: (job, until)
 SHOW_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|haan?|show( it| me)?|open it|let me see|please)\b", re.I)
 OFFER_SECS = 900
 
@@ -1975,12 +1976,16 @@ def write_text(prompt, max_tokens=700):
 
 def job_done(job):
     nap["last_task"] = time.time()
+    if job["status"] == "stopped":                  # the user stopped it - stop_background_job already said so
+        return
     if job["status"] != "done":
         line = f"Sorry, the {job['kind'].replace('_', ' ')} didn't work: {job['error']}"
         push_event({"reply": line, "kind": "job"})
         announce(line)
         return
     wake_body()
+    if offer["job"] and offer["job"] is not job and time.time() < offer["until"]:
+        offers_waiting.append((offer["job"], offer["until"]))     # two jobs done close together: keep both
     offer.update(job=job, until=time.time() + OFFER_SECS)
     line = job["result"] + " Want to see it?"
     push_event({"reply": "✅ " + line, "kind": "job", "offer": {"id": job["id"], "label": "Show it"}})
@@ -1991,10 +1996,30 @@ def job_done(job):
         threading.Thread(target=silent_loop, daemon=True).start()
 
 
-def take_offer(text, force=None):
-    """'yes' / 'no' right after "want to see it?". Returns her answer, or None if this isn't about the offer."""
-    job = offer["job"]
-    if not job or time.time() > offer["until"]:
+def _next_offer():
+    """After one offer is answered, ask about the next finished job still waiting. Returns the question, or ""."""
+    now = time.time()
+    offers_waiting[:] = [(j, u) for j, u in offers_waiting if u > now and j is not offer["job"]]
+    if offer["job"] and offer["until"] > now:
+        return ""
+    if not offers_waiting:
+        offer.update(job=None, until=0.0)
+        return ""
+    job, until = offers_waiting.pop()
+    offer.update(job=job, until=until)
+    return f" Your {job['kind'].replace('_', ' ')} '{job['title']}' is ready too - want to see it?"
+
+
+def take_offer(text, force=None, job_id=None):
+    """'yes' / 'no' right after "want to see it?". Returns her answer, or None if this isn't about the offer.
+    job_id: the chat page's button names its own job (several can be waiting)."""
+    now = time.time()
+    if job_id is not None:
+        live = ([(offer["job"], offer["until"])] if offer["job"] else []) + offers_waiting
+        job = next((j for j, u in live if j.get("id") == job_id and u > now), None)
+    else:
+        job = offer["job"] if offer["until"] > now else None
+    if not job:
         return None
     clean = _unspoken(text).strip()
     short = len(clean.split()) <= 8
@@ -2002,12 +2027,14 @@ def take_offer(text, force=None):
     no = force is False or (force is None and short and NO_RE.search(clean) and not yes)
     if not (yes or no):
         return None
-    offer.update(job=None, until=0.0)
+    if offer["job"] is job:
+        offer.update(job=None, until=0.0)
+    offers_waiting[:] = [(j, u) for j, u in offers_waiting if j is not job]
     note_task()
     if yes:
         think(f"🪟 Bringing '{job['title']}' to the front.")
-        return coworker.show(job)
-    return "Okay! It's waiting for you whenever you want it."
+        return coworker.show(job) + _next_offer()
+    return "Okay! It's waiting for you whenever you want it." + _next_offer()
 
 
 coworker.configure(write=write_text, on_done=job_done, on_note=lambda t: think(t, cloud_too=False))
@@ -2197,8 +2224,10 @@ def chat():
 @app.post("/api/offer")
 def offer_answer():
     """The chat page's "Show it" / "Not now" buttons under a finished background job."""
-    yes = _body().get("show") is True
-    said = take_offer("", force=yes)
+    body = _body()
+    yes = body.get("show") is True
+    job_id = body.get("id")
+    said = take_offer("", force=yes, job_id=job_id if isinstance(job_id, int) else None)
     return jsonify(reply=said or "That one isn't waiting any more.", activity=[])
 
 
