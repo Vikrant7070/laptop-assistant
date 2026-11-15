@@ -438,15 +438,17 @@ try {
 function OnlineOK { ((Get-ItemProperty "HKCU:\Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy" -ErrorAction SilentlyContinue).HasAccepted -eq 1) }
 $r.InitialSilenceTimeout = [TimeSpan]::FromSeconds(6)
 $r.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(900)
+# A wake-only grammar forces any sound onto the nearest phrase ("nova"), so a hum or a chair could pass the old 0.3
+# limit; 0.5 asks for her name said clearly (anything between shows as "almost heard" in her status notes).
 $r.LoadGrammar($wake)
 [Console]::Out.WriteLine("READY"); [Console]::Out.Flush()
 while ($true) {
   $res = $null
   try { $res = $r.Recognize([TimeSpan]::FromSeconds(20)) } catch { }
-  if ($res -and $res.Grammar.Name -eq "wake" -and $res.Confidence -lt 0.3) {
+  if ($res -and $res.Grammar.Name -eq "wake" -and $res.Confidence -lt 0.5) {
     [Console]::Out.WriteLine("LOW:" + [math]::Round($res.Confidence, 2) + "|" + $res.Text); [Console]::Out.Flush()
   }
-  if ($res -and $res.Grammar.Name -eq "wake" -and $res.Confidence -ge 0.3) {
+  if ($res -and $res.Grammar.Name -eq "wake" -and $res.Confidence -ge 0.5) {
     if ($res.Text -match "sleep|stop listening|good night") { [Console]::Out.WriteLine("SLEEP"); [Console]::Out.Flush(); continue }
     if ($res.Text -match "wake up|are you there") { [Console]::Out.WriteLine("WAKEUP"); [Console]::Out.Flush(); continue }
     [Console]::Out.WriteLine("WAKE"); [Console]::Out.Flush()
@@ -527,6 +529,7 @@ class Transcriber:
         self.lock = threading.Lock()
         self.failures = 0      # in a row; after a few, the app falls back to the voice-typing bubble
         self.lines = queue.Queue()
+        self.rejected = ""     # the last words thrown away as noise, and why (for the status notes)
 
     def start(self):
         if self.proc and self.proc.poll() is None:
@@ -560,8 +563,21 @@ class Transcriber:
             self.proc.terminate()
         self.proc = None
 
+    @staticmethod
+    def doubt(text, conf):
+        """Why a result from Windows' recognizer is probably noise, or "". conf: High, Medium, Low or Rejected.
+        A short "Low" result is usually a hum or a door the recognizer forced into words; longer "Low" sentences
+        are often real speech it heard imperfectly, so they stay (her brain is told it may have misheard)."""
+        why = noise_words(text)
+        if why:
+            return why
+        if conf == "Low" and len(_words(text)) <= 2 and not SHORT_REPLY.match(text):
+            return "not sure enough"
+        return ""
+
     def listen(self):
         """Wait for one utterance. Returns (kind, text): kind is 'text', 'silence', 'unclear' or 'error'."""
+        self.rejected = ""
         with self.lock:
             if not self.start():
                 self.failures += 1
@@ -578,6 +594,10 @@ class Transcriber:
             status, conf, text = (line[7:].split("|", 2) + ["", ""])[:3]
             if status == "Success" and text.strip() and conf != "Rejected":
                 self.failures = 0
+                why = self.doubt(text, conf)
+                if why:
+                    self.rejected = f"“{text.strip()[:40]}” ({why})"
+                    return "unclear", status
                 return "text", text.strip()
             if status in ("TimeoutExceeded", "Success", "UserCanceled", "PauseLimitExceeded"):
                 self.failures = 0
@@ -624,6 +644,10 @@ def _add_nvidia_dlls():
 WHISPER_HINT = ("Open Chrome, open VS Code, open WhatsApp, YouTube, Spotify. "
                 "What's on my screen? Check my battery. Volume up.")
 WHISPER_JUNK = {"", "you", "thank you.", "thanks for watching!", "thank you for watching.", "bye.", ".", "so", "okay."}
+# The same stock words, compared without punctuation or capitals ("Thank you!", "you.", "Bye bye."): what Whisper
+# writes for a cough, a door or a few seconds of hum.
+JUNK_WORDS = {"you", "thank you", "thanks for watching", "thank you for watching", "thank you so much for watching",
+              "bye", "bye bye", "so", "okay", "the end", "you you", "i", "a", "the"}
 # What Whisper "hears" in chimes, hums and her own reaction sounds (measured with Windows' notification sounds, a fan,
 # typing and Nova's sfx, 2026-11-15): stock video endings, caption credits, and bare sounds that are not words.
 WHISPER_GHOSTS = re.compile(r"(see you (next time|in the next)|thanks? (you )?for watching|subscribe|closed captions?|"
@@ -638,6 +662,81 @@ SHORT_REPLY = re.compile(r"^\W*(yes|yeah|yep|no|nope|okay|ok|sure|stop|cancel|do
 SURE = -0.8
 SURE_SHORT = -1.2
 SURE_HINT = -0.6
+# The looser limit for a bare yes/no is only for when she has just asked something (an Allow/No question, "want to
+# see it?", or an answer that ended in "?"). Otherwise a stray "No." from a cough gets answered ("Arey, what
+# happened, boss?", 2026-11-15). "Stop" and "cancel" keep the looser limit always: they can cut her off any time.
+ANYTIME_SHORT = re.compile(r"^\W*(stop|cancel)\b", re.I)
+# "Hey Nova" on its own wakes her into a conversation for 5 minutes, so it must be clearly said, not a hum Whisper
+# wrote down as "Noah." (her name in a sure reading scores -0.1 to -0.6).
+SURE_WAKE = -1.0
+
+
+def _words(text):
+    return re.findall(r"[a-z']+", (text or "").lower())
+
+
+def noise_words(text):
+    """Why these words are what speech recognizers make up from noise, or "" if they could be real. Needs no
+    confidence score, so it works for Windows' recognizers too."""
+    words = _words(text)
+    if not words or all(w in NOT_WORDS for w in words):
+        return "a sound, not words"
+    if " ".join(words) in JUNK_WORDS:
+        return "a stock phrase noise turns into"
+    if WHISPER_GHOSTS.search(text):
+        return "a phrase Whisper makes up from noise"
+    return ""
+
+
+class VoiceProfile:
+    """How loud the user's own voice reaches the microphone, learned from each "Hey Nova" (only the user calls her
+    by name, so those recordings are theirs). Requests in a conversation (no "Hey Nova" needed) that are far quieter
+    than that - a TV, people in the next room, someone on a call - are not taken as requests.
+    This is loudness, not who is speaking: telling one person's voice from another's needs a speaker-recognition
+    model, and none is installed (no torch, speechbrain or resemblyzer; Smart App Control blocks adding them)."""
+
+    KEEP = 30            # the last 30 "Hey Nova"s
+    MIN_SAMPLES = 5      # nothing is filtered until her name has been heard this many times
+    QUIET_SHARE = 0.2    # under a fifth of your usual loudness (-14 dB, ~5x as far away) = not you
+    SNR_MIN = 3.0        # speech must be at least 3x the room's own noise, or Whisper is guessing words into a hum
+
+    def __init__(self, path=None):
+        from nova.shared import DATA
+        self.path = Path(path) if path else DATA / "voice_profile.json"
+        self.levels = []
+        try:
+            import json
+            self.levels = [float(x) for x in json.loads(self.path.read_text(encoding="utf-8")).get("levels", [])]
+        except Exception:
+            self.levels = []
+
+    def learn(self, level):
+        if not level or level <= 0:
+            return
+        self.levels = (self.levels + [round(float(level), 6)])[-self.KEEP:]
+        try:
+            import json
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps({"levels": self.levels}), encoding="utf-8")
+        except Exception:
+            pass
+
+    def usual(self):
+        if len(self.levels) < self.MIN_SAMPLES:
+            return None
+        s = sorted(self.levels)
+        return s[len(s) // 2]
+
+    def doubt(self, level, noise=0.0):
+        """Why a recording this loud (mean loudness of its voiced parts) is probably not the user, or ""."""
+        if not level:
+            return ""
+        if noise and level < noise * self.SNR_MIN:
+            return f"barely louder than the room ({level / noise:.1f}x its noise)"
+        usual = self.usual()
+        if usual and level < usual * self.QUIET_SHARE:
+            return f"much quieter than your voice ({level / usual:.0%} of usual) - someone or something farther away"
+        return ""
 NOVA_NAMES = r"(?:nova|novah|noah|nover|nava|nowa|no va|नोवा|नौवा|नोआ)"
 # "Hey Nova ..." anywhere, or a sentence that starts with "Nova ..."
 # Nova's name as the first or second word ("Nova, ...", "Hey Nova ...", "Hei Nova", "Ok Nova", "Arey Nova", "हे नोवा"),
@@ -689,6 +788,12 @@ class WhisperTranscriber:
         # Whatever the microphone takes in then is her own voice, never a request - it is thrown away.
         self.self_voice = None
         self.rejected = ""     # the last words thrown away as noise, and why (for the status notes)
+        self.sure = 0.0        # how sure Whisper was of the last words (mean log-probability per token)
+        self.voice_level = 0.0  # raw loudness of the last recording's voiced parts (before it is turned up)
+        self.noise = 0.0       # the room's background loudness just before that recording
+        self.profile = VoiceProfile()
+        # Set by the app: True while she is waiting for a yes/no (bare "No." from noise is ignored otherwise).
+        self.expect_reply = None
 
     @staticmethod
     def available():
@@ -744,7 +849,8 @@ class WhisperTranscriber:
         import sounddevice as sd
         n = int(self.RATE * self.BLOCK)
         chunks, started, quiet, floor, loud = [], False, 0.0, None, 0
-        waited = 0.0
+        waited, power = 0.0, 0.0      # power: sum of squared loudness over the voiced blocks
+        self.voice_level, self.noise = 0.0, 0.0
         end_pause = end_pause or self.END_PAUSE
         # Seconds into the sentence at which peek() gets what was said so far. A bare "Hey Nova" lasts only ~0.6 s,
         # so the first look has to come early.
@@ -758,7 +864,7 @@ class WhisperTranscriber:
                 if self.self_voice and self.self_voice():
                     # She is speaking (a notification, her answer, a reaction sound): forget what was recorded so
                     # far and wait for her to finish. Her quiet time doesn't count towards start_wait either.
-                    chunks, started, loud, quiet, spoken, voiced = [], False, 0, 0.0, 0.0, 0.0
+                    chunks, started, loud, quiet, spoken, voiced, power = [], False, 0, 0.0, 0.0, 0.0, 0.0
                     peeks, last_sound, held_at = [0.5, 0.9, 1.5], 0.0, None
                     if time.time() > give_up or (abort and abort()):
                         return None
@@ -787,6 +893,7 @@ class WhisperTranscriber:
                     quiet += self.BLOCK
                 else:
                     quiet, last_sound, voiced = 0.0, spoken, voiced + self.BLOCK
+                    power += rms * rms
                 # Only "Hey Nova" so far and she has shown "I'm listening": keep this same recording open for the
                 # request (up to 3.5 s), so its first word isn't lost while the microphone is reopened. Once the
                 # request has been spoken (sound well after the wake word), the normal short pause ends it.
@@ -799,6 +906,9 @@ class WhisperTranscriber:
                     break
                 if abort and abort():
                     return None
+        n_voiced = round(voiced / self.BLOCK)
+        self.voice_level = float(np.sqrt(power / n_voiced)) if n_voiced else 0.0
+        self.noise = float(floor or 0.0)
         return np.concatenate(chunks)
 
     def _transcribe(self, audio, hint, strict=False):
@@ -824,32 +934,37 @@ class WhisperTranscriber:
             self.model, self.skip = None, self.skip + 1
             segs = self._decode(audio, hint)
         text = " ".join(s.text.strip() for s in segs).strip()
-        if text.lower() in WHISPER_JUNK:
+        if text.lower() in WHISPER_JUNK or " ".join(_words(text)) in JUNK_WORDS:
             return ""
+        sure = sum(s.avg_logprob * len(s.text) for s in segs) / max(1, sum(len(s.text) for s in segs))
+        self.sure = sure
         if strict:
-            sure = sum(s.avg_logprob * len(s.text) for s in segs) / max(1, sum(len(s.text) for s in segs))
-            why = self.doubt(text, sure, hint)
+            expecting = True if self.expect_reply is None else bool(self.expect_reply())
+            why = self.doubt(text, sure, hint, expecting)
             if why:
                 self.rejected = f"“{text[:40]}” ({why}, sure {sure:.2f})"
                 return ""
         return text
 
     @staticmethod
-    def doubt(text, sure, hint=None):
-        """Why these words are probably not a request (noise Whisper turned into words), or "" if they look real."""
-        words = re.findall(r"[a-z']+", text.lower())
-        if not words or all(w in NOT_WORDS for w in words):
-            return "a sound, not words"
-        if WHISPER_GHOSTS.search(text):
-            return "a phrase Whisper makes up from noise"
+    def doubt(text, sure, hint=None, expecting=True):
+        """Why these words are probably not a request (noise Whisper turned into words), or "" if they look real.
+        expecting: she has just asked a yes/no question, so a bare "No." may be a little unclear and still count."""
+        words = _words(text)
+        why = noise_words(text)
+        if why:
+            return why
         said = " ".join(words)
-        hinted = hint and any(said == " ".join(re.findall(r"[a-z']+", h.lower()))
-                              for h in re.split(r"(?<=[.?!])\s+", hint) if h)
+        hinted = hint and any(said == " ".join(_words(h)) for h in re.split(r"(?<=[.?!])\s+", hint) if h)
         if hinted and sure < SURE_HINT:
             return "Whisper repeating its hint"
-        if len(words) <= 3 and SHORT_REPLY.match(text):
+        if len(words) <= 3 and (ANYTIME_SHORT.match(text) or (expecting and SHORT_REPLY.match(text))):
             return "" if sure >= SURE_SHORT else "not sure enough"
         return "" if sure >= SURE else "not sure enough"
+
+    def loudness_doubt(self):
+        """Why the last recording is probably not the user talking to her (see VoiceProfile), or ""."""
+        return self.profile.doubt(self.voice_level, self.noise) if self.profile else ""
 
     def again_in_english(self):
         """The last recording written down as plain English - a short "Hi Nova" is sometimes taken for Hindi."""
@@ -889,6 +1004,11 @@ class WhisperTranscriber:
                 audio = self._record(start_wait, max_len, abort, peek, end_pause, hold)
                 if audio is None:
                     return "silence", "no speech"
+                quiet = self.loudness_doubt() if strict else ""
+                if quiet:                  # (checked before Whisper runs: no graphics-card time spent on a TV)
+                    self.level = float(abs(audio).max())
+                    self.rejected = f"a sound {quiet}"
+                    return "unclear", ""
                 text = self._transcribe(audio, hint, strict)
             except Exception as e:
                 self.error = str(e)
@@ -964,6 +1084,15 @@ class WhisperEars(_EarsBase):
         finally:
             self.peeking = False
 
+    @staticmethod
+    def wake_doubt(rest, sure):
+        """Why something with her name in it is probably noise, or "". rest = the words after her name.
+        "Hey Nova, <request>" in one breath goes straight to her brain, so the request gets the same check as one
+        made in a conversation; her name alone (or "wake up") opens a 5-minute conversation, so it must be sure."""
+        if len(rest.split()) >= 2 and not EARS_SLEEP_RE.search(rest) and not EARS_WAKEUP_RE.search(rest):
+            return WhisperTranscriber.doubt(rest, sure, None, expecting=False)
+        return "not sure enough" if sure < SURE_WAKE else ""
+
     def _step_aside_quiet(self):
         return not self.running or self.mouth.busy() or bool(self.paused and self.paused())
 
@@ -1035,6 +1164,14 @@ class WhisperEars(_EarsBase):
             return
         low = text.lower()
         rest = text[m.end():].strip(" ,.!?-…")
+        # (early: the quick look already read her name mid-sentence - two readings agree, so it was really said)
+        why = "" if early else self.wake_doubt(rest, getattr(self.w, "sure", 0.0))
+        if why:
+            self.heard = [h for h in self.heard if "ignored noise" not in h]
+            self._note(f"ignored noise: “{text[:50]}” ({why}, mic level {self.w.level:.2f})")
+            return
+        if getattr(self.w, "profile", None):
+            self.w.profile.learn(getattr(self.w, "voice_level", 0.0))   # this is the user: remember how loud they are
         if EARS_SLEEP_RE.search(low):
             self._asked_to_sleep()
         elif EARS_WAKEUP_RE.search(low):
@@ -1188,6 +1325,8 @@ class Ears(_EarsBase):
                 text, conf = text.strip(), float(conf or 0)
                 label = {"cmd": "command", "rt": "accurate", "dict": "basic"}.get(kind, kind)
                 self._note(f"heard ({label}, {conf:.0%} sure): {text}")
+                if noise_words(text):     # "Thank you.", "Hmm." from a cough: nothing to answer or ask about
+                    continue
                 if (kind == "dict" and conf < 0.45) or (kind == "rt" and conf < 0.2):  # not sure: ask again
                     avatar_client.send("say", text=f"Did you say “{text}”? Say “Hey Nova” and try again 🙏", secs=5, timeout=2)
                     self.mouth.say("Sorry, I didn't catch that clearly. Could you say it again?")
