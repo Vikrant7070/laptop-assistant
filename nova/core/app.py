@@ -48,7 +48,7 @@ def _unspoken(text):
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
          "provider": "ollama", "cloud_models": {}, "notifications": False, "suggest": False,
-         "reaction_sounds": True, "power_ok": False, "reasoning": "auto"}
+         "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True}
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
@@ -1095,6 +1095,13 @@ def save_frames():
     if avatar_reload_hook:
         avatar_reload_hook()
     return jsonify(ok=True, count=count)
+
+
+@app.get("/api/look")
+def get_look():
+    """3D Nova's saved look (nova/avatar/body.py) - the 3D preview page dresses her in it."""
+    from nova.avatar import body
+    return jsonify(body.load_look())
 
 
 avatar_reload_hook = None

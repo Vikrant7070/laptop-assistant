@@ -4,6 +4,7 @@ Run:  pythonw desktop.py            (the launcher in the project folder; or doub
       pythonw desktop.py --hidden   (start in the tray, used for auto-start)
 """
 import ctypes
+import os
 import subprocess
 import sys
 import threading
@@ -43,9 +44,17 @@ def icon_image():
     return img
 
 
+# The hidden live-3D renderer must keep drawing while its window is hidden: without these, WebView2 slows a hidden
+# page's timers to one a second. (Measured: ~23 fps hidden with them, ~1 fps without; it renders on the Intel GPU.)
+# The variable replaces pywebview's own browser arguments, so its ElasticOverscroll one is kept here.
+WEBVIEW2_ARGS = ("--disable-features=ElasticOverscroll --disable-background-timer-throttling "
+                 "--disable-renderer-backgrounding --disable-backgrounding-occluded-windows")
+
+
 def main():
     if already_running():
         return
+    os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", WEBVIEW2_ARGS)
     srv = make_server("127.0.0.1", PORT, server.app, threaded=True)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
@@ -56,6 +65,9 @@ def main():
     # Nova's "ear": a small bubble next to 3D Nova that holds Windows voice typing while she listens.
     ear = webview.create_window("Nova ear", URL + "/ear", width=430, height=104, frameless=True, on_top=True,
                                 hidden=True, resizable=False, background_color="#151829")
+    # 3D Nova's live renderer: draws her model every frame and hands the pixels to avatar.py (see body.py).
+    # Never shown; off in the tray menu ("Live 3D Nova") falls back to the saved sprite frames.
+    webview.create_window("Nova body", URL + "/static/nova3d.html?live=1", width=300, height=380, hidden=True)
     quitting = {"v": False}
     ducked = {"v": False}
     from nova.actions import tools
@@ -133,6 +145,12 @@ def main():
         window.destroy()
         srv.shutdown()
 
+    def toggle_live(icon, _):
+        s = server.settings()
+        s["live_3d"] = not s.get("live_3d", True)
+        server.save_settings(s)
+        avatar_client.send("live", on=s["live_3d"], timeout=3)
+
     def toggle_autostart(icon, _):
         server.set_autostart(not server.STARTUP_LNK.exists())
 
@@ -149,6 +167,8 @@ def main():
         pystray.MenuItem("Open Nova", show, default=True),
         pystray.MenuItem("Stop what Nova is doing", lambda icon, _: server.stop_now()),
         pystray.MenuItem("Show 3D Nova on desktop", toggle_body, checked=lambda _: body["shown"]),
+        pystray.MenuItem("Live 3D Nova (new moves and looks)", toggle_live,
+                         checked=lambda _: server.settings().get("live_3d", True)),
         pystray.MenuItem("Start with Windows", toggle_autostart, checked=lambda _: server.STARTUP_LNK.exists()),
         pystray.MenuItem("Quit Nova", quit_app),
     ))
