@@ -133,6 +133,21 @@ class NeuralVoice:
         return k.create(" ".join(ph.split()), voice=NEURAL_VOICE, speed=NEURAL_SPEED, is_phonemes=True)
 
 
+SPEECH_FPS = 30     # loudness samples per second sent to 3D Nova with each sentence
+
+
+def speech_envelope(samples, rate):
+    """How loud a sentence is, SPEECH_FPS times a second, 0..1 (for 3D Nova's mouth and body while she speaks)."""
+    import numpy as np
+    step = max(1, int(rate / SPEECH_FPS))
+    n = len(samples) // step
+    if n == 0:
+        return []
+    rms = np.sqrt(np.mean(np.square(np.asarray(samples[:n * step], dtype=np.float32).reshape(n, step)), axis=1))
+    top = float(np.percentile(rms, 95)) or 1.0
+    return [round(float(v), 2) for v in np.clip(rms / top, 0, 1)]
+
+
 class Mouth:
     """Nova's voice, in two stages so her lips and speech bubble match the sound:
     - the worker prepares audio for each sentence as soon as the text arrives (several sentences ahead), and
@@ -320,6 +335,7 @@ class Mouth:
         import numpy as np
         import sounddevice as sd
         first_of_reply = True
+        n_said = 0
         stream = None
         try:   # open the speaker now, so even her very first sentence doesn't wait for it (kept open from then on)
             stream = sd.OutputStream(samplerate=24000, channels=1, dtype="float32", latency="low")
@@ -358,6 +374,9 @@ class Mouth:
                         time.sleep(min(stream.latency, 0.1))
                         self._bubble(words, secs, gen)
                         self._lips(True, gen)
+                        n_said = 0 if first_of_reply else n_said + 1
+                        self._tell(gen, "speech", words=words, secs=round(secs, 2), n=n_said, fps=SPEECH_FPS,
+                                   env=speech_envelope(data[:, 0], rate), start=time.time())
                         if first_of_reply and self.on_start:
                             self.on_start(words, f"text->synth {synth_at - said_at:.2f}s, synth {ready_at - synth_at:.2f}s, "
                                                  f"ready->play {t_play - ready_at:.2f}s, sound device {opened:.2f}s")

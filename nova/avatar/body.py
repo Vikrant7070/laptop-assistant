@@ -8,7 +8,8 @@ fallback for when that window isn't running. Because the model is posed live, sh
   - change her look: colours and accessories (change_look tool), stored in data/look.json.
 
 Angles are in degrees from her own point of view, so a brain can write them without knowing the model:
-  right_arm_out / left_arm_out          0 = hanging at her side, 90 = straight out sideways, 170 = straight up
+  right_arm_out / left_arm_out          0 = hanging at her side, 90 = straight out sideways, 135 = raised high
+                                        (her head is big: higher than 140 hides the arm behind it)
   right_arm_forward / left_arm_forward  0 = hanging down, 90 = pointing straight ahead, 160 = up past her head
   head_nod (+ looks down, - up), head_turn (+ to her left = the viewer's right), head_tilt (+ to her left shoulder)
   lean_forward (+ bows), lean_side (+ to her left), turn (whole body; + to her left), jump (0..100 = how high)
@@ -24,10 +25,10 @@ MOVES_FILE = DATA / "moves.json"
 LOOK_FILE = DATA / "look.json"
 
 ANGLES = {   # name: (lowest, highest)
-    "right_arm_out": (-20, 180), "left_arm_out": (-20, 180),
+    "right_arm_out": (-20, 140), "left_arm_out": (-20, 140),
     "right_arm_forward": (-60, 180), "left_arm_forward": (-60, 180),
     "head_nod": (-40, 40), "head_turn": (-70, 70), "head_tilt": (-35, 35),
-    "lean_forward": (-20, 45), "lean_side": (-25, 25), "turn": (-360, 360), "jump": (0, 100),
+    "lean_forward": (-20, 30), "lean_side": (-25, 25), "turn": (-360, 360), "jump": (0, 100),
     "right_leg_lift": (-30, 90), "left_leg_lift": (-30, 90),
 }
 EYES = ("open", "closed", "happy", "half", "up", "wide", "sad", "side_left", "side_right")
@@ -171,3 +172,133 @@ def change_look(changes, preset=None):
     LOOK_FILE.parent.mkdir(parents=True, exist_ok=True)
     LOOK_FILE.write_text(json.dumps(look, indent=1), encoding="utf-8")
     return look, problems
+
+
+# ------------------------------------------------------------------ talking with her whole body
+# While she speaks, voice.Mouth sends each sentence's words and loudness to avatar.py. The loudness moves her mouth
+# and gives her a little bounce on stressed words (live renderer); the words pick a gesture for that sentence.
+# Gestures are short moves in the new_move format; some sentences use a built-in reaction instead (nod, shrug...).
+GESTURES = {
+    "explain": [{"at": .3, "right_arm_forward": 45, "right_arm_out": 25, "left_arm_forward": 40, "left_arm_out": 25},
+                {"at": .7, "right_arm_forward": 35, "right_arm_out": 35, "left_arm_forward": 50, "left_arm_out": 20}],
+    "explain_one": [{"at": .25, "right_arm_forward": 55, "right_arm_out": 30, "head_tilt": 5},
+                    {"at": .5, "right_arm_forward": 45, "right_arm_out": 40},
+                    {"at": .75, "right_arm_forward": 55, "right_arm_out": 30, "head_tilt": 5}],
+    "point_you": [{"at": .3, "right_arm_forward": 85, "right_arm_out": 10, "head_nod": 6, "eyes": "happy"},
+                  {"at": .7, "right_arm_forward": 80, "right_arm_out": 12, "eyes": "open"}],
+    "point_me": [{"at": .3, "right_arm_forward": 60, "right_arm_out": -15, "head_tilt": 6},
+                 {"at": .7, "right_arm_forward": 60, "right_arm_out": -15}],
+    "ask": [{"at": .3, "right_arm_forward": 35, "right_arm_out": 30, "left_arm_forward": 35, "left_arm_out": 30,
+             "head_tilt": 16, "eyes": "up"},
+            {"at": .75, "right_arm_forward": 35, "right_arm_out": 30, "left_arm_forward": 35, "left_arm_out": 30,
+             "head_tilt": 16, "eyes": "open"}],
+    "excited": [{"at": .25, "right_arm_out": 115, "left_arm_out": 115, "right_arm_forward": 25, "left_arm_forward": 25,
+                 "jump": 18, "eyes": "happy", "blush": 1},
+                {"at": .55, "right_arm_out": 100, "left_arm_out": 100, "jump": 0, "eyes": "happy", "blush": 1},
+                {"at": .8, "right_arm_out": 115, "left_arm_out": 115, "jump": 14, "eyes": "happy"}],
+    "think": [{"at": .3, "right_arm_forward": 120, "right_arm_out": -12, "head_tilt": 10, "eyes": "up"},
+              {"at": .75, "right_arm_forward": 120, "right_arm_out": -12, "head_tilt": 10, "eyes": "up"}],
+    "count": [{"at": .2, "right_arm_forward": 70, "right_arm_out": 20}, {"at": .4, "right_arm_forward": 60},
+              {"at": .6, "right_arm_forward": 70, "right_arm_out": 20}, {"at": .8, "right_arm_forward": 60}],
+}
+# (pattern, gesture or built-in reaction) - the first that matches the sentence wins
+SPEECH_RULES = [
+    (r"\b(ha ?ha|hehe|haha|lol|lmao|hilarious|funny)\b|😂|🤣", "laugh"),
+    (r"\b(sorry|oops|my bad|my mistake|galti)\b", "facepalm"),
+    (r"\b(thank|thanks|shukriya|dhanyavaad)\b", "bow"),
+    (r"\b(love|adore)\b|❤|💖", "love"),
+    (r"\b(wow|whoa|woah|omg|no way)\b|\breally\?", "surprised"),
+    (r"\b(i don'?t know|not sure|no idea|maybe|perhaps|who knows|pata nahi)\b", "confused"),
+    (r"\b(let me think|hmm+|i wonder)\b", "think"),
+    (r"^\W*(no|nope|nah|nahi|can'?t|cannot|won'?t)\b", "shake"),
+    (r"^\W*(yes|yeah|yep|sure|of course|okay|ok|done|right|exactly|haan|bilkul|absolutely)\b", "nod"),
+    (r"\b(awesome|amazing|great|yay|woohoo|fantastic|shabash|wah|brilliant|perfect|excellent)\b.*!", "excited"),
+    (r"\?\s*$", "ask"),
+    (r"\b(first|second|third|then|next|finally|step)\b", "count"),
+    (r"\b(you|your|you'?re|aap|tum)\b", "point_you"),
+    (r"^\W*(i|i'?m|i'?ll|i'?ve|my|me)\b", "point_me"),
+]
+SPEECH_REACTIONS = ("laugh", "facepalm", "bow", "love", "surprised", "confused", "shake", "nod")
+
+
+def speech_gesture(words, secs, n=0):
+    """What her body does while she says this sentence: a gesture move, a built-in reaction name, or None.
+    n = how many sentences she has said in this reply (plain sentences alternate explaining hands and stillness)."""
+    text = " ".join(str(words or "").lower().split())
+    if not text or secs < 0.5:
+        return None
+    for pattern, g in SPEECH_RULES:
+        if re.search(pattern, text):
+            return g if g in SPEECH_REACTIONS else gesture_move(g, secs)
+    if secs >= 1.2 and n % 3 != 2:         # most plain sentences get talking hands, every third one stays calm
+        return gesture_move("explain" if n % 2 == 0 else "explain_one", secs)
+    return None
+
+
+def gesture_move(name, secs):
+    """A speech gesture as a playable move, stretched to fit the sentence."""
+    return {"name": "gesture_" + name, "duration": round(max(1.0, min(3.2, secs * 0.9)), 2), "loop": False,
+            "keys": GESTURES[name]}
+
+
+# ------------------------------------------------------------------ sounds for her invented moves
+# A move may carry a sound: a short word in her own voice ({"say": "Yay!"}) or a little synthesized piece built from
+# notes ({"notes": [{"type": "chime", "pitch": "C6", "at": 0}, ...]}). Made once, saved in data/sfx/move_<name>.wav.
+SOUND_TYPES = ("chime", "pluck", "tone", "voice", "whoosh", "pop", "clap", "boing", "drum")
+NOTE_RE = re.compile(r"^([a-g])(#|b)?(\d)$")
+
+
+def pitch_hz(p):
+    """'C5', 'F#4', 'Bb3' or a number of Hz -> Hz (None if it isn't one)."""
+    if isinstance(p, bool):
+        return None
+    if isinstance(p, (int, float)):
+        return float(p) if 40 <= p <= 4000 else None
+    m = NOTE_RE.match(str(p or "").strip().lower())
+    if not m:
+        try:
+            return pitch_hz(float(p))
+        except (TypeError, ValueError):
+            return None
+    semis = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}[m.group(1)] + {"#": 1, "b": -1}.get(m.group(2) or "", 0)
+    return round(440 * 2 ** ((semis - 9) / 12 + int(m.group(3)) - 4), 2)
+
+
+def clean_sound(sound):
+    """A sound the brain wrote -> (sound, None), (None, None) when there is none, or (None, what is wrong)."""
+    if not sound:
+        return None, None
+    if isinstance(sound, str):
+        try:
+            sound = json.loads(sound)
+        except ValueError:
+            sound = {"say": sound}
+    if not isinstance(sound, dict):
+        return None, 'sound must be {"say": "Yay!"} or {"notes": [...]}.'
+    if sound.get("say"):
+        say = " ".join(str(sound["say"]).split())[:40]
+        if not re.search(r"[A-Za-z]", say):
+            return None, "say needs a word or sound like 'Yay!' or 'Ehehe!'."
+        return {"say": say}, None
+    notes = sound.get("notes")
+    if not isinstance(notes, list) or not notes:
+        return None, 'sound must be {"say": "Yay!"} or {"notes": [{"type": "chime", "pitch": "C6", "at": 0}]}.'
+    out = []
+    for i, n in enumerate(notes[:24]):
+        if not isinstance(n, dict) or n.get("type") not in SOUND_TYPES:
+            return None, f"note {i + 1}: type must be one of {', '.join(SOUND_TYPES)}."
+        vol = _num(n.get("volume", 1), 0, 1)
+        note = {"type": n["type"], "at": _num(n.get("at", 0), 0, 4) or 0,
+                "length": _num(n.get("length", 0.3), 0.03, 2) or 0.3, "volume": 1.0 if vol is None else vol}
+        if note["type"] in ("chime", "pluck", "tone", "voice", "boing"):
+            hz = pitch_hz(n.get("pitch", "C5"))
+            if hz is None:
+                return None, f"note {i + 1}: pitch must be a note like C5 or F#4, or Hz (40-4000)."
+            note["pitch"] = hz
+            to = pitch_hz(n["to"]) if n.get("to") is not None else None
+            if to:
+                note["to"] = to
+        if note["type"] == "voice":
+            note["vowel"] = n.get("vowel") if n.get("vowel") in ("a", "e", "o", "u", "m") else "a"
+        out.append(note)
+    return {"notes": out}, None

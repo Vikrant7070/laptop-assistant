@@ -22,6 +22,14 @@ def position():
         return None
 
 
+def status():
+    """3D Nova's state (position, live 3D on, her moves...), or None if she isn't running."""
+    try:
+        return json.loads(urllib.request.urlopen(URL + "/", timeout=1).read())
+    except Exception:
+        return None
+
+
 def running():
     try:
         urllib.request.urlopen(URL + "/", timeout=1)

@@ -442,6 +442,24 @@ function poseMove(move, t) {
 // Each frame: pose her as avatar.py asked last time, render, read the pixels and POST them; the reply says what to
 // show next (animation + phase, an invented move, her look, how fast). If avatar.py isn't there, try again later.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Added on top of whatever she is doing: her real voice (talk = loudness 0..1) opens her mouth and gives her a small
+// bounce on stressed words; music on the laptop (groove = beat phase + strength) makes her bob her head in time.
+function layers(w) {
+  if (w.talk !== null && w.talk !== undefined) {
+    const e = w.talk;
+    mouth.material.map = e > .5 ? TEX.mouth.open : e > .2 ? TEX.mouth.grin : TEX.mouth.smile;
+    mouth.scale.y *= 1 + .35 * e;
+    head.rotation.x += .07 * e; body.position.y += .018 * e; ahoge.rotation.z += .15 * e;
+  }
+  if (w.groove) {    // phase counts two beats (0..2): a nod and a bounce on every beat, swaying left-right between them
+    const p = w.groove.phase, b = Math.pow(Math.abs(Math.cos(Math.PI * p)), 6), a = .5 + .5 * w.groove.amp;
+    const sway = Math.sin(Math.PI * p);       // one side during the first beat, the other side during the second
+    body.position.y += .08 * a * (1 - b); head.rotation.x += .2 * a * b;
+    head.rotation.z += .1 * a * sway; body.rotation.z += .05 * a * sway; nova.rotation.y += .12 * a * sway;
+    arms[0].rotation.z += .15 * a * b; arms[1].rotation.z -= .15 * a * b; ahoge.rotation.z += .35 * a * b;
+    locks.forEach(l => l.rotation.z += .08 * a * sway);
+  }
+}
 async function liveLoop() {
   document.body.innerHTML = ""; document.body.appendChild(canvas);
   const gl = renderer.getContext();
@@ -454,6 +472,7 @@ async function liveLoop() {
       if (want.w !== w || want.h !== h) { w = want.w; h = want.h; renderer.setPixelRatio(1); renderer.setSize(w, h, false); px = new Uint8Array(w * h * 4); }
       if (!want.pause) {
         if (want.move) poseMove(want.move, want.t); else pose(want.name, want.t);
+        layers(want);
         renderer.render(scene, camera); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); frame = px;
       }
     } catch (e) { console.error(e); }

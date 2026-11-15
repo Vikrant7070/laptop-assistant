@@ -16,16 +16,18 @@ from nova.brain import retrieval
 from nova.actions import tools
 
 CORE = ["get_datetime", "get_system_status", "open_app", "open_website", "open_path", "list_windows", "window_action",
-        "press_keys", "type_text", "run_powershell", "react", "update_profile", "learn_lesson", "recall_knowledge",
+        "press_keys", "type_text", "run_powershell", "run_in_terminal", "react", "update_profile", "learn_lesson", "recall_knowledge",
         "more_tools", "go_to_sleep"]
 
 GROUPS = [
     {"list_clickable", "fill_in", "click_nth", "click_element", "scroll", "video_control", "media_control"},  # a page
+    {"web_research", "read_page", "click_element", "click_nth", "scroll", "list_clickable", "open_website"},  # research
     {"list_folder", "search_files", "read_text_file", "write_text_file", "move_or_rename", "copy_path",
      "create_folder", "delete_to_recycle_bin"},                                                              # files
     {"find_large_files", "temp_files_size", "clean_temp_files", "empty_recycle_bin", "preview_organize_folder",
      "organize_folder"},                                                                                     # space
-    {"search_installable_apps", "install_app", "uninstall_app", "list_installed_apps", "list_startup_apps"},  # apps
+    {"find_app", "search_installable_apps", "install_app", "uninstall_app", "list_installed_apps",
+     "list_startup_apps"},                                                                                   # apps
     {"add_note", "list_notes", "set_reminder"},
     {"remember_fact", "forget_fact", "update_profile", "learn_lesson", "recall_knowledge"},
     {"look_at_screen", "look_through_camera", "take_screenshot"},
@@ -33,7 +35,8 @@ GROUPS = [
     {"set_volume", "media_control"},
     {"get_clipboard", "set_clipboard", "read_selection"},
     {"window_action", "minimize_all_windows", "close_all_windows", "drag_window", "list_windows"},
-    {"draft_email", "write_document", "show_finished_work", "background_jobs"},                            # co-worker
+    {"draft_email", "write_document", "research_in_background", "show_finished_work", "background_jobs",
+     "stop_background_job"},                                                                                  # co-worker
     {"run_skill", "save_skill", "list_skills", "delete_skill"},                                              # skills
     {"react", "new_move", "forget_move", "change_look"},                                                     # 3D body
 ]
@@ -45,7 +48,12 @@ HINTS = {
     "media_control": "play pause next song previous track music spotify",
     "set_brightness": "brightness screen dimmer brighter",
     "video_control": "youtube video full screen pause play next video captions subtitles",
-    "open_website": "open youtube google netflix website search the web",
+    "open_website": "open youtube google netflix website",
+    "web_research": "show me google on my screen, open a google search, search it in chrome in front of me",
+    "research_in_background": "research look up find out about search the web google it docs documentation github "
+                              "stack overflow learn about compare best library how to tutorial in the background",
+    "read_page": "read this page article website docs, what does the page say, summarise the page",
+    "find_app": "do I have this app, is it installed, open an app I may not have, need an app for this",
     "fill_in": "search for something on a website, type in the search box",
     "click_nth": "play the first video, open the second result",
     "list_clickable": "what can I click on this page, buttons links",
@@ -61,12 +69,14 @@ HINTS = {
     "set_reminder": "remind me in minutes, alarm, timer",
     "take_screenshot": "screenshot capture the screen",
     "power_action": "shut down turn off restart sleep the laptop computer pc",
-    "close_all_windows": "close all windows, close everything, close all apps tabs",
     "lock_screen": "lock my laptop",
     "set_dark_mode": "dark mode light mode theme",
     "toggle_wifi": "turn wifi on off",
     "drag_window": "move this window to the left right side",
     "react": "dance laugh clap wave",
+    "run_in_terminal": "git commit log status branch remote diff last commit of my project repo, ssh npm pip python "
+                       "script command line terminal run a command",
+    "close_all_windows": "close all windows, close everything, close all apps",
     "new_move": "do a new move, act out, shrug, salute, stretch, robot dance, jumping jacks, pose, show me how",
     "change_look": "change your look, outfit, hair colour, clothes, wear glasses, cat ears, hat, dress up, new style",
     "forget_move": "forget that move, delete your move",
@@ -79,7 +89,8 @@ HINTS = {
     "draft_email": "draft write compose an email mail gmail to someone in the background",
     "write_document": "write a document letter notes essay list report in the background, make a doc",
     "show_finished_work": "show me the email, show it, open what you wrote, let me see the draft",
-    "background_jobs": "is the email ready, what are you working on, background jobs status",
+    "background_jobs": "is the email ready, what are you working on, background jobs status, how's the research going",
+    "stop_background_job": "stop the research, cancel the email, forget that job, stop working on that in the background",
     "save_skill": "when I say this do that, learn this routine, teach you a new skill, remember how to do it, shortcut",
     "list_skills": "what skills routines do you know, what have I taught you",
     "delete_skill": "forget that routine, delete the skill",

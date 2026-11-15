@@ -135,7 +135,7 @@ def test_failed_job_is_reported(fake_desktop, monkeypatch):
     assert app.offer["job"] is None
 
 
-def test_document_saved_and_opened_hidden(fake_desktop, monkeypatch, tmp_path):
+def test_document_saved_without_opening_a_window(fake_desktop, monkeypatch, tmp_path):
     monkeypatch.setattr(tools, "HOME", tmp_path)
     coworker.configure(write=writer("1. Milk\n2. Bread\n3. Eggs and a few more things"), on_done=None)
     job, _ = coworker.write_document(title="Shopping: list?", about="a shopping list")
@@ -143,7 +143,10 @@ def test_document_saved_and_opened_hidden(fake_desktop, monkeypatch, tmp_path):
     assert job["status"] == "done", job["error"]
     path = tmp_path / "Documents" / "Nova" / "Shopping list.txt"
     assert path.read_text(encoding="utf-8").startswith("1. Milk")
-    assert fake_desktop[0][1] == "notepad.exe"
+    assert fake_desktop == [] and job["hwnd"] is None       # never opened in (and hidden with) the user's Notepad
+    opened = []
+    monkeypatch.setattr(coworker.os, "startfile", opened.append)
+    assert coworker.show(job).startswith("Opened") and opened == [str(path)]
     job2, _ = coworker.write_document(title="Shopping: list?", about="again")
     assert wait_for(lambda: job2["status"] != "working")
     assert (tmp_path / "Documents" / "Nova" / "Shopping list (2).txt").exists()

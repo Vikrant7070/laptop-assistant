@@ -221,6 +221,63 @@ def make(name):
     return SOUNDS[name]() if clip is None else _with_clip(name, clip)
 
 
+# ------------------------------------------------------------------ sounds she invents (body.clean_sound)
+def render_notes(notes):
+    """A list of cleaned notes (body.clean_sound) -> samples at RATE."""
+    placed = []
+    for i, n in enumerate(notes):
+        L, hz, to = n["length"], n.get("pitch", 440.0), n.get("to")
+        kind = n["type"]
+        if kind == "chime":
+            snd = _bell(hz, L + .3, 6 / max(.2, L))
+        elif kind == "pluck":
+            snd = _pluck(hz, max(L, .15))
+        elif kind == "tone":
+            snd = _glide(hz, to or hz, L)
+        elif kind == "voice":
+            snd = _voice(hz, to or hz, L, n.get("vowel", "a"), breath=.15)
+        elif kind == "boing":     # springy slide with a wobble
+            snd = _glide(hz, to or hz * 2, L, (1, .3), curve=.5) * (1 + .5 * np.sin(2 * np.pi * 18 * _t(L)))
+        elif kind == "whoosh":
+            snd = _noise(L, .6, i + 3) * np.sin(np.linspace(0, np.pi, int(RATE * L)))
+        elif kind == "pop":
+            snd = _glide(700, 180, .07, (1,)) * np.exp(-_t(.07) * 30)
+        elif kind == "clap":
+            snd = _noise(.07, .1, i + 11) * np.exp(-_t(.07) * 45)
+        else:                     # drum: a soft kick
+            snd = _glide(160, 50, .25, (1,)) * np.exp(-_t(.25) * 12) + .2 * _noise(.25, .3, i) * np.exp(-_t(.25) * 30)
+        placed.append((n["at"], snd, n["volume"]))
+    end = max(at + len(snd) / RATE for at, snd, _ in placed) + .05
+    return _mix(min(end, 6.0), *placed)
+
+
+def move_sound_path(name):
+    return DIR / f"move_{name}.wav"
+
+
+def save_move_sound(name, sound, say=None):
+    """Make and save the sound of an invented move. sound = body.clean_sound output; say(text) -> (samples, rate)
+    speaks in her own voice (voice.NeuralVoice.synth). Returns the file, or None if it couldn't be made."""
+    DIR.mkdir(parents=True, exist_ok=True)
+    if sound.get("say"):
+        if not say:
+            return None
+        samples, rate = say(sound["say"])
+        a = np.asarray(samples, dtype=float).reshape(-1)
+        if rate != RATE:
+            a = np.interp(np.linspace(0, len(a) - 1, int(len(a) * RATE / rate)), np.arange(len(a)), a)
+    else:
+        a = render_notes(sound["notes"])
+    path = move_sound_path(name)
+    _write(path, a)
+    return path
+
+
+def _file(name):
+    """The .wav for a reaction, or for one of her invented moves (move_<name>.wav)."""
+    return DIR / f"{name}.wav" if name in SOUNDS else move_sound_path(name)
+
+
 # ------------------------------------------------------------------ files + playback
 def _write(path, samples):
     pcm = (np.clip(_norm(samples) * VOLUME, -1, 1) * 32767).astype("<i2")
@@ -257,20 +314,20 @@ def enabled():
 
 
 def length(name):
-    """How long a reaction's sound lasts in seconds (0 when it has none or sounds are off)."""
-    if name not in SOUNDS or not enabled():
+    """How long a reaction's (or invented move's) sound lasts in seconds (0 when it has none or sounds are off)."""
+    if not enabled() or (name not in SOUNDS and not move_sound_path(name).exists()):
         return 0.0
     try:
-        with wave.open(str(DIR / f"{name}.wav"), "rb") as w:
+        with wave.open(str(_file(name)), "rb") as w:
             return w.getnframes() / w.getframerate()
     except Exception:
         return 2.0          # not built yet: assume the longest
 
 def play(name):
-    """Play a reaction's sound without waiting. Returns True if one started."""
-    if name not in SOUNDS or not enabled():
+    """Play a reaction's (or invented move's) sound without waiting. Returns True if one started."""
+    if not enabled() or (name not in SOUNDS and not move_sound_path(name).exists()):
         return False
-    path = DIR / f"{name}.wav"
+    path = _file(name)
     if not path.exists():
         try:
             build()

@@ -151,6 +151,11 @@ def main():
         server.save_settings(s)
         avatar_client.send("live", on=s["live_3d"], timeout=3)
 
+    def toggle_hearing(icon, _):
+        s = server.settings()
+        s["react_to_sound"] = not s.get("react_to_sound", True)
+        server.save_settings(s)          # avatar.py's ears read it within a few seconds
+
     def toggle_autostart(icon, _):
         server.set_autostart(not server.STARTUP_LNK.exists())
 
@@ -169,6 +174,8 @@ def main():
         pystray.MenuItem("Show 3D Nova on desktop", toggle_body, checked=lambda _: body["shown"]),
         pystray.MenuItem("Live 3D Nova (new moves and looks)", toggle_live,
                          checked=lambda _: server.settings().get("live_3d", True)),
+        pystray.MenuItem("Dance to music playing on the laptop", toggle_hearing,
+                         checked=lambda _: server.settings().get("react_to_sound", True)),
         pystray.MenuItem("Start with Windows", toggle_autostart, checked=lambda _: server.STARTUP_LNK.exists()),
         pystray.MenuItem("Quit Nova", quit_app),
     ))
