@@ -1643,6 +1643,7 @@ whisper = voice.WhisperTranscriber() if voice.WhisperTranscriber.available() els
 transcriber = whisper or windows_transcriber
 if whisper:
     whisper.self_voice = mouth.busy        # never take her own voice (answers, notifications, reaction sounds) as a request
+    whisper.expect_reply = lambda: expecting_reply()
 listen_state = {"loop": False, "rt_broken": False, "single": False}
 if whisper:
     threading.Thread(target=lambda: whisper.load(), daemon=True).start()   # warm up so the first request is quick
@@ -1652,6 +1653,16 @@ def silent_ok():
     if listen_state["rt_broken"]:
         return False
     return transcriber is whisper or voice.online_speech_on()
+
+
+ASKED_SECS = 60      # a bare "yes"/"no" counts as an answer this long after she asked something
+
+
+def expecting_reply():
+    """Is she waiting for a yes/no? (An Allow/No question, "want to see it?", or her last answer was a question.)
+    Only then is a short, slightly unclear "No." taken as an answer - otherwise it is most likely a cough."""
+    return (bool(state["pending"]) or bool(offer["job"] and time.time() < offer["until"])
+            or time.time() - convo.get("asked", 0.0) < ASKED_SECS)
 
 
 def _still_listening():
@@ -1804,6 +1815,7 @@ def heard(text, via="bubble"):
             out, status = answer(f"[spoken; speech recognition may have misheard words] {text}")
     finally:
         convo["thinking"] = False
+    convo["asked"] = time.time() if str(out.get("say") or out.get("reply") or "").rstrip().endswith("?") else 0.0
     push_event({"me": text, **out})   # shows up in the chat page's history too
     ears._note(f"answered: {out.get('reply') or out.get('error', '')}"[:160])
     if status != 200:     # (the reply itself was already said and shown by answer())
