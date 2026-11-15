@@ -1631,6 +1631,8 @@ def ear_close():
 windows_transcriber = voice.Transcriber()
 whisper = voice.WhisperTranscriber() if voice.WhisperTranscriber.available() else None
 transcriber = whisper or windows_transcriber
+if whisper:
+    whisper.self_voice = mouth.busy        # never take her own voice (answers, notifications, reaction sounds) as a request
 listen_state = {"loop": False, "rt_broken": False, "single": False}
 if whisper:
     threading.Thread(target=lambda: whisper.load(), daemon=True).start()   # warm up so the first request is quick
@@ -1667,8 +1669,9 @@ def silent_loop():
                 avatar_client.send("say", text=f"“{text}”", secs=4, timeout=2)
                 heard(text, via="silent")
             elif kind in ("silence", "unclear"):
-                ears._note("heard a sound but couldn't make out words" if kind == "unclear"
-                           else "listened, heard no speech")
+                rejected = getattr(transcriber, "rejected", "")
+                ears._note(f"ignored noise: {rejected}" if rejected else
+                           "heard a sound but couldn't make out words" if kind == "unclear" else "listened, heard no speech")
                 if listen_state["single"]:
                     listen_state["single"] = False
                     avatar_client.send("say", text="Sorry, I didn't catch that 🤔 Say “Hey Nova” again.", secs=4, timeout=2)
