@@ -175,3 +175,34 @@ def test_long_task_does_not_count_as_quiet_time(brain):
     app.nap["last_task"] = app.time.time() - app.IDLE_NAP - 60     # the ask came in over 5 minutes ago
     app.answer("a long job")
     assert not app.nap_due()                                       # she just finished: no nap straight away
+
+
+def test_command_only_task_gets_task_steps_not_question_limit(brain, monkeypatch):
+    # A job done with commands (git, PowerShell) has no on-screen clicks; it used to stop after 10 turns.
+    fake, ran = brain([("", [("get_datetime", {})])] * 80)
+    monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-test")
+    s = app.settings()
+    s["reasoning"] = "max"
+    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    out, _ = app.answer("connect the new github branch to my local repo")
+    assert app.MAX_TASK_TURNS < len(ran) <= app.DEEP_TASK_TURNS
+    assert app.state["task"]["paused"]
+
+
+def test_keep_going_resumes_the_paused_task(brain):
+    fake, ran = brain([("", [("get_datetime", {})])] * app.MAX_TASK_TURNS + [("All done!", [])])
+    app.answer("set up the repo for me")
+    assert app.state["task"]["paused"]
+    out, _ = app.answer("keep going")
+    task = app.state["task"]
+    assert task["goal"] == "set up the repo for me" and not task["paused"]
+    asked = [m["content"] for m in app.state["messages"] if m["role"] == "user"]
+    assert any(c.startswith("keep going") and "carry on" in c for c in asked)
+    assert out["reply"] == "All done!"
+
+
+def test_keep_going_without_a_paused_task_is_a_normal_request(brain):
+    fake, ran = brain([("Okay!", []), ("Sure!", [])])
+    app.answer("hello")
+    app.answer("keep going")
+    assert app.state["task"]["goal"] == "keep going"

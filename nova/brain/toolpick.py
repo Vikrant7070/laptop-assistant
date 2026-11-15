@@ -31,7 +31,7 @@ GROUPS = [
     {"look_at_screen", "look_through_camera", "take_screenshot"},
     {"list_top_processes", "kill_process", "get_system_status", "network_info"},
     {"set_volume", "media_control"},
-    {"get_clipboard", "set_clipboard"},
+    {"get_clipboard", "set_clipboard", "read_selection"},
     {"window_action", "minimize_all_windows", "close_all_windows", "drag_window", "list_windows"},
     {"draft_email", "write_document", "show_finished_work", "background_jobs"},                            # co-worker
     {"run_skill", "save_skill", "list_skills", "delete_skill"},                                              # skills
@@ -40,6 +40,7 @@ GROUPS = [
 # What people actually say, so a short request finds its tool ("make it louder" -> set_volume).
 HINTS = {
     "set_volume": "volume louder quieter sound mute unmute turn it up down",
+    "read_selection": "read this selected highlighted text out loud what does it say read it to me",
     "media_control": "play pause next song previous track music spotify",
     "set_brightness": "brightness screen dimmer brighter",
     "video_control": "youtube video full screen pause play next video captions subtitles",

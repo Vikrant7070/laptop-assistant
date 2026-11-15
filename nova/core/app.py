@@ -181,7 +181,7 @@ def reasoning_level(s, task=None):
     if pick in cloud.LEVELS:
         return pick
     goal = (task or {}).get("goal", "")
-    if task and (task.get("steps", 0) >= 3 or task.get("done") is False):   # a long task, or a check said "not done"
+    if task and (task.get("steps", 0) >= 3 or task.get("calls", 0) >= 4 or task.get("done") is False):   # a long task, or a check said "not done"
         return "high"
     return "high" if len(goal) > 160 or HARD_ASK.search(goal) else "low"
 
@@ -244,7 +244,7 @@ FRIENDLY = {
     "run_powershell": "Ran a command", "add_note": "Saved a note", "list_notes": "Read notes",
     "set_reminder": "Set a reminder", "remember_fact": "Remembered something", "forget_fact": "Forgot something",
     "list_windows": "Looked at open windows", "window_action": "Managed a window", "minimize_all_windows": "Showed the desktop", "close_all_windows": "Closed all windows",
-    "type_text": "Typed text", "press_keys": "Pressed keys", "get_clipboard": "Read the clipboard",
+    "type_text": "Typed text", "press_keys": "Pressed keys", "get_clipboard": "Read the clipboard", "read_selection": "Read the selected text",
     "set_clipboard": "Copied to clipboard", "take_screenshot": "Took a screenshot", "read_text_file": "Read a file",
     "write_text_file": "Wrote a file", "move_or_rename": "Moved/renamed", "copy_path": "Copied files",
     "search_installable_apps": "Searched for apps", "install_app": "Installed an app", "uninstall_app": "Uninstalled an app",
@@ -492,12 +492,25 @@ def new_turn():
         thoughts["turn"] += 1
 
 
+# "keep going" after she paused a long task: carry on with that task, don't start a new one (a skill matched
+# "keep going" to work-mode once and opened VS Code and Gmail instead).
+CONTINUE_RE = re.compile(r"^\W*(please\s+)?(ok(ay)?\W+)?(keep going|carry on|continue|go on|resume|proceed|"
+                         r"finish (it|that|the task)|jaari rakho|chalu rakho|aage badho|karte raho)\b", re.I)
+
+
 def new_task(goal):
+    """Start a request. Returns a note to add to the user's message (only when a paused task is resumed)."""
     task_log(f"\n=== {time.strftime('%Y-%m-%d')} REQUEST: {goal[:300]}")
     new_turn()
     state.pop("react_after", None)
     clean = _unspoken(goal)[:300]
     last = state.get("task") or {}
+    if last.get("paused") and CONTINUE_RE.search(clean):
+        last["paused"] = False
+        task_log(f"RESUMING paused task: {last['goal'][:200]}")
+        think(f"▶️ Carrying on with: {last['goal'][:120]}", cloud_too=False)
+        return ("\n[note from Nova's system] You paused this task after many steps and the user wants you to carry "
+                f"on: {last['goal']}\nContinue from where you stopped. Don't redo steps that already worked.")
     try:
         skill = skills.match(clean)
         keep = (list(last.get("used", ())) + (skill["tools"] if skill else [])
@@ -513,6 +526,7 @@ def new_task(goal):
                      "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": []}
     task_log(f"PICKED {len(picked) if picked else 'all'} tools ({retrieval.status()}): "
              + (", ".join(n for n in picked if n not in toolpick.CORE) if picked else "-"))
+    return ""
 
 
 def more_tools(task, need):
@@ -650,6 +664,7 @@ def execute(calls, approved, activity, model):
             out = "The user pressed Stop before this step finished. It was not done (or only partly)."
         task_log(f"TOOL {c['name']} {json.dumps(c['args'], ensure_ascii=False)[:300]}\n   -> " + out.replace("\n", "\n      "))
         outs.append(out)
+    state["last_outs"] = outs
     return [llm.tool_result_message(model, c, out) for c, out in zip(calls, outs)]
 
 
@@ -791,7 +806,10 @@ def _agent_loop(activity):
         check_stop()
         task = state.get("task")
         deep = bool(cloud.parse(model)) and reasoning_level(s, task) != "low"
-        if turns >= ((DEEP_TASK_TURNS if deep else MAX_TASK_TURNS) if task and task["steps"] else MAX_TURNS):
+        # Any tool step makes it a task - not just on-screen clicks. (Only those were counted, so a job done with
+        # commands - git, PowerShell, looking at the screen - got the 10-turn limit of a plain question.)
+        working = task and (task["steps"] or task.get("calls"))
+        if turns >= ((DEEP_TASK_TURNS if deep else MAX_TASK_TURNS) if working else MAX_TURNS):
             break
         turns += 1
         nap["last_task"] = time.time()      # working on it: a long task is not "quiet", so no nap mid-job
@@ -876,7 +894,11 @@ def _agent_loop(activity):
             return result(" ".join(spoken).strip(),
                           pending=[{"tool": c["name"], "label": ASK.get(c["name"], c["name"]), "input": c["args"]}
                                    for c in calls if is_risky(c)])
+        if task is not None:
+            task["calls"] = task.get("calls", 0) + len(calls)
         state["messages"].extend(execute(calls, True, activity, model))
+    if task is not None:
+        task["paused"] = True               # "keep going" now carries on with this task
     think("🛑 That's a lot of steps - pausing here.")
     line = "That was a lot of steps, so I paused here. Say “keep going” and I'll carry on."
     unsaid.append(line)
@@ -1164,6 +1186,13 @@ SCREEN_ASK = re.compile(
     r"what should i do next|help me with (this|what i'?m doing))\b", re.I)
 
 
+# Text the user highlighted: "read this selected text", "what does the highlighted part say", "padho jo select kiya".
+SELECTION_ASK = re.compile(r"\b(selected|selection|highlighted|highlight|select kiya|select ki)\b", re.I)
+# ...and more than reading it out: then the brain gets the text and does the rest.
+READ_MORE_ASK = re.compile(r"\b(summar|translat|explain|mean|fix|rewrite|correct|improve|check|reply|answer|why|"
+                           r"short|simplif|convert|count|search|google|save|note|email|type|paste|samjha|matlab)", re.I)
+
+
 VIDEO_ASK = [  # clear video-player requests, done directly (the small model mixed up video vs window full screen)
     (re.compile(r"\b(exit|leave|close|get out of|come out of|stop|remove|minimi[sz]e)\b[^.?!]{0,25}full ?screen", re.I),
      "exit_fullscreen"),
@@ -1206,6 +1235,8 @@ def look_first(text, activity):
     video_action = next((a for rx, a in VIDEO_ASK if rx.search(text)), None)
     if video_action and tools._video_window():
         name, args = "video_control", {"action": video_action}
+    elif SELECTION_ASK.search(text):     # before SCREEN_ASK: a screenshot only showed her one line of the selection
+        name, args = "read_selection", {}
     elif SCREEN_ASK.search(text):
         name, args = "look_at_screen", {"question": text}
     elif CAMERA_ASK.search(text):
@@ -1218,7 +1249,8 @@ def look_first(text, activity):
             return
     think({"look_at_screen": "👀 You asked about your screen - I'll look at it first.",
            "look_through_camera": "📷 You want me to see you - I'll look through the camera first.",
-           "video_control": "🎬 That's a video-player button - pressing it directly."}.get(
+           "video_control": "🎬 That's a video-player button - pressing it directly.",
+           "read_selection": "📋 You selected some text - I'll copy it first."}.get(
         name, "📌 That's a plain fact - I'll check it instead of guessing."))
     model = brain()
     call = {"id": "look_0", "name": name, "args": args}
@@ -1227,6 +1259,11 @@ def look_first(text, activity):
                              if llm.supports_tools(model) else
                              {"role": "assistant", "content": json.dumps({"tool": call["name"], "args": call["args"]})})
     state["messages"].extend(execute([call], True, activity, model))
+    out = state["last_outs"][0]
+    if name == "read_selection" and not READ_MORE_ASK.search(_unspoken(text)) and not out.startswith(("Error", "Nothing is")):
+        # Just "read it": say the text itself. Through the brain it came out as one line (a summary, or the local
+        # model's short reply limit), so the words are read out word for word here instead.
+        return {"reply": out, "activity": activity, "say": out.split("\n[... cut here")[0]}
 
 
 def _cap_history():
@@ -1259,14 +1296,18 @@ def answer(text):
             screen = tools.open_windows_summary()
         except Exception:
             screen = ""
-        new_task(text)
+        resume = new_task(text)
         # (Tried also passing the time and battery here to save a tool call: the small model then read the line
         # out loud and stopped calling tools for other facts. Only the window list is passed.)
         state["messages"].append({"role": "user", "content":
-                                  text + (f"\n[open windows, front first: {screen}]" if screen else "")})
+                                  text + resume + (f"\n[open windows, front first: {screen}]" if screen else "")})
         try:
-            look_first(text, activity)
-            out = agent_loop(activity)
+            out = look_first(text, activity)
+            if out:     # done without the brain (reading out selected text)
+                state["messages"].append({"role": "assistant", "content": out["reply"]})
+                nap["last_task"] = time.time()
+            else:
+                out = agent_loop(activity)
         except Exception as e:
             del state["messages"][n:]  # roll back so the history stays valid
             state["pending"] = old_pending

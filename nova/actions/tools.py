@@ -623,6 +623,37 @@ def get_clipboard():
     return pyperclip.paste()[:4000] or "(clipboard is empty)"
 
 
+SELECTION_MAX = 6000    # about a page and a half - longer is better copied into a file
+
+
+def read_selection():
+    """The text highlighted in the user's app: copy it (Ctrl+C in that window), then put their clipboard back.
+    If Nova's own chat window is in front, the app behind it is brought forward first - it keeps its selection."""
+    old = pyperclip.paste()
+    w = _target_window(None)
+    if not w:
+        return "Error in read_selection: no app window is open to read from."
+    hwnd, title, _ = w
+    marker = f"__nova_selection_{time.time()}__"
+    pyperclip.copy(marker)                       # so an empty selection is told apart from old clipboard text
+    try:
+        if _user32.GetForegroundWindow() != hwnd:
+            _focus(hwnd)
+            time.sleep(0.25)
+        keyboard.send("ctrl+c")
+        text, end = marker, time.time() + 1.5
+        while text == marker and time.time() < end:   # some apps take a moment to fill the clipboard
+            time.sleep(0.05)
+            text = pyperclip.paste()
+    finally:
+        pyperclip.copy(old)
+    if text == marker or not text.strip():
+        return f"Nothing is selected in '{title[:60]}'. Highlight some text first, then ask again."
+    text = text.strip()
+    cut = len(text) > SELECTION_MAX
+    return text[:SELECTION_MAX] + ("\n[... cut here: the selection was longer]" if cut else "")
+
+
 def set_clipboard(text):
     pyperclip.copy(text)
     return "Copied to the clipboard."
@@ -1435,6 +1466,9 @@ TOOLS = [
     _tool("type_text", "Type text with the keyboard, optionally into a window (focuses it first).", {"text": S, "into_window": S}, ["text"]),
     _tool("press_keys", "Press a key or shortcut, e.g. 'ctrl+s', 'alt+tab', 'enter', 'windows+e'.", {"keys": S}, ["keys"]),
     _tool("get_clipboard", "Read the clipboard text."),
+    _tool("read_selection", "Get the text the user has highlighted/selected in their app (copies it for you, "
+          "then restores their clipboard). Use it for 'read this', 'what does the selected text say', "
+          "'summarise/translate what I selected'. When asked to read it, say it word for word."),
     _tool("set_clipboard", "Put text on the clipboard.", {"text": S}, ["text"]),
     _tool("take_screenshot", "Save a screenshot to Pictures/Nova Screenshots."),
     _tool("read_text_file", "Read a text file (txt, md, csv, code, logs).", {"path": S, "max_chars": N}, ["path"]),
