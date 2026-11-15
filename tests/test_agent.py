@@ -206,3 +206,38 @@ def test_keep_going_without_a_paused_task_is_a_normal_request(brain):
     app.answer("hello")
     app.answer("keep going")
     assert app.state["task"]["goal"] == "keep going"
+
+
+TEXT = "Line one of the paragraph.\nLine two goes on.\nAnd the last line."
+
+
+def test_read_selected_text_is_read_out_in_full(brain, monkeypatch):
+    fake, ran = brain([], tool_output=TEXT)
+    said = []
+    monkeypatch.setattr(app, "speak", said.append)
+    out, _ = app.answer("[spoken; speech recognition may have misheard words] Can you read what is selected on my screen?")
+    assert ran == [("read_selection", {})] and not fake.seen      # copied the text; no screenshot, no brain
+    assert out["reply"] == TEXT and said == [TEXT]
+
+
+def test_summarise_selection_hands_the_text_to_the_brain(brain):
+    fake, ran = brain([("It's about three lines.", [])], tool_output=TEXT)
+    out, _ = app.answer("summarise the selected text")
+    assert ran == [("read_selection", {})] and fake.seen and out["reply"] == "It's about three lines."
+
+
+def test_nothing_selected_goes_to_the_brain(brain):
+    fake, ran = brain([("Highlight some text first, boss.", [])], tool_output="Nothing is selected in 'Notepad'.")
+    out, _ = app.answer("read the highlighted text")
+    assert fake.seen and "Highlight" in out["reply"]
+
+
+def test_read_selection_restores_the_clipboard(monkeypatch):
+    clip = {"v": "my old clipboard"}
+    monkeypatch.setattr(app.tools.pyperclip, "paste", lambda: clip["v"])
+    monkeypatch.setattr(app.tools.pyperclip, "copy", lambda t: clip.update(v=t))
+    monkeypatch.setattr(app.tools, "_target_window", lambda w: (1, "Notepad", "notepad.exe"))
+    monkeypatch.setattr(app.tools._user32, "GetForegroundWindow", lambda: 1)
+    monkeypatch.setattr(app.tools.keyboard, "send", lambda k: clip.update(v="the selected words"))
+    assert app.tools.read_selection() == "the selected words"
+    assert clip["v"] == "my old clipboard"
