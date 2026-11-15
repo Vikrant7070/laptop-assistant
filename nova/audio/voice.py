@@ -624,6 +624,20 @@ def _add_nvidia_dlls():
 WHISPER_HINT = ("Open Chrome, open VS Code, open WhatsApp, YouTube, Spotify. "
                 "What's on my screen? Check my battery. Volume up.")
 WHISPER_JUNK = {"", "you", "thank you.", "thanks for watching!", "thank you for watching.", "bye.", ".", "so", "okay."}
+# What Whisper "hears" in chimes, hums and her own reaction sounds (measured with Windows' notification sounds, a fan,
+# typing and Nova's sfx, 2026-11-15): stock video endings, caption credits, and bare sounds that are not words.
+WHISPER_GHOSTS = re.compile(r"(see you (next time|in the next)|thanks? (you )?for watching|subscribe|closed captions?|"
+                            r"captions? by|subtitles? by|for more information,? visit|www\.|\.(com|org)\b)", re.I)
+NOT_WORDS = {"huh", "hmm", "hm", "hmmm", "mm", "mmm", "mhm", "oh", "ohh", "ohhh", "ohhhh", "ah", "ahh", "uh", "um",
+             "umm", "er", "sigh", "hey", "what", "wow", "whoa", "oops", "ha", "haha", "hahaha", "hehe", "heh", "ooh"}
+SHORT_REPLY = re.compile(r"^\W*(yes|yeah|yep|no|nope|okay|ok|sure|stop|cancel|do it|go ahead|haan|nahi)\b", re.I)
+# How sure Whisper must be (mean log-probability per token) before words become a request. Clear requests score
+# -0.1 to -0.5; noise it turned into words scored -0.77 to -1.6. Bare yes/no replies score lower ("No." -1.1), so
+# they keep the old limit. Words that are one of WHISPER_HINT's own sentences need more: Whisper repeats its hint
+# when it hears a chime ("What's on my screen?" at -0.79 from her spin whoosh).
+SURE = -0.8
+SURE_SHORT = -1.2
+SURE_HINT = -0.6
 NOVA_NAMES = r"(?:nova|novah|noah|nover|nava|nowa|no va|नोवा|नौवा|नोआ)"
 # "Hey Nova ..." anywhere, or a sentence that starts with "Nova ..."
 # Nova's name as the first or second word ("Nova, ...", "Hey Nova ...", "Hei Nova", "Ok Nova", "Arey Nova", "हे नोवा"),
@@ -671,6 +685,10 @@ class WhisperTranscriber:
         self.language = "en"   # what the last sentence was taken as: "en", or "hi" for Hindi/Hinglish
         self.last_audio, self.seconds = None, 0.0
         self.skip = 0          # how many of WHISPER_CHOICES have been given up on
+        # Set by the app to mouth.busy: True while Nova is talking (or just stopped, or a reaction sound plays).
+        # Whatever the microphone takes in then is her own voice, never a request - it is thrown away.
+        self.self_voice = None
+        self.rejected = ""     # the last words thrown away as noise, and why (for the status notes)
 
     @staticmethod
     def available():
@@ -715,7 +733,8 @@ class WhisperTranscriber:
         self.language = language
         segs, _ = model.transcribe(audio, language=language, beam_size=3, vad_filter=True,
                                    initial_prompt=hint, condition_on_previous_text=False)
-        return [s for s in segs if s.no_speech_prob < 0.6 and s.avg_logprob > -1.2]   # (the reading happens here)
+        # (the reading happens here) compression_ratio > 2.4 = the same words over and over ("open, open, open")
+        return [s for s in segs if s.no_speech_prob < 0.6 and s.avg_logprob > -1.2 and s.compression_ratio < 2.4]
 
     def _record(self, start_wait, max_len, abort=None, peek=None, end_pause=None, hold=None):
         """Returns float32 mono audio of one utterance, or None if nobody spoke (or abort() said stop).
@@ -731,10 +750,19 @@ class WhisperTranscriber:
         # so the first look has to come early.
         peeks, spoken = [0.5, 0.9, 1.5], 0.0
         last_sound, held_at, voiced = 0.0, None, 0.0
+        give_up = time.time() + start_wait + 90         # (in case she never stops talking)
         with sd.InputStream(samplerate=self.RATE, channels=1, dtype="float32", blocksize=n) as st:
             while True:
                 block, _ = st.read(n)
                 block = block[:, 0].copy()
+                if self.self_voice and self.self_voice():
+                    # She is speaking (a notification, her answer, a reaction sound): forget what was recorded so
+                    # far and wait for her to finish. Her quiet time doesn't count towards start_wait either.
+                    chunks, started, loud, quiet, spoken, voiced = [], False, 0, 0.0, 0.0, 0.0
+                    peeks, last_sound, held_at = [0.5, 0.9, 1.5], 0.0, None
+                    if time.time() > give_up or (abort and abort()):
+                        return None
+                    continue
                 rms = float(np.sqrt(np.mean(block ** 2)))
                 if floor is None:
                     floor = rms
@@ -773,7 +801,7 @@ class WhisperTranscriber:
                     return None
         return np.concatenate(chunks)
 
-    def _transcribe(self, audio, hint):
+    def _transcribe(self, audio, hint, strict=False):
         """Text of a recording, or "" if it holds no real speech."""
         import numpy as np
         from faster_whisper.vad import VadOptions, get_speech_timestamps
@@ -796,7 +824,32 @@ class WhisperTranscriber:
             self.model, self.skip = None, self.skip + 1
             segs = self._decode(audio, hint)
         text = " ".join(s.text.strip() for s in segs).strip()
-        return "" if text.lower() in WHISPER_JUNK else text
+        if text.lower() in WHISPER_JUNK:
+            return ""
+        if strict:
+            sure = sum(s.avg_logprob * len(s.text) for s in segs) / max(1, sum(len(s.text) for s in segs))
+            why = self.doubt(text, sure, hint)
+            if why:
+                self.rejected = f"“{text[:40]}” ({why}, sure {sure:.2f})"
+                return ""
+        return text
+
+    @staticmethod
+    def doubt(text, sure, hint=None):
+        """Why these words are probably not a request (noise Whisper turned into words), or "" if they look real."""
+        words = re.findall(r"[a-z']+", text.lower())
+        if not words or all(w in NOT_WORDS for w in words):
+            return "a sound, not words"
+        if WHISPER_GHOSTS.search(text):
+            return "a phrase Whisper makes up from noise"
+        said = " ".join(words)
+        hinted = hint and any(said == " ".join(re.findall(r"[a-z']+", h.lower()))
+                              for h in re.split(r"(?<=[.?!])\s+", hint) if h)
+        if hinted and sure < SURE_HINT:
+            return "Whisper repeating its hint"
+        if len(words) <= 3 and SHORT_REPLY.match(text):
+            return "" if sure >= SURE_SHORT else "not sure enough"
+        return "" if sure >= SURE else "not sure enough"
 
     def again_in_english(self):
         """The last recording written down as plain English - a short "Hi Nova" is sometimes taken for Hindi."""
@@ -826,15 +879,17 @@ class WhisperTranscriber:
         finally:
             self.gpu.release()
 
-    def hear(self, start_wait, max_len, hint=None, abort=None, peek=None, end_pause=None, hold=None):
-        """One utterance. Returns (kind, text): 'text', 'silence' (nobody spoke), 'unclear' (sound, no words), 'error'."""
+    def hear(self, start_wait, max_len, hint=None, abort=None, peek=None, end_pause=None, hold=None, strict=False):
+        """One utterance. Returns (kind, text): 'text', 'silence' (nobody spoke), 'unclear' (sound, no words), 'error'.
+        strict: it will be taken as a request without "Hey Nova", so noise must not get through as words."""
         with self.lock:
             try:
                 self.load()
+                self.rejected = ""
                 audio = self._record(start_wait, max_len, abort, peek, end_pause, hold)
                 if audio is None:
                     return "silence", "no speech"
-                text = self._transcribe(audio, hint)
+                text = self._transcribe(audio, hint, strict)
             except Exception as e:
                 self.error = str(e)
                 return "error", str(e)
@@ -844,7 +899,7 @@ class WhisperTranscriber:
         """Wait for one request. Returns (kind, text): kind is 'text', 'silence', 'unclear' or 'error'."""
         self.waiting += 1
         try:
-            kind, text = self.hear(self.START_WAIT, self.MAX_LEN, WHISPER_HINT)
+            kind, text = self.hear(self.START_WAIT, self.MAX_LEN, WHISPER_HINT, strict=True)
         finally:
             self.waiting -= 1
         self.failures = self.failures + 1 if kind == "error" else 0
