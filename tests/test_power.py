@@ -59,6 +59,7 @@ def test_close_all_windows_spares_nova_and_the_shell(monkeypatch):
     pids = {1: 100, 2: 200, 3: 300, 4: 300}
     classes = {3: "CabinetWClass", 4: "Shell_TrayWnd"}
     monkeypatch.setattr(tools, "_own_pids", lambda: {100})
+    monkeypatch.setattr(tools._user32, "IsWindow", lambda h: True)      # fake handles count as real windows
 
     def get_pid(hwnd, ref):
         ref._obj.value = pids[hwnd]

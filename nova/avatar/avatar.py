@@ -23,6 +23,8 @@ Control API (used by tools.py / app.py):  POST http://127.0.0.1:5056/cmd  {"do":
   move {move}            play (and remember) a move the brain invented - body.clean_move format; needs live 3D
   look {look}            wear this look (body.load_look format); needs live 3D
   live {on}              use live 3D frames (on) or only the saved sprites (off)
+  speech {words, secs, n, env, fps, start}  a sentence she is saying (voice.Mouth): its loudness moves her mouth
+                         and body (live 3D) and its words pick a gesture (body.speech_gesture)
   show / hide
 Run alone (from the project folder):  pythonw -m nova.avatar.avatar
 """
@@ -45,7 +47,7 @@ try:
 except Exception:
     pass
 
-from nova.avatar import body  # noqa: E402
+from nova.avatar import body, hearing  # noqa: E402
 from nova.shared import DATA, REACTIONS, ROOT, host_allowed, work_area  # noqa: E402
 
 FRAMES = ROOT / "static" / "nova3d"
@@ -114,6 +116,14 @@ def live_setting():
     """The 'live_3d' setting (data/settings.json, written by the app): live 3D frames, or only the saved sprites."""
     try:
         return bool(json.loads((DATA / "settings.json").read_text(encoding="utf-8")).get("live_3d", True))
+    except (OSError, ValueError):
+        return True
+
+
+def sound_setting():
+    """The 'react_to_sound' setting: dance to music and jump at sudden sounds playing on the laptop."""
+    try:
+        return bool(json.loads((DATA / "settings.json").read_text(encoding="utf-8")).get("react_to_sound", True))
     except (OSError, ValueError):
         return True
 
@@ -193,6 +203,9 @@ class Nova:
         self.live_on = live_setting()
         self.live = None                 # (latest live frame as a PIL image, when it arrived)
         self.want = {"name": "idle", "t": 0}
+        self.gestures = {}               # speech gestures in play (body.gesture_move), by name
+        self.speech = None               # the sentence she is saying: {"start", "secs", "env", "fps"}
+        self.next_dance = time.time() + 20
         self.q = queue.Queue()
         self.drag = None
         try:
@@ -206,28 +219,79 @@ class Nova:
         self.root.bind("<Button-3>", lambda e: self.react(random.choice(("laugh", "dance", "spin", "love", "clap", "wave"))))
         threading.Thread(target=self.serve, daemon=True).start()
         threading.Thread(target=self.watch_battery, daemon=True).start()
+        self.ears = hearing.LaptopEars(on_event=lambda e: self.q.put(({"do": "_heard", "what": e}, None, None)),
+                                       enabled=sound_setting)
+        self.ears.start()
         threading.Thread(target=sfx.build, daemon=True).start()     # makes data/sfx/*.wav the first time
         self.start_oneshot("wave")
         self.say("Hi! I'm Nova. I'll be right here on your screen ✨", 5)
         self.tick()
 
     # ------------------------------------------------------------ behaviour
-    def start_oneshot(self, name, hold_at=None, after=None, repeat=1):
+    def start_oneshot(self, name, hold_at=None, after=None, repeat=1, speed=1.0, start=None):
+        """speed: play faster/slower (dancing at the music's tempo); start: when frame 0 is (on a beat)."""
         ev = threading.Event()
-        self.oneshot = {"name": name, "start": time.time(), "hold_at": hold_at, "event": ev, "after": after, "held": False,
-                        "repeat": max(1, int(repeat))}
+        self.oneshot = {"name": name, "start": start or time.time(), "hold_at": hold_at, "event": ev, "after": after,
+                        "held": False, "repeat": max(1, int(repeat)), "speed": speed}
         return ev
 
     def live_now(self):
         """Is the live 3D renderer sending frames right now?"""
         return bool(self.live_on and self.live and time.time() - self.live[1] < LIVE_STALE)
 
+    def move_def(self, name):
+        """An invented move or a speech gesture, by name (without the "move:" prefix)."""
+        return self.moves.get(name) or self.gestures.get(name)
+
     def count(self, name):
         """Frames in an animation at sprite speed. An invented move ("move:<name>") lasts its duration."""
         if name.startswith("move:"):
-            m = self.moves.get(name[5:])
+            m = self.move_def(name[5:])
             return max(1, round(m["duration"] * self.sp.fps)) if m else 1
         return self.sp.count(name)
+
+    def talk_energy(self, now):
+        """How loud she is right now (0..1) while saying a sentence, else None."""
+        sp = self.speech
+        if not sp or not (sp["start"] <= now < sp["start"] + sp["secs"]):
+            return None
+        i = int((now - sp["start"]) * sp["fps"])
+        return sp["env"][i] if i < len(sp["env"]) else 0.0
+
+    def on_speech(self, cmd):
+        """A sentence is starting: keep its loudness for her mouth, and gesture to fit the words (live 3D only -
+        with the sprites a gesture would hide her talking mouth)."""
+        try:
+            self.speech = {"start": float(cmd.get("start") or time.time()), "secs": float(cmd.get("secs") or 0),
+                           "env": [float(v) for v in cmd.get("env") or []], "fps": float(cmd.get("fps") or 30)}
+        except (TypeError, ValueError):
+            self.speech = None
+        busy = self.oneshot and not self.oneshot["name"].startswith(("move:gesture_",) + tuple(body.SPEECH_REACTIONS))
+        if not self.live_now() or self.asleep or self.carrying or self.target or busy:
+            return
+        g = body.speech_gesture(cmd.get("words", ""), self.speech["secs"] if self.speech else 0, int(cmd.get("n") or 0))
+        if isinstance(g, str):
+            self.react(g, repeat=1, sound=False)      # her voice is the sound
+        elif g:
+            self.gestures = {g["name"]: g}
+            self.start_oneshot("move:" + g["name"])
+
+    def heard(self, what):
+        """Something playing on the laptop (hearing.py) - her reactions to it are silent."""
+        if what == "surprised" and not self.asleep and not self.oneshot and self.base == "idle":
+            self.react("surprised", sound=False)
+
+    def music_dance(self, now):
+        """Music has been playing a while and she has nothing to do: dance at its tempo, starting on a beat."""
+        m = self.ears.beat.music
+        if not m or now < self.next_dance or self.asleep or self.oneshot or self.target or self.base != "idle":
+            return
+        if not self.ears.beat.loud_since or now - self.ears.beat.loud_since < 10:
+            return
+        self.next_dance = now + random.uniform(35, 70)
+        speed = max(0.6, min(1.6, m["bpm"] / 120))     # her dance loop has 4 beats in 2 s = 120 BPM
+        beat0 = m["last_beat"] + math.floor((now - m["last_beat"]) / m["period"]) * m["period"]
+        self.start_oneshot("dance", repeat=3, speed=speed, start=beat0)
 
     def react(self, name, repeat=None, sound=True):
         """Play a reaction. Dancing and laughing look best a few times over. `sound`: with its sound effect.
@@ -235,6 +299,8 @@ class Nova:
         if name in self.moves:
             if not self.live_now():
                 return None
+            if sound:
+                self.sound(name)          # its own sound, if it has one (sfx: data/sfx/move_<name>.wav)
             self.target = None if not self.carrying else self.target
             return self.start_oneshot("move:" + name, repeat=min(int(repeat or 1), 8))
         if name not in self.sp.images or name not in REACTIONS:
@@ -436,6 +502,11 @@ class Nova:
             else:
                 self.moves[move["name"]] = move
                 result["live"] = self.live_now()
+                if cmd.get("play") is False:          # learn it now, play it later (after she has spoken)
+                    result["played"] = False
+                    if done:
+                        done.set()
+                    return
                 ev = self.react(move["name"], cmd.get("repeat"))
                 result["played"] = bool(ev)
                 if ev and cmd.get("wait"):
@@ -449,6 +520,10 @@ class Nova:
             result["live"] = self.live_now()
         elif do == "live":
             self.live_on = bool(cmd.get("on"))
+        elif do == "speech":
+            self.on_speech(cmd)
+        elif do == "_heard":
+            self.heard(cmd.get("what"))
         if result is not None:       # commands she queues for herself (battery, dozing off) have no caller waiting
             result["pos"] = self.pos
         if done:
@@ -492,8 +567,11 @@ class Nova:
                 if w == nova.sp.w and h == nova.sp.h and len(data) == w * h * 4:
                     # WebGL reads rows bottom-up: the -1 stride turns the picture the right way up
                     nova.live = (Image.frombytes("RGBA", (w, h), data, "raw", "RGBA", 0, -1), time.time())
-                want = dict(nova.want, w=nova.sp.w, h=nova.sp.h,
-                            fps=12 if nova.asleep else 30, pause=not (nova.visible and nova.live_on))
+                # 24 fps looks smooth and costs ~20% less than 30 (each frame is ~230 KB through the browser);
+                # napping she barely moves; paused (hidden, or live 3D off) the renderer only checks in now and then.
+                pause = not (nova.visible and nova.live_on)
+                want = dict(nova.want, w=nova.sp.w, h=nova.sp.h, fps=2 if pause else 12 if nova.asleep else 24,
+                            pause=pause)
                 if lv != nova.look_v:
                     want.update(look=nova.look, look_v=nova.look_v)
                 out = json.dumps(want).encode()
@@ -526,7 +604,11 @@ class Nova:
                                    "asleep": nova.asleep, "base": nova.base,
                                    "bubble": b[0] if b and time.time() < b[1] else "",
                                    "reactions": [r for r in REACTIONS if r in nova.sp.images],
-                                   "moves": sorted(nova.moves), "live": nova.live_now()}).encode()
+                                   "moves": sorted(nova.moves), "live": nova.live_now(),
+                                   "doing": nova.oneshot["name"] if nova.oneshot else None,
+                                   "music": nova.ears.beat.music, "hearing_error": nova.ears.error,
+                                   "sound_for": round(time.time() - nova.ears.beat.loud_since, 1)
+                                   if nova.ears.beat.loud_since else 0}).encode()
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(body)
@@ -595,13 +677,13 @@ class Nova:
         if self.oneshot:
             o = self.oneshot
             n = self.count(o["name"])
-            at = (now - o["start"]) * self.sp.fps
+            at = max(0.0, (now - o["start"]) * self.sp.fps * o.get("speed", 1.0))
             if o["hold_at"] is not None and at >= o["hold_at"]:
                 at = o["hold_at"]
                 if not o["held"]:
                     o["held"] = True
                     o["event"].set()
-                o["start"] = now - at / self.sp.fps
+                o["start"] = now - at / (self.sp.fps * o.get("speed", 1.0))
             if at >= n and o["repeat"] > 1:
                 o["repeat"] -= 1
                 o["start"] = now
@@ -622,8 +704,14 @@ class Nova:
             name, at = self.base, now * self.sp.fps
         n = self.count(name)
         idx = int(at) % n
-        move = self.moves.get(name[5:]) if name.startswith("move:") else None
-        self.want = {"name": name, "t": (at % n) / n if n > 1 else 0, "move": move}
+        move = self.move_def(name[5:]) if name.startswith("move:") else None
+        talk = self.talk_energy(now)
+        # Grooving to the laptop's music: only while standing about (not talking, walking, napping or reacting).
+        phase = self.ears.beat.phase(now) if not (talk is not None or moving or self.asleep or self.oneshot
+                                                  or self.base != "idle") else None
+        groove = {"phase": round(phase, 3), "amp": round(self.ears.beat.music["amp"], 2)} if phase is not None else None
+        self.want = {"name": name, "t": (at % n) / n if n > 1 else 0, "move": move, "talk": talk, "groove": groove}
+        self.music_dance(now)
 
         flip = self.facing_left if name in ("walk", "point", "carry") else False
         if self.visible:

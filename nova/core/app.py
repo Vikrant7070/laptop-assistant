@@ -48,7 +48,8 @@ def _unspoken(text):
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
          "provider": "ollama", "cloud_models": {}, "notifications": False, "suggest": False,
-         "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True}
+         "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True,
+         "react_to_sound": True}
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
@@ -95,7 +96,21 @@ How you work:
   tables or long lists unless the user asks for detail. Answer what was asked; don't tack on extra offers.
 - Only mention being tired or the user working late when it's really true (battery under 20%, or after 11 PM).
 - You have full access to this laptop: windows, keyboard, clipboard, files, apps (winget), Windows settings and
-  PowerShell (as_admin for system changes). Prefer the specific tools; use run_powershell for anything else.
+  PowerShell (as_admin for system changes).
+- Work like a person sitting at this laptop: do the job in the real apps on screen, so the user can watch you.
+  Research, looking things up, docs, GitHub, Stack Overflow: research_in_background - it Googles and reads the pages
+  in Chrome windows parked off-screen, so the user keeps their screen and keyboard while you work, and you tell them
+  what you found when it's done. Only when they want to watch or browse ("show me", "on my screen") use
+  web_research, click_element and read_page in front of them. Code and git: VS Code.
+  Writing: write_document. Files: list_folder / read_text_file, and open_path so the user sees the folder or file.
+  Windows: window_action and close_all_windows - you walk to each window's own button and click it, so the user
+  watches. Command-line jobs with no app or button (git log, ssh, npm, pip...): run_in_terminal - it runs in your own
+  terminal window that stays minimized, so the user keeps working (show=true only if they ask to watch it). Questions about the user's own files or code (the last commit, what changed) are answered from
+  the laptop with these tools - never with research_in_background, which is for the web. Use run_powershell (hidden) only as a last resort, for system jobs nothing on screen can do -
+  never to fetch web pages, search the web, do git, or list/read files.
+- Need an app for the job (Zoom, Notion, OBS, Postman...)? Call find_app first. If it's installed, open_app it and
+  work in it. If it's missing, tell the user and ask in one sentence whether to install it - only on a yes call
+  install_app with the Id find_app gave. If they say no, use the website in Chrome instead.
 - You also have a little 3D body that walks around the user's screen. To press buttons in apps like a person would,
   call list_clickable(window) to see what's there, then click_element(name, window) - you'll walk over and press it.
   Each message lists the open windows; if the site the user means is already open (e.g. YouTube in Chrome), work
@@ -134,8 +149,9 @@ How you work:
   say movie time, do X, Y and Z", "remember how to ..."), save it with save_skill.
 - To move a window to a side or corner of the screen, use drag_window - you carry it there yourself.
 - For the time or date, call get_datetime. Never read out or repeat the [open windows ...] line.
-- You are also the user's co-worker. To draft an email use draft_email, and for a document, letter or notes use
-  write_document: both run in the BACKGROUND while the user keeps working - don't open Gmail or Notepad yourself.
+- You are also the user's co-worker. To draft an email use draft_email, for a document, letter or notes use
+  write_document, and to research something use research_in_background: they run in the BACKGROUND while the user
+  keeps working (several can run at once) - don't open Gmail, Notepad or Chrome for them yourself.
   Say in one short sentence that you're on it; you'll tell them when it's done, and "show it" = show_finished_work.
 - When the user wants you to sleep, rest, stop listening or says goodnight (speech recognition may garble it, e.g.
   "got to sleep", "go too sleep"), call go_to_sleep - saying goodnight alone does NOT stop you listening.
@@ -234,14 +250,15 @@ knowledge.seed(_windows_display_name())
 FRIENDLY = {
     "get_system_status": "Checked system health", "list_top_processes": "Looked at running programs",
     "kill_process": "Closed a program", "network_info": "Checked the network", "get_datetime": "Checked the time",
-    "open_app": "Opened an app", "open_website": "Opened the browser", "open_path": "Opened a file/folder",
+    "open_app": "Opened an app", "open_website": "Opened the browser", "web_research": "Searched Google in Chrome",
+    "read_page": "Read the page", "find_app": "Checked if an app is installed", "open_path": "Opened a file/folder",
     "list_folder": "Looked inside a folder", "search_files": "Searched files", "find_large_files": "Hunted big files",
     "preview_organize_folder": "Planned a cleanup", "organize_folder": "Organized files",
     "create_folder": "Created a folder", "delete_to_recycle_bin": "Moved to Recycle Bin",
     "temp_files_size": "Measured temp files", "clean_temp_files": "Cleaned temp files",
     "empty_recycle_bin": "Emptied Recycle Bin", "set_volume": "Adjusted volume", "media_control": "Controlled media",
     "set_brightness": "Adjusted brightness", "lock_screen": "Locked the screen", "power_action": "Power action",
-    "run_powershell": "Ran a command", "add_note": "Saved a note", "list_notes": "Read notes",
+    "run_powershell": "Ran a command", "run_in_terminal": "Typed a command in the terminal", "add_note": "Saved a note", "list_notes": "Read notes",
     "set_reminder": "Set a reminder", "remember_fact": "Remembered something", "forget_fact": "Forgot something",
     "list_windows": "Looked at open windows", "window_action": "Managed a window", "minimize_all_windows": "Showed the desktop", "close_all_windows": "Closed all windows",
     "type_text": "Typed text", "press_keys": "Pressed keys", "get_clipboard": "Read the clipboard", "read_selection": "Read the selected text",
@@ -259,7 +276,7 @@ FRIENDLY = {
     "react": "Acted it out", "new_move": "Made up a new move", "forget_move": "Forgot a move",
     "change_look": "Changed my look", "drag_window": "Moved a window", "more_tools": "Found more tools",
     "read_notifications": "Read your notifications", "draft_email": "Started drafting an email",
-    "write_document": "Started writing a document", "show_finished_work": "Showed finished work",
+    "write_document": "Started writing a document", "research_in_background": "Started researching in the background", "show_finished_work": "Showed finished work",
     "background_jobs": "Checked background jobs", "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
     "list_skills": "Listed my skills", "delete_skill": "Deleted a skill",
 }
@@ -268,7 +285,8 @@ ASK = {
     "kill_process": "Close a program", "organize_folder": "Move files into category folders",
     "delete_to_recycle_bin": "Move something to the Recycle Bin", "clean_temp_files": "Delete old temp files",
     "empty_recycle_bin": "Permanently empty the Recycle Bin", "power_action": "Change power state", "close_all_windows": "Close all windows",
-    "run_powershell": "Run a PowerShell command", "window_action": "Control a window", "type_text": "Type on your keyboard",
+    "run_powershell": "Run a PowerShell command", "run_in_terminal": "Type a command in the terminal",
+    "window_action": "Control a window", "type_text": "Type on your keyboard",
     "press_keys": "Press keys", "write_text_file": "Write a file", "move_or_rename": "Move/rename",
     "install_app": "Install an app", "uninstall_app": "Uninstall an app", "set_wallpaper": "Change your wallpaper",
     "toggle_wifi": "Switch Wi-Fi (admin)", "click_element": "Click something", "click_at": "Click on the screen",
@@ -303,9 +321,9 @@ def is_risky(call):
 # action she pauses, looks, and is told what the screen shows now and whether the goal is finished. That keeps her
 # on track through tasks with many steps, and stops her saying "done" when it isn't.
 
-ACT_TOOLS = {"open_app", "open_website", "open_path", "window_action", "minimize_all_windows", "type_text",
-             "press_keys", "fill_in", "click_element", "click_nth", "click_at", "scroll", "video_control", "drag_window"}
-SLOW_TOOLS = {"open_app", "open_website", "open_path"}   # these need a moment before the screen settles
+ACT_TOOLS = {"open_app", "open_website", "web_research", "open_path", "window_action", "minimize_all_windows", "type_text",
+             "close_all_windows", "run_in_terminal", "press_keys", "fill_in", "click_element", "click_nth", "click_at", "scroll", "video_control", "drag_window"}
+SLOW_TOOLS = {"open_app", "open_website", "web_research", "open_path"}   # these need a moment before the screen settles
 LOOK_FROM_STEP = 2      # one-step requests ("open Chrome") stay quick: only the window list is checked
 MAX_TURNS, MAX_TASK_TURNS = 10, 24
 # A cloud brain on High/Max reasoning plans its steps well, so a big job (find my GitHub username, then set up the
@@ -679,6 +697,8 @@ def _execute_one(c, approved, activity, model):
         out = run_skill(c["args"] or {}, approved, activity, model)
     elif c["name"] == "react" and avatar_client.running():
         out = queue_reaction(c["args"] or {}, activity)
+    elif c["name"] == "new_move" and avatar_client.running():
+        out = queue_new_move(c["args"] or {}, activity)
     elif c["name"] == "go_to_sleep":
         state["sleep_after"] = True         # she says goodnight first; heard()/chat() then really end the conversation
         activity.append(FRIENDLY["go_to_sleep"])
@@ -1403,6 +1423,45 @@ def queue_reaction(args, activity):
     activity.append(FRIENDLY["react"])
     return (f"OK: you'll {name} right after you finish speaking this answer. Now give your answer; "
             f"don't say you already did it.")
+
+
+def queue_new_move(args, activity):
+    """The new_move tool during a chat: check and learn the move now, but act it out only after she has spoken -
+    like queue_reaction. (Played at once, the move came before her answer: "check this out!" after the dance.)"""
+    from nova.avatar import body
+    move, err = body.clean_move(args.get("name"), args.get("duration"), args.get("keys"))
+    if err:
+        return f"Error in new_move: {err}"
+    snd, err = body.clean_sound(args.get("sound"))
+    if err:
+        return f"Error in new_move: sound: {err}"
+    st = avatar_client.status() or {}
+    if not st.get("live"):
+        return ("I can't do new moves right now: my live 3D body is off (tray menu: Live 3D Nova), so only my "
+                "built-in reactions work.")
+    note = ""
+    if snd:      # made now, once: a word in her own voice (~0.5 s to make) or a synthesized little piece
+        neural = getattr(mouth, "neural", None)
+        try:
+            made = sfx.save_move_sound(move["name"], snd, say=neural.synth if neural else None)
+        except Exception as e:
+            made = None
+            task_log(f"MOVE SOUND failed: {e}")
+        if made:
+            move["sound"] = snd
+        else:
+            note = " (Its sound couldn't be made - my voice engine isn't loaded - so it's silent.)"
+    avatar_client.send("move", move=move, play=False, timeout=3)
+    if args.get("save", True) is not False:
+        body.save_move(move)
+    try:
+        times = int(args.get("times") or 0) or None
+    except (TypeError, ValueError):
+        times = None
+    state["react_after"] = {"name": move["name"], "repeat": times}
+    activity.append(FRIENDLY["new_move"])
+    return (f"OK: your new move '{move['name']}' is saved and you'll do it right after you finish speaking this "
+            f"answer.{note} Now give your answer; don't say you already did it.")
 
 
 def react_later(reaction, wait_for_speech=True, repeat=None):
