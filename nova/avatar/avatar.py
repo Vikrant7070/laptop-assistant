@@ -1,8 +1,11 @@
 """Desktop Nova: the 3D character that lives on your screen.
 
-A see-through, always-on-top window (Win32 layered window with per-pixel alpha) that plays the
-sprite frames rendered from static/nova3d.html. She wanders around, talks in speech bubbles, and
-walks over to buttons to "press" them when the assistant clicks something.
+A see-through, always-on-top window (Win32 layered window with per-pixel alpha) that shows her 3D model. She
+wanders around, talks in speech bubbles, and walks over to buttons to "press" them when the assistant clicks something.
+
+Live 3D: a hidden browser window (desktop.py) runs static/nova3d.html?live=1, which poses the model each frame and
+POSTs the pixels to /frame here; the reply tells it what to draw next. That lets her play moves the brain invents and
+wear a new look (nova/avatar/body.py). Whenever live frames stop arriving, the saved sprite frames take over.
 
 Control API (used by tools.py / app.py):  POST http://127.0.0.1:5056/cmd  {"do": ..., ...}
   anim {name}            base animation: idle | talk | think | sleepy
@@ -17,6 +20,9 @@ Control API (used by tools.py / app.py):  POST http://127.0.0.1:5056/cmd  {"do":
                          nod, shake, facepalm, bow, love, yawn, look, happy, wave
   carry_to {x, y}        walk to (x, y) holding something up beside her (used to drag a window; waits until she arrives)
   clickthrough {on}      let the mouse pass through her
+  move {move}            play (and remember) a move the brain invented - body.clean_move format; needs live 3D
+  look {look}            wear this look (body.load_look format); needs live 3D
+  live {on}              use live 3D frames (on) or only the saved sprites (off)
   show / hide
 Run alone (from the project folder):  pythonw -m nova.avatar.avatar
 """
@@ -39,13 +45,16 @@ try:
 except Exception:
     pass
 
-from nova.shared import REACTIONS, ROOT, host_allowed, work_area  # noqa: E402
+from nova.avatar import body  # noqa: E402
+from nova.shared import DATA, REACTIONS, ROOT, host_allowed, work_area  # noqa: E402
 
 FRAMES = ROOT / "static" / "nova3d"
 PORT = 5056
 SCALE = 0.8          # character size on screen
 SPEED = 420          # walking speed, pixels per second
 TICK_MS = 33
+LIVE_STALE = 0.5     # seconds without a new live frame before the saved sprites take over again
+RENDERER_ORIGINS = {"http://127.0.0.1:5055", "http://localhost:5055"}    # the hidden live renderer's page
 from nova.audio import sfx  # noqa: E402
 
 user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
@@ -99,6 +108,14 @@ gdi32.DeleteObject.argtypes = [VP]
 GWL_EXSTYLE = -20
 WS_EX_LAYERED, WS_EX_TRANSPARENT, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_NOACTIVATE = 0x80000, 0x20, 0x80, 0x8, 0x08000000
 BLEND = BLENDFUNCTION(0, 0, 255, 1)
+
+
+def live_setting():
+    """The 'live_3d' setting (data/settings.json, written by the app): live 3D frames, or only the saved sprites."""
+    try:
+        return bool(json.loads((DATA / "settings.json").read_text(encoding="utf-8")).get("live_3d", True))
+    except (OSError, ValueError):
+        return True
 
 
 def premultiplied_bgra(img):
@@ -170,6 +187,12 @@ class Nova:
         self.asleep = False          # napping in the bottom-right corner (5 minutes without a task, or "go to sleep")
         self.next_fidget = time.time() + random.uniform(20, 40)
         self.dibs = {}
+        self.moves = body.load_moves()   # moves the brain invented, by name
+        self.look = body.load_look()
+        self.look_v = 1                  # bumped on every look change, so the renderer knows to re-dress her
+        self.live_on = live_setting()
+        self.live = None                 # (latest live frame as a PIL image, when it arrived)
+        self.want = {"name": "idle", "t": 0}
         self.q = queue.Queue()
         self.drag = None
         try:
@@ -195,8 +218,25 @@ class Nova:
                         "repeat": max(1, int(repeat))}
         return ev
 
+    def live_now(self):
+        """Is the live 3D renderer sending frames right now?"""
+        return bool(self.live_on and self.live and time.time() - self.live[1] < LIVE_STALE)
+
+    def count(self, name):
+        """Frames in an animation at sprite speed. An invented move ("move:<name>") lasts its duration."""
+        if name.startswith("move:"):
+            m = self.moves.get(name[5:])
+            return max(1, round(m["duration"] * self.sp.fps)) if m else 1
+        return self.sp.count(name)
+
     def react(self, name, repeat=None, sound=True):
-        """Play a reaction. Dancing and laughing look best a few times over. `sound`: with its sound effect."""
+        """Play a reaction. Dancing and laughing look best a few times over. `sound`: with its sound effect.
+        An invented move plays only while live 3D is on (the sprites can't show it)."""
+        if name in self.moves:
+            if not self.live_now():
+                return None
+            self.target = None if not self.carrying else self.target
+            return self.start_oneshot("move:" + name, repeat=min(int(repeat or 1), 8))
         if name not in self.sp.images or name not in REACTIONS:
             return None
         if sound:
@@ -215,6 +255,9 @@ class Nova:
         hour = time.localtime().tm_hour
         sleepy_time = hour >= 23 or hour < 6
         r = random.random()
+        if self.moves and self.live_now() and random.random() < .2:
+            self.react(random.choice(list(self.moves)), sound=False)
+            return
         if sleepy_time and r < .45:
             self.react("yawn", sound=False)
         elif r < .75:
@@ -386,6 +429,26 @@ class Nova:
                 self.root.deiconify()
         elif do == "reload":
             self.sp.load()
+        elif do == "move":
+            move, err = body.clean_move(**{k: cmd.get("move", {}).get(k) for k in ("name", "duration", "keys", "loop")})
+            if err:
+                result["error"] = err
+            else:
+                self.moves[move["name"]] = move
+                result["live"] = self.live_now()
+                ev = self.react(move["name"], cmd.get("repeat"))
+                result["played"] = bool(ev)
+                if ev and cmd.get("wait"):
+                    threading.Thread(target=lambda: (ev.wait(30), done.set()), daemon=True).start()
+                    return
+        elif do == "forget_move":
+            self.moves.pop(cmd.get("name"), None)
+        elif do == "look":
+            self.look = {**body.DEFAULT_LOOK, **(cmd.get("look") or {})}
+            self.look_v += 1
+            result["live"] = self.live_now()
+        elif do == "live":
+            self.live_on = bool(cmd.get("on"))
         if result is not None:       # commands she queues for herself (battery, dozing off) have no caller waiting
             result["pos"] = self.pos
         if done:
@@ -399,16 +462,52 @@ class Nova:
                 pass
 
             def _ours(self):
-                """Only Nova (same laptop, our own Host name) may drive her - not a web page via DNS rebinding."""
-                if host_allowed(self.headers.get("Host"), PORT) and not self.headers.get("Origin"):
+                """Only Nova (same laptop, our own Host name) may drive her - not a web page via DNS rebinding.
+                The one page allowed in is her own live renderer, and only to /frame."""
+                origin = self.headers.get("Origin")
+                if host_allowed(self.headers.get("Host"), PORT) and (
+                        not origin or (origin in RENDERER_ORIGINS and self.path.startswith("/frame"))):
                     return True
                 self.send_response(403)
                 self.end_headers()
                 return False
 
+            def do_OPTIONS(self):
+                if not self._ours():
+                    return
+                self.send_response(204)
+                self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", ""))
+                self.send_header("Access-Control-Allow-Methods", "POST")
+                self.end_headers()
+
+            def frame(self):
+                """A live frame from the renderer in, what to draw next out."""
+                from urllib.parse import parse_qs, urlparse
+                q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+                data = self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))
+                try:
+                    w, h, lv = int(q.get("w", 0)), int(q.get("h", 0)), int(q.get("lv", -1))
+                except ValueError:
+                    w = h = lv = 0
+                if w == nova.sp.w and h == nova.sp.h and len(data) == w * h * 4:
+                    # WebGL reads rows bottom-up: the -1 stride turns the picture the right way up
+                    nova.live = (Image.frombytes("RGBA", (w, h), data, "raw", "RGBA", 0, -1), time.time())
+                want = dict(nova.want, w=nova.sp.w, h=nova.sp.h,
+                            fps=12 if nova.asleep else 30, pause=not (nova.visible and nova.live_on))
+                if lv != nova.look_v:
+                    want.update(look=nova.look, look_v=nova.look_v)
+                out = json.dumps(want).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin") or "*")
+                self.end_headers()
+                self.wfile.write(out)
+
             def do_POST(self):
                 if not self._ours():
                     return
+                if self.path.startswith("/frame"):
+                    return self.frame()
                 cmd = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or 2) or b"{}")
                 done, result = threading.Event(), {}
                 nova.q.put((cmd, done, result))
@@ -426,7 +525,8 @@ class Nova:
                 body = json.dumps({"ok": True, "pos": nova.pos, "visible": nova.visible, "talking": nova.base == "talk",
                                    "asleep": nova.asleep, "base": nova.base,
                                    "bubble": b[0] if b and time.time() < b[1] else "",
-                                   "reactions": [r for r in REACTIONS if r in nova.sp.images]}).encode()
+                                   "reactions": [r for r in REACTIONS if r in nova.sp.images],
+                                   "moves": sorted(nova.moves), "live": nova.live_now()}).encode()
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(body)
@@ -490,39 +590,55 @@ class Nova:
             self.fidget()
             self.next_fidget = now + random.uniform(25, 60)
 
+        # `at` is the position in the animation counted in sprite frames, as a float: the sprites show frame
+        # int(at); the live renderer gets the exact phase at/n, so it moves smoothly at 30 fps.
         if self.oneshot:
             o = self.oneshot
-            n = self.sp.count(o["name"])
-            idx = int((now - o["start"]) * self.sp.fps)
-            if o["hold_at"] is not None and idx >= o["hold_at"]:
-                idx = o["hold_at"]
+            n = self.count(o["name"])
+            at = (now - o["start"]) * self.sp.fps
+            if o["hold_at"] is not None and at >= o["hold_at"]:
+                at = o["hold_at"]
                 if not o["held"]:
                     o["held"] = True
                     o["event"].set()
-                o["start"] = now - idx / self.sp.fps
-            if idx >= n and o["repeat"] > 1:
+                o["start"] = now - at / self.sp.fps
+            if at >= n and o["repeat"] > 1:
                 o["repeat"] -= 1
                 o["start"] = now
-                idx = 0
-            if idx >= n:
+                at = 0
+            if at >= n:
                 o["event"].set()
                 after = o["after"]
                 self.oneshot = None
                 if after:
                     self.start_oneshot(after)
-                name, idx = self.base, int(now * self.sp.fps) % self.sp.count(self.base)
+                name, at = self.base, now * self.sp.fps
             else:
                 name = o["name"]
         elif moving:
             name = "carry" if self.carrying and "carry" in self.sp.images else "walk"
-            idx = int(now * self.sp.fps * 1.3) % self.sp.count(name)
+            at = now * self.sp.fps * 1.3
         else:
-            name, idx = self.base, int(now * self.sp.fps) % self.sp.count(self.base)
+            name, at = self.base, now * self.sp.fps
+        n = self.count(name)
+        idx = int(at) % n
+        move = self.moves.get(name[5:]) if name.startswith("move:") else None
+        self.want = {"name": name, "t": (at % n) / n if n > 1 else 0, "move": move}
 
         flip = self.facing_left if name in ("walk", "point", "carry") else False
         if self.visible:
             self.render(name, idx, flip)
         self.root.after(TICK_MS, self.tick)
+
+    def frame_image(self, name, idx, flip):
+        """This moment's picture of her: the live 3D frame when the renderer is running, else the saved sprite.
+        (Live frames lag one tick behind `want` - 33 ms, too little to see.)"""
+        if self.live_now() and self.live[0].size == (self.sp.w, self.sp.h):
+            img = self.live[0]
+            return img.transpose(Image.FLIP_LEFT_RIGHT) if flip else img, True
+        if name.startswith("move:"):          # the sprites have no picture of an invented move
+            name, idx = self.base, int(time.time() * self.sp.fps) % self.sp.count(self.base)
+        return self.sp.image(name, idx, flip), False
 
     def render(self, name, idx, flip):
         sw, sh = self.sp.w, self.sp.h
@@ -532,10 +648,13 @@ class Nova:
             self.bubble = None
         if self.thought and now >= self.thought[1]:
             self.thought = None
+        img, live = self.frame_image(name, idx, flip)
         if self.bubble or self.thought:       # speaking beats thinking: the cloud waits under the speech bubble
             text, thought = (self.bubble[0], False) if self.bubble else (self.thought[0], True)
-            canvas, xoff, yoff = self.compose_bubble(self.sp.image(name, idx, flip), text, thought)
+            canvas, xoff, yoff = self.compose_bubble(img, text, thought)
             data, w, h = premultiplied_bgra(canvas), canvas.width, canvas.height
+        elif live or name.startswith("move:"):     # not one of the cached sprite pictures
+            data, w, h, xoff, yoff = premultiplied_bgra(img), sw, sh, 0, 0
         else:
             data, w, h, xoff, yoff = self.sp.bytes(name, idx, flip), sw, sh, 0, 0
         x = round(self.pos[0] - xoff - fx)
