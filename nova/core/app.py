@@ -256,7 +256,8 @@ FRIENDLY = {
     "video_control": "Pressed a video button",
     "look_at_screen": "Looked at your screen",
     "update_profile": "Updated your profile", "learn_lesson": "Saved a lesson", "recall_knowledge": "Checked my knowledge bank",
-    "react": "Acted it out", "drag_window": "Moved a window", "more_tools": "Found more tools",
+    "react": "Acted it out", "new_move": "Made up a new move", "forget_move": "Forgot a move",
+    "change_look": "Changed my look", "drag_window": "Moved a window", "more_tools": "Found more tools",
     "read_notifications": "Read your notifications", "draft_email": "Started drafting an email",
     "write_document": "Started writing a document", "show_finished_work": "Showed finished work",
     "background_jobs": "Checked background jobs", "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
@@ -1389,9 +1390,11 @@ def pick_reaction(user_text, out):
 def queue_reaction(args, activity):
     """The react tool during a chat: don't act it out now (she hasn't said anything yet) - after_turn plays it the
     moment she finishes speaking, so a laugh comes after the joke."""
+    from nova.avatar import body
     name = tools.reaction_name(args.get("reaction"))
-    if name not in REACTIONS:
-        return f"I can't do '{args.get('reaction')}'. I can: {', '.join(REACTIONS)}."
+    if name not in REACTIONS and name not in body.load_moves():
+        return (f"I can't do '{args.get('reaction')}' yet. I can: {tools.can_do()}. "
+                "To do something new, invent it with new_move.")
     try:
         times = int(args.get("times") or 0) or None
     except (TypeError, ValueError):
