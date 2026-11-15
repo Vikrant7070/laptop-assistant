@@ -536,7 +536,7 @@ function showOffer(o) {
   const d = document.createElement("div"); d.className = "confirm";
   d.innerHTML = `<button class="yes">${esc(o.label || "Show it")}</button><button class="no">Not now</button>`;
   const go = async show => { d.querySelectorAll("button").forEach(b => b.disabled = true); d.style.opacity = .6;
-    try { const j = await api("/api/offer", {show}); add("nova", j.reply); } catch (e) { add("err", e.message); } };
+    try { const j = await api("/api/offer", {show, id: o.id}); add("nova", j.reply); } catch (e) { add("err", e.message); } };
   d.querySelector(".yes").onclick = () => go(true); d.querySelector(".no").onclick = () => go(false);
   log.append(d); log.scrollTop = 1e9;
 }

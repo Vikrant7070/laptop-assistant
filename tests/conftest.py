@@ -104,6 +104,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(coworker, "open_hidden", no_real_windows)
     app.nap.update(asleep=False, last_task=__import__("time").time())
     app.offer.update(job=None, until=0.0)
+    app.offers_waiting.clear()
     app.convo.update(on=False, last_heard=0.0, thinking=False)
     app.listen_state.update(loop=False, single=False)
     app.mouth.said.clear()
