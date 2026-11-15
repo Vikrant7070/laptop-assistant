@@ -397,7 +397,7 @@ function applyLook(L) {
   EYE.main = "#" + eye.getHexString(); EYE.dark = "#" + shade(eye, .35).getHexString();
   EYE.light = "#" + M.glow.color.getHexString(); EYE.skin = "#" + M.skin.color.getHexString();
   Object.values(TEX.eye).forEach(t => t.dispose()); Object.assign(TEX.eye, makeEyes());
-  phones.forEach(m => m.visible = L.headphones !== false); clip.visible = L.hair_clip !== false;
+  phones.forEach(m => m.visible = L.headphones !== false); clip.visible = L.hair_clip !== false && !L.beanie;
   longHair.visible = L.long_hair !== false; glasses.visible = !!L.glasses; catEars.visible = !!L.cat_ears;
   beanie.visible = !!L.beanie; bow.visible = !!L.bow; ahoge.visible = L.ahoge !== false && !L.beanie;
   cap.visible = !L.beanie;
@@ -514,6 +514,11 @@ async function exportFrames() {
 document.getElementById("export").onclick = exportFrames;
 window.exportFrames = exportFrames;
 window.applyLook = applyLook; window.poseMove = poseMove;
+// Dev helper: a picture of one invented-move moment (window.snapshot(move, t) -> PNG data URL), for checking poses.
+window.snapshot = (move, t) => {
+  exporting = true; poseMove(move, t); renderer.render(scene, camera);
+  const url = canvas.toDataURL("image/png"); exporting = false; return url;
+};
 // Dev helper: a contact sheet of chosen animations at a few moments each, to check poses at a glance.
 window.contactSheet = async (names, phases = [.15, .4, .65, .9]) => {
   exporting = true; renderer.setPixelRatio(1); renderer.setSize(W, H, false);

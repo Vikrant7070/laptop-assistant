@@ -1331,23 +1331,85 @@ def more_tools(need=""):
 # ---------------------------------------------------------------- reactions and dragging windows (3D Nova)
 
 def reaction_name(reaction):
-    """The brain's word for a reaction -> one of REACTIONS (or the cleaned word if there's no such reaction)."""
+    """The brain's word for a reaction -> one of REACTIONS or a move she invented (body.py), else the cleaned word."""
+    from nova.avatar import body
     name = str(reaction or "").lower().strip()
+    if re.sub(r"[^a-z0-9]+", "_", name).strip("_") in body.load_moves():     # her own "shrug" beats the alias
+        return re.sub(r"[^a-z0-9]+", "_", name).strip("_")
     return {"laughing": "laugh", "dancing": "dance", "twirl": "spin", "applaud": "clap", "cheer": "happy", "jump": "happy",
             "cry": "sad", "shrug": "confused", "yes": "nod", "no": "shake", "oops": "facepalm", "thanks": "bow",
             "heart": "love", "stretch": "yawn", "hello": "wave", "hi": "wave"}.get(name, name)
 
 
+def can_do():
+    """Everything react can play: the built-in reactions and the moves she invented."""
+    from nova.avatar import body
+    moves = sorted(body.load_moves())
+    return ", ".join(REACTIONS) + (f"; and my own moves: {', '.join(moves)}" if moves else "")
+
+
 def react(reaction, times=0):
     """Make 3D Nova act something out on screen right now. (In a chat, app.queue_reaction plays it after she speaks.)"""
-    from nova.avatar import avatar_client
+    from nova.avatar import avatar_client, body
     name = reaction_name(reaction)
-    if name not in REACTIONS:
-        return f"I can't do '{reaction}'. I can: {', '.join(REACTIONS)}."
+    if name not in REACTIONS and name not in body.load_moves():
+        return (f"I can't do '{reaction}' yet. I can: {can_do()}. To do something new, invent it with new_move.")
     if not avatar_client.running():
         return "My 3D body isn't on screen right now, so I can't act it out."
     out = avatar_client.send("react", name=name, repeat=int(times) if times else None, wait=True, timeout=20)
     return f"Did it: {name}." if out and out.get("played") else f"I couldn't do '{name}' just now."
+
+
+def new_move(name, duration, keys, times=1, save=True):
+    """Invent a move for 3D Nova's live body, play it, and remember it (data/moves.json) to do again with react."""
+    from nova.avatar import avatar_client, body
+    move, err = body.clean_move(name, duration, keys)
+    if err:
+        return f"Error in new_move: {err}"
+    if not avatar_client.running():
+        return "My 3D body isn't on screen right now, so I can't act it out."
+    out = avatar_client.send("move", move=move, repeat=int(times or 1), wait=True, timeout=30) or {}
+    if out.get("error"):
+        return f"Error in new_move: {out['error']}"
+    if not out.get("played"):
+        return ("I can't do new moves right now: my live 3D body is off (tray menu: Live 3D Nova), so only my "
+                "built-in reactions work.")
+    if save:
+        body.save_move(move)
+    return (f"Did my new move '{move['name']}' ({len(move['keys'])} poses, {move['duration']} s)"
+            + (" and saved it: say react with that name to do it again." if save else "."))
+
+
+def forget_move(name):
+    from nova.avatar import avatar_client, body
+    key = re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
+    if not body.forget_move(key):
+        return f"I have no move called '{name}'. My moves: {', '.join(sorted(body.load_moves())) or 'none yet'}."
+    avatar_client.send("forget_move", name=key, timeout=3)
+    return f"Forgot my move '{key}'."
+
+
+def change_look(preset="", hair="", hair_tips="", eyes="", skin="", hoodie="", pants="", shoes="", glow="", accent="",
+                hat="", headphones=None, hair_clip=None, long_hair=None, ahoge=None, glasses=None, cat_ears=None,
+                beanie=None, bow=None):
+    """Change how 3D Nova looks (live 3D): an outfit preset and/or colours and things she wears. Saved for next time."""
+    from nova.avatar import avatar_client, body
+    args = dict(hair=hair, hair_tips=hair_tips, eyes=eyes, skin=skin, hoodie=hoodie, pants=pants, shoes=shoes,
+                glow=glow, accent=accent, hat=hat, headphones=headphones, hair_clip=hair_clip, long_hair=long_hair,
+                ahoge=ahoge, glasses=glasses, cat_ears=cat_ears, beanie=beanie, bow=bow)
+    changes = {k: v for k, v in args.items() if v not in (None, "")}
+    if not changes and not preset:
+        return f"Tell me what to change. Outfits: {', '.join(body.PRESETS)}; or colours/things: " \
+               f"{', '.join(body.COLOURS + body.SWITCHES)}."
+    look, problems = body.change_look(changes, preset or None)
+    out = avatar_client.send("look", look=look, timeout=3) or {}
+    worn = ", ".join(k.replace("_", " ") for k in body.SWITCHES if look[k] and not body.DEFAULT_LOOK[k])
+    msg = "New look saved" + (f" (wearing {worn})" if worn else "") + "."
+    if not out:
+        msg += " My 3D body isn't on screen right now; I'll wear it when it is."
+    elif not out.get("live"):
+        msg += " But my live 3D body is off, so it shows only once Live 3D Nova is on in the tray menu."
+    return msg + (" " + " ".join(problems) if problems else "")
 
 
 def _avatar_pos():
@@ -1424,6 +1486,20 @@ def _tool(name, desc, props=None, required=None):
             "input_schema": {"type": "object", "properties": props or {}, "required": required or [],
                              "additionalProperties": False}}
 
+
+# How a brain writes a new_move: joint angles in degrees from her own point of view (nova/avatar/body.py).
+ANGLE_HELP = ('"keys": a list of poses over time, each {"at": 0..1 (when, as a fraction of the duration), and any of: '
+              'right_arm_out/left_arm_out (0 arm down at her side, 90 straight out sideways, 170 straight up), '
+              'right_arm_forward/left_arm_forward (0 down, 90 pointing ahead, 160 up past her head), '
+              'head_nod (+ looks down, - up, max 40), head_turn (+ to her left, max 70), head_tilt (+ to her left, '
+              'max 35), lean_forward (+ bows, max 45), lean_side (max 25), turn (whole body, 360 = full spin), '
+              'jump (0..100), right_leg_lift/left_leg_lift (0..90 kick forward), '
+              'eyes (open, closed, happy, half, up, wide, sad, side_left, side_right), mouth (smile, open, grin, '
+              'frown, o), blush (0..1), symbol (none, question, exclaim, note, heart, z, drop)}. '
+              'Unset joints rest at 0; she starts and ends standing. Her right = the viewer\'s left. '
+              'Example shrug: [{"at":0.3,"right_arm_out":45,"left_arm_out":45,"right_arm_forward":30,'
+              '"left_arm_forward":30,"head_tilt":15,"eyes":"up","mouth":"o"},{"at":0.7,"right_arm_out":45,'
+              '"left_arm_out":45,"right_arm_forward":30,"left_arm_forward":30,"head_tilt":15}]')
 
 S = {"type": "string"}
 N = {"type": "number"}
@@ -1527,10 +1603,26 @@ TOOLS = [
     _tool("recall_knowledge", "Read your knowledge bank: what you know about the user and your lessons. Optionally only "
           "about one topic.", {"about": S}),
     _tool("react", "Act something out with your 3D body on screen: laugh, dance, spin, clap, surprised, sad, confused, nod, "
-          "shake (no), facepalm (oops), bow (thanks), love, yawn, look, happy (jump), wave. Use it when the user asks "
-          "you to dance, laugh, clap and so on. It plays right after you finish speaking your answer (a laugh "
-          "after the joke), so call it first, then answer.",
-          {"reaction": {"type": "string", "enum": list(REACTIONS)}, "times": N}, ["reaction"]),
+          "shake (no), facepalm (oops), bow (thanks), love, yawn, look, happy (jump), wave - or one of your own "
+          "moves you made with new_move, by its name. Use it when the user asks you to dance, laugh, clap and so "
+          "on. It plays right after you finish speaking your answer (a laugh after the joke), so call it first, "
+          "then answer. For something none of these is, use new_move.",
+          {"reaction": S, "times": N}, ["reaction"]),
+    _tool("new_move", "Invent a NEW body move for your 3D self and do it now (e.g. 'do a robot dance', 'shrug', "
+          "'stretch', 'salute', 'do jumping jacks'), when no react reaction fits. You write the poses; it is saved "
+          "under its name so react can do it again. " + ANGLE_HELP,
+          {"name": S, "duration": {"type": "number", "description": "seconds, 0.3 to 12"},
+           "keys": {"type": "array", "items": {"type": "object"}}, "times": N}, ["name", "duration", "keys"]),
+    _tool("forget_move", "Delete one of your own invented moves.", {"name": S}, ["name"]),
+    _tool("change_look", "Change how your 3D self looks, and keep it: an outfit (default, sakura, midnight, forest, "
+          "sunny) and/or colours (a colour word like pink/teal/gold or #rrggbb) of hair, hair_tips, eyes, skin, "
+          "hoodie, pants, shoes, glow, accent (star), hat (beanie and bow colour), and things to wear on/off: "
+          "headphones, hair_clip, long_hair, ahoge (the hair curl), glasses, cat_ears, beanie, bow. "
+          "preset 'default' puts everything back.",
+          {"preset": {"type": "string", "enum": ["default", "sakura", "midnight", "forest", "sunny"]},
+           "hair": S, "hair_tips": S, "eyes": S, "skin": S, "hoodie": S, "pants": S, "shoes": S, "glow": S,
+           "accent": S, "hat": S, "headphones": B, "hair_clip": B, "long_hair": B, "ahoge": B, "glasses": B,
+           "cat_ears": B, "beanie": B, "bow": B}),
     _tool("drag_window", "Move a window to another part of the screen - you walk over, grab its title bar and carry it.",
           {"window": S, "to": {"type": "string", "enum": ["left", "right", "center", "top", "bottom", "top-left",
                                                           "top-right", "bottom-left", "bottom-right"]}}, ["to"]),

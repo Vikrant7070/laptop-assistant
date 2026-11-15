@@ -35,6 +35,7 @@ GROUPS = [
     {"window_action", "minimize_all_windows", "close_all_windows", "drag_window", "list_windows"},
     {"draft_email", "write_document", "show_finished_work", "background_jobs"},                            # co-worker
     {"run_skill", "save_skill", "list_skills", "delete_skill"},                                              # skills
+    {"react", "new_move", "forget_move", "change_look"},                                                     # 3D body
 ]
 
 # What people actually say, so a short request finds its tool ("make it louder" -> set_volume).
@@ -66,6 +67,9 @@ HINTS = {
     "toggle_wifi": "turn wifi on off",
     "drag_window": "move this window to the left right side",
     "react": "dance laugh clap wave",
+    "new_move": "do a new move, act out, shrug, salute, stretch, robot dance, jumping jacks, pose, show me how",
+    "change_look": "change your look, outfit, hair colour, clothes, wear glasses, cat ears, hat, dress up, new style",
+    "forget_move": "forget that move, delete your move",
     "remember_fact": "remember that, don't forget",
     "forget_fact": "forget that, delete what you know",
     "search_files": "find my file, where is the document",
