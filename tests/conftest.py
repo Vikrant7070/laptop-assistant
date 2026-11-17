@@ -62,6 +62,7 @@ voice.WhisperTranscriber.available = staticmethod(lambda: False)
 from nova.actions import tools  # noqa: E402
 from nova.actions import knowledge  # noqa: E402
 from nova.brain import cloud  # noqa: E402
+from nova.brain import router  # noqa: E402
 from nova.core import app  # noqa: E402
 from nova.actions import skills  # noqa: E402
 
@@ -71,12 +72,13 @@ def _point_data_at(folder):
     tools.DATA = folder
     tools.NOTES_FILE = folder / "notes.json"
     tools.REMINDERS_FILE = folder / "reminders.json"
-    tools.MEMORY_FILE = folder / "memory.json"
     knowledge.FILE = folder / "knowledge.json"
     knowledge.OLD_MEMORY = folder / "memory.json"
     cloud.KEYS_FILE = folder / "keys.json"
     app.SETTINGS_FILE = folder / "settings.json"
     app.TASK_LOG = folder / "task_log.txt"
+    router.FILE = folder / "model_routing.json"
+    router._cache.update(key=None, conf=None)
     skills.DIR = folder / "skills"
     skills._cache.update(key=None, skills=[])
 
@@ -102,7 +104,7 @@ def isolated(tmp_path, monkeypatch):
     def no_real_windows(*a, **k):
         raise AssertionError("a test tried to open a real window")
     monkeypatch.setattr(coworker, "open_hidden", no_real_windows)
-    app.nap.update(asleep=False, last_task=__import__("time").time())
+    app.nap.update(asleep=False, reason=None, last_task=__import__("time").time())
     app.offer.update(job=None, until=0.0)
     app.offers_waiting.clear()
     app.convo.update(on=False, last_heard=0.0, thinking=False)

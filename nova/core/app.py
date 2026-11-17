@@ -15,15 +15,21 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 import ctypes
 
 from nova.avatar import avatar_client
+from nova.avatar import body as body_module
 from nova.brain import cloud
 from nova.actions import coworker
 from nova.actions import knowledge
 from nova.brain import llm
+from nova.actions import mcp
 from nova.actions import notifications
+from nova.actions import phone as phone_link
+from nova.actions import presence
+from nova.actions import watcher
 from nova.brain import retrieval
 from nova.audio import sfx
 from nova.actions import skills
 from nova.brain import toolpick
+from nova.brain import router
 from nova.actions import tools
 from nova.audio import voice
 from nova import shared
@@ -37,7 +43,7 @@ ASSISTANT_NAME = "Nova"
 MAX_HISTORY = 12  # the 8K context holds ~5300 tokens of prompt + tools, so only ~2900 are left for these
 MAX_STORED = 120  # messages kept in memory at all (Nova runs for days in the tray; only MAX_HISTORY reach the model)
 MAX_EVENTS = 50   # voice events waiting for the chat page
-SPOKEN_TAG = re.compile(r"^\[spoken[^\]]*\]\s*")
+SPOKEN_TAG = re.compile(r"^\[(spoken|from the user's phone)[^\]]*\]\s*")   # voice and 📱 phone requests carry one
 
 
 def _unspoken(text):
@@ -47,9 +53,9 @@ def _unspoken(text):
 
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}, "notifications": False, "suggest": False,
+         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "notif_muted": [], "suggest": False,
          "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True,
-         "react_to_sound": True}
+         "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True}
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
@@ -156,7 +162,8 @@ How you work:
 - When the user wants you to sleep, rest, stop listening or says goodnight (speech recognition may garble it, e.g.
   "got to sleep", "go too sleep"), call go_to_sleep - saying goodnight alone does NOT stop you listening.
 - "Read my notifications" / "any new messages?" = read_notifications. Summarise them briefly; never read out
-  one-time codes, OTPs or passwords.
+  one-time codes, OTPs or passwords. "Don't read notifications from <app>" = mute_notifications (mute true);
+  "resume / start reading <app> notifications" = mute_notifications (mute false).
 """
 
 
@@ -199,16 +206,21 @@ def reasoning_level(s, task=None):
     goal = (task or {}).get("goal", "")
     if task and (task.get("steps", 0) >= 3 or task.get("calls", 0) >= 4 or task.get("done") is False):   # a long task, or a check said "not done"
         return "high"
-    return "high" if len(goal) > 160 or HARD_ASK.search(goal) else "low"
+    # HARD_ASK holds the built-in words; the router's deep_triggers (config/model_routing.json, user-editable) count
+    # too, so a word added there for local planning also makes a cloud brain think harder - one list to edit.
+    return "high" if len(goal) > 160 or HARD_ASK.search(goal) or router.deep_wanted(goal) else "low"
 
 
 def active_tools(model):
     """The tool schemas the brain sees this request. A local model gets the set picked for the request (toolpick.py:
     a shorter prompt makes the small model on the laptop GPU much faster); a cloud brain gets all of them."""
     task = state.get("task")
+    off = {"escalate"} if cloud.parse(model) or not router.options(settings())["auto_route"] else set()
     if cloud.parse(model) or not task or not task.get("tools"):
-        return [t for t in tools.TOOLS if t["name"] != "more_tools"] if cloud.parse(model) else tools.TOOLS
-    return toolpick.schemas(task["tools"])
+        every = tools.TOOLS + mcp.tools_list()          # + 🔌 connector tools
+        return [t for t in every if t["name"] not in {"more_tools"} | off] if cloud.parse(model) else [
+            t for t in every if t["name"] not in off]
+    return [t for t in toolpick.schemas(task["tools"]) if t["name"] not in off]
 
 
 def system_prompt(model):
@@ -274,10 +286,11 @@ FRIENDLY = {
     "look_at_screen": "Looked at your screen",
     "update_profile": "Updated your profile", "learn_lesson": "Saved a lesson", "recall_knowledge": "Checked my knowledge bank",
     "react": "Acted it out", "new_move": "Made up a new move", "forget_move": "Forgot a move",
-    "change_look": "Changed my look", "drag_window": "Moved a window", "more_tools": "Found more tools",
-    "read_notifications": "Read your notifications", "draft_email": "Started drafting an email",
+    "change_look": "Changed my look", "drag_window": "Moved a window", "more_tools": "Found more tools", "escalate": "Switched brain",
+    "read_notifications": "Read your notifications", "mute_notifications": "Changed which apps' notifications I read", "draft_email": "Started drafting an email",
     "write_document": "Started writing a document", "research_in_background": "Started researching in the background", "show_finished_work": "Showed finished work",
-    "background_jobs": "Checked background jobs", "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
+    "background_jobs": "Checked background jobs", "stop_background_job": "Stopped a background job",
+    "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
     "list_skills": "Listed my skills", "delete_skill": "Deleted a skill",
 }
 
@@ -295,12 +308,24 @@ ASK = {
 }
 
 
+def ask_label(name):
+    """What the Allow / No question calls this action."""
+    return mcp.label(name) if mcp.owns(name) else ASK.get(name, name)
+
+
 def is_risky(call):
     """Does this call need the user's OK under the current autonomy level?"""
     name, args = call["name"], call["args"]
     s = settings()
     if name == "power_action" and args.get("action") == "cancel":
         return False
+    if mcp.owns(name):                                  # 🔌 connector tools (mcp.py): ask unless known to be safe
+        if mcp.is_safe(name):
+            return False
+        return s["autonomy"] != "full" or bool(state.get("remote"))
+    if state.get("remote"):                             # 📱 from the phone: the user can't see the screen, so always ask
+        return name in tools.RISKY or tools.is_dangerous(name, args) or (
+            name == "run_skill" and bool(skills.get(args.get("name", ""))))
     if name == "power_action" and s.get("power_ok"):    # ⚙ "Shut down without asking": the user said yes up front
         return False
     mode = s["autonomy"]
@@ -543,9 +568,100 @@ def new_task(goal):
         picked, facts = None, knowledge.prompt_block()
     state["task"] = {"goal": clean, "start": len(state["messages"]), "steps": 0, "did": [], "done": None,
                      "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": []}
+    s = settings()
+    if cloud.parse(brain(s)) and llm.cloud_resting():   # the cloud failed a moment ago: this whole task runs locally
+        state["task"]["model"] = s["model"]
+        task_log(f"CLOUD RESTING -> local {s['model']} for this task")
+    if not cloud.parse(task_brain(s)):
+        choose_local_route(state["task"], s)
     task_log(f"PICKED {len(picked) if picked else 'all'} tools ({retrieval.status()}): "
              + (", ".join(n for n in picked if n not in toolpick.CORE) if picked else "-"))
     return ""
+
+
+def task_brain(s, task=None):
+    """The brain this task is really on: the one it was switched to (local fallback, coder, deep...) or the chosen one."""
+    task = task if task is not None else state.get("task")
+    return (task or {}).get("model") or brain(s)
+
+
+def choose_local_route(task, s):
+    """Pick the local helper brain from the request's words (brain/router.py); _agent_loop acts on it next turn."""
+    if task and router.options(s)["auto_route"] and not task.get("routed"):
+        goal = task.get("goal", "")
+        task["route"] = "code" if router.code_wanted(goal) else "deep" if router.deep_wanted(goal) else None
+
+
+def local_route_for(task, s):
+    """The local helper brain this task would get if it ran locally ("code" / "deep" / None), without choosing it."""
+    if not task or task.get("routed"):
+        return None
+    probe = {"goal": task.get("goal", "")}
+    choose_local_route(probe, s)
+    return probe.get("route")
+
+
+# Live test: asked what's wrong with print('hi' - 1), the coder ran `python3` (on Windows that opens the Microsoft
+# Store), was told "Python was not found" and said to install Python - which was already there.
+CODER_NOTE = ("\n\nYOU ARE THE CODING BRAIN for this task. This laptop runs Windows: run Python as `python` (never "
+              "`python3` - on Windows that opens the Microsoft Store instead), and commands run in PowerShell. If the "
+              "user only asks what is wrong with some code, what an error means or how to write something, answer "
+              "straight away from what you know - run nothing. Run commands only when the job needs this laptop "
+              "(run, change, install or inspect something here). A command that fails is not proof that something "
+              "is missing: say what failed instead of guessing.")
+
+CODER_QUESTION_NOTE = ("\n\nTHIS REQUEST IS A QUESTION. You have no tools for it: answer now in plain words - what is "
+                       "wrong and how to fix it, with a few lines of corrected code if that helps. Keep it short.")
+
+
+def route_task(kind, why=""):
+    """Give this task a bigger local brain (brain/router.py). Returns the text the everyday brain is told."""
+    task, s = state.get("task"), settings()
+    if not task or cloud.parse(task_brain(s, task)):
+        return "No other brain to switch to - carry on yourself."
+    if kind == "code":
+        m = router.pick_code_model(s)
+        if not m:
+            return "The coding brain isn't available - do the coding yourself, carefully."
+        task["model"] = m
+        task["facts"] = task.get("facts", "") + CODER_NOTE    # in her instructions: route_task's reply isn't always shown
+        if router.code_question(task["goal"]):                # a question, not a job here: words only, no tools
+            task["answer_only"] = True
+            task["facts"] += CODER_QUESTION_NOTE
+            task_log("ROUTE code question -> answer in words, no tools")
+        think(f"🔀 Code job - switching to my coding brain ({m}). Loading it can take a minute…")
+        task_log(f"ROUTE code -> {m} ({why[:100]})")
+        return f"You are now the coding brain ({m}). Carry on with the task: {task['goal']}"
+    if task.get("plan"):
+        return "You already have the plan (see your instructions). Follow it."
+    think("🧠 Complex job - asking my deep-thinking brain to plan it first. Loading it can take a minute…")
+    t0 = time.time()
+    ts = ThoughtStream()
+    plan, m = interruptible(router.make_plan, s, task["goal"], on_think=unless_stopped(ts.feed))
+    ts.flush()
+    if not plan:
+        task_log(f"ROUTE deep failed: {m}")
+        think(f"🧠 Couldn't get a plan ({m}) - I'll work it out myself.", cloud_too=False)
+        return f"No plan available ({m}). Work it out yourself, one step at a time."
+    task_log(f"ROUTE deep -> plan from {m} in {time.time() - t0:.0f}s:\n      " + plan.replace("\n", "\n      "))
+    task["plan"] = plan
+    task["facts"] = (task.get("facts", "") + "\n\nPLAN for this task, written by your deep-thinking brain - "
+                     "follow it step by step:\n" + plan + "\nThe plan is advice from another brain: it may name tools "
+                     "you don't have or add silly or unsafe steps. Use only your real tools, skip steps that don't "
+                     "help, never delete or change anything the user hasn't agreed to, and stop when the goal is reached.")
+    if router.deep_can_run(s):
+        task["model"] = m
+        think(f"🧠 Plan ready ({time.time() - t0:.0f}s) - the deep brain carries it out.")
+        return f"You are now the deep brain ({m}). Follow the plan in your instructions."
+    heavy = router.heavy_executor(s, plan)
+    if heavy:
+        task["model"] = heavy
+        think(f"🧠 Plan ready ({time.time() - t0:.0f}s), {router.step_count(plan)} steps - that's a big job, so my "
+              f"stronger tool brain ({heavy}) carries it out.")
+        task_log(f"ROUTE long plan ({router.step_count(plan)} steps) -> {heavy}")
+        return f"You are now the stronger brain ({heavy}). Follow the plan in your instructions step by step with your tools."
+    think(f"🧠 Plan ready ({time.time() - t0:.0f}s) - now I'll carry it out step by step.")
+    return "Your deep-thinking brain wrote a plan for this task (it is in your instructions). Follow it step by step with your tools."
 
 
 def more_tools(task, need):
@@ -572,7 +688,7 @@ def run_skill(args, approved, activity, model):
     if s["kind"] == "recipe":
         think(f"📜 Following my '{s['name']}' skill.")
         if task and task.get("tools"):
-            task["tools"] = [t["name"] for t in tools.TOOLS if t["name"] in set(task["tools"]) | set(s["tools"])]
+            task["tools"] = [t["name"] for t in toolpick._all() if t["name"] in set(task["tools"]) | set(s["tools"])]
         return f"Follow your skill '{s['name']}' now, one tool call at a time:\n{s['body']}"
     text = str(args.get("input") or "").strip()
     if s["needs_input"] and not text:
@@ -643,6 +759,13 @@ def look_check(task, step, result, windows, activity, model):
     return seen
 
 
+def _big_brain(model):
+    """A cloud brain, or a bigger local one the router switched to: trusted to follow the window list, so the slow
+    screen look (which would reload the small vision model every step and push the big model off the GPU) runs only
+    once, when it says it has finished."""
+    return bool(cloud.parse(model)) or model != settings()["model"]
+
+
 def check_step(call, out, activity, model):
     """After an on-screen action: wait for the screen to settle, look, and add what Nova sees to the tool result.
     A cloud brain is trusted to follow the window list step by step; the (slow, ~10 s) screen look runs once, when
@@ -652,7 +775,7 @@ def check_step(call, out, activity, model):
         return out
     task["steps"] += 1
     task["did"].append(f"{call['name']} {json.dumps(call['args'], ensure_ascii=False)[:80]}")
-    on_cloud = bool(cloud.parse(model))
+    on_cloud = _big_brain(model)
     windows = settle(call["name"], quick=on_cloud)
     note = f"\n[check after step {task['steps']}] Windows now, front first: {windows or 'none'}."
     if on_cloud:
@@ -691,8 +814,16 @@ def _execute_one(c, approved, activity, model):
     check_stop()
     if is_risky(c) and not approved:
         out = "The user declined this action. Do not do it."
-        activity.append(f"Skipped: {FRIENDLY.get(c['name'], c['name'])}")
-        think(f"🚫 Skipping: {ASK.get(c['name'], c['name']).lower()} (not allowed).")
+        activity.append(f"Skipped: {FRIENDLY.get(c['name'], ask_label(c['name']))}")
+        think(f"🚫 Skipping: {ask_label(c['name']).lower()} (not allowed).")
+    elif mcp.owns(c["name"]):                   # 🔌 a connector's tool runs in its MCP server
+        think(f"🔌 Using the {mcp.server_of(c['name'])} connector: {c['name']}" + (
+            f" ({_short_args(c['args'])})" if _short_args(c["args"]) else ""))
+        out = mcp.call(c["name"], c["args"] or {})
+        think("→ " + (out.strip().splitlines() or [""])[0][:160], cloud_too=False)
+        activity.append(mcp.label(c["name"]))
+        if state.get("task") is not None and c["name"] not in state["task"].setdefault("used", []):
+            state["task"]["used"].append(c["name"])
     elif c["name"] == "run_skill":
         out = run_skill(c["args"] or {}, approved, activity, model)
     elif c["name"] == "react" and avatar_client.running():
@@ -704,6 +835,10 @@ def _execute_one(c, approved, activity, model):
         activity.append(FRIENDLY["go_to_sleep"])
         think("😴 You want me to sleep - I'll nap right after this answer.")
         out = "Done: you'll go to sleep right after this answer. Just say a very short goodnight (a few words)."
+    elif c["name"] == "escalate":
+        a = c["args"] or {}
+        out = route_task("code" if a.get("kind") == "code" else "deep", str(a.get("why", "")))
+        activity.append("Switched brain")
     elif c["name"] == "more_tools":
         need = str((c["args"] or {}).get("need", ""))
         think(f"🧰 None of my tools fit - looking for one that can {need[:80]}")
@@ -808,12 +943,20 @@ PROMISE_RE = re.compile(
     r"[^.!?]{0,30}\b(now|right away)\b|\bi'?ll do (it|that) (right away|now)\b", re.I)
 
 
+REPEAT_LIMIT = 3      # the same tool call and result this many times in a row: she's told to stop; once more = the end
+REPEATABLE = {"scroll", "press_keys", "type_text", "media_control", "video_control", "set_volume", "set_brightness",
+              "click_at", "click_nth", "click_element", "react", "drag_window"}   # doing these again really does more
+
+
 def _agent_loop(activity):
     """Run the model until it answers, or until it wants to do something risky."""
     s = settings()
     model = brain(s)
     spoken = []
+    lead_ins = set()     # which of spoken were said just before a tool step ("Let me check:")
     nudged = did_something = False
+    last_calls = last_outs = None        # the same tool call, with the same result, again and again = stuck in a loop
+    same_calls = 0
     unsaid = []      # reply text that has not been spoken yet (text spoken while it was being written isn't here)
 
     def result(reply, **extra):
@@ -826,7 +969,12 @@ def _agent_loop(activity):
     while True:
         check_stop()
         task = state.get("task")
-        deep = bool(cloud.parse(model)) and reasoning_level(s, task) != "low"
+        if task and task.get("route") and not task.get("routed"):       # chosen from the request's words
+            task["routed"] = True
+            route_task(task["route"], "request wording")
+        if task and task.get("model"):
+            model = task["model"]
+        deep = (bool(cloud.parse(model)) and reasoning_level(s, task) != "low") or bool(task and task.get("plan"))   # a planned job has many steps
         # Any tool step makes it a task - not just on-screen clicks. (Only those were counted, so a job done with
         # commands - git, PowerShell, looking at the screen - got the 10-turn limit of a plain question.)
         working = task and (task["steps"] or task.get("calls"))
@@ -837,17 +985,35 @@ def _agent_loop(activity):
         msgs = [{"role": "system", "content": system_prompt(model)}] + trimmed_history()
         # Ordinary questions are spoken while the answer is still being written. During a multi-step screen task
         # she must not talk early - her "done!" may still be corrected by her own check of the screen.
-        stream = SpeechStream() if not (task and task["steps"]) else None
+        stream = SpeechStream() if not (task and task["steps"]) and not state.get("remote") else None   # 📱: no voice
         think("💭 Working out what you need…" if turns == 1 and not did_something else "💭 Deciding the next step…")
         reasoning = ThoughtStream()
         level = reasoning_level(s, task)
         if level != "low" and cloud.parse(model):
             think(f"🧠 Thinking this through carefully ({level} reasoning)…", cloud_too=False)
+        # If the cloud fails on a request the local router would hand to the coder or the planner, don't let the
+        # everyday brain answer it: give up this turn and run it again on that brain (no local answer to throw away).
+        local_route = local_route_for(task, s) if cloud.parse(model) else None
         t0 = time.time()
-        stored, text, calls = interruptible(llm.chat, model, msgs, active_tools(model),
-                                            think=s["think"] or level != "low", reasoning=level,
-                                            on_text=unless_stopped(stream.feed if stream else None),
-                                            fallback=s["model"], on_think=unless_stopped(reasoning.feed))
+        try:
+            answer_only = bool(task and task.get("answer_only") and model == task.get("model"))
+            stored, text, calls = interruptible(llm.chat, model, msgs, [] if answer_only else active_tools(model),
+                                                think=s["think"] or (level != "low" and (bool(cloud.parse(model)) or s.get("reasoning", "auto") != "auto")), reasoning=level,   # auto never makes the local brain think: 30-45 s per step on a 6 GB GPU
+                                                on_text=unless_stopped(stream.feed if stream else None),
+                                                fallback=None if local_route else s["model"], on_think=unless_stopped(reasoning.feed),
+                                                keep_alive=router.BORROW_KEEP if model != s["model"] and not cloud.parse(model) else None)
+        except llm.OllamaError as e:
+            if not local_route:
+                raise
+            reasoning.flush()
+            task["model"], task["route"] = s["model"], local_route
+            turns -= 1                                      # this turn produced nothing; it doesn't use up the budget
+            if "Used the local brain" not in activity:
+                activity.append("Used the local brain")
+            task_log(f"CLOUD BRAIN NOT USED ({model}): {e} -> local route '{local_route}' now")
+            think("☁️ The cloud brain didn't answer, so I'm handing this to my local "
+                  + ("coding brain." if local_route == "code" else "deep-thinking brain to plan it."))
+            continue
         reasoning.flush()
         used = s["model"] if llm.LAST["fallback"] else model
         task_log(f"BRAIN {time.time() - t0:.1f}s ({'local fallback' if llm.LAST['fallback'] else model}, {level})")
@@ -858,6 +1024,11 @@ def _agent_loop(activity):
             activity.append("Used the local brain")   # the cloud one failed; she carried on with the local model
             task_log(f"CLOUD BRAIN NOT USED ({model}): {llm.LAST['fallback']} -> local {s['model']}")
             think("☁️ The cloud brain didn't answer, so I used my local one.")
+            if task and cloud.parse(task_brain(s, task)):   # finish this task locally, with the local plan/coder help
+                task["model"] = s["model"]
+                choose_local_route(task, s)
+                if task.get("route"):
+                    task_log(f"CLOUD FELL BACK -> local route '{task['route']}' from next turn")
         if stream:
             stream.flush()
         state["messages"].append(stored)
@@ -872,7 +1043,7 @@ def _agent_loop(activity):
                 "[note from Nova's system] You said you'd do something but didn't call a tool, so nothing happened. "
                 "Call the right tool now. If no tool can do it, say so honestly in one sentence."})
             continue
-        if (not calls and task and task["steps"] >= LOOK_FROM_STEP and cloud.parse(model)
+        if (not calls and task and task["steps"] >= LOOK_FROM_STEP and _big_brain(model)
                 and not task.get("final_looks") and tools._screen_allowed()):
             # A cloud brain says it's finished: now take the one screen look that checks the whole task.
             task["final_looks"] = task.get("final_looks", 0) + 1
@@ -904,20 +1075,45 @@ def _agent_loop(activity):
         text = (text[0].strip() or " ".join(t.strip() for t in text[1:]).strip()) if text else ""
         if text:
             spoken.append(text)
+            if calls:
+                lead_ins.add(len(spoken) - 1)
             if not (stream and llm.supports_tools(model)):
                 unsaid.append(text)
         if not calls:
-            return result(" ".join(spoken).strip() or "Done!")
+            # "Sure! Let's run the command:" said before a step isn't part of the answer once a real answer follows
+            # (it read "...in your terminal: Ah! Looks like Python 3.12..."). Out loud she still says both.
+            answer_only_text = [t for i, t in enumerate(spoken) if i not in lead_ins]
+            return result(" ".join(answer_only_text if text else spoken).strip() or "Done!")
+        sig = json.dumps([(c["name"], c["args"]) for c in calls], sort_keys=True, default=str)
+        repeatable = any(c["name"] in REPEATABLE for c in calls)
+        if sig == last_calls and same_calls >= REPEAT_LIMIT and not repeatable:
+            # Told to stop repeating and did it again: end here rather than spending the whole step budget on it.
+            state["messages"].extend(llm.tool_result_message(model, c, "Not run - same as before.") for c in calls)
+            task_log(f"STUCK: {calls[0]['name']} called {same_calls} times in a row with the same arguments")
+            think("🔁 I keep doing the same step and getting nowhere - stopping here.")
+            line = "I kept repeating the same step without getting anywhere, so I stopped. Can you tell me a bit more?"
+            unsaid.append(line)
+            return result((" ".join(spoken) + " " + line).strip())
         if any(is_risky(c) for c in calls):
             state["pending"] = calls
             think("✋ I need your OK before I " + ", ".join(ASK.get(c["name"], c["name"]).lower()
                                                             for c in calls if is_risky(c)) + ".")
             return result(" ".join(spoken).strip(),
-                          pending=[{"tool": c["name"], "label": ASK.get(c["name"], c["name"]), "input": c["args"]}
+                          pending=[{"tool": c["name"], "label": ask_label(c["name"]), "input": c["args"]}
                                    for c in calls if is_risky(c)])
         if task is not None:
             task["calls"] = task.get("calls", 0) + len(calls)
         state["messages"].extend(execute(calls, True, activity, model))
+        # Compare only what the tool itself said: the "[check after step N]" note added to it changes every step.
+        outs = json.dumps([str(o).split("\n[check after step")[0] for o in state.get("last_outs") or []])
+        same = sig == last_calls and outs == last_outs and not repeatable
+        same_calls, last_calls, last_outs = (same_calls + 1 if same else 1), sig, outs
+        if same_calls == REPEAT_LIMIT and not repeatable:
+            think("🔁 I've done that same step a few times now - time to use what I've got.")
+            state["messages"].append({"role": "user", "content":
+                f"[note from Nova's system] You have now called {calls[0]['name']} {same_calls} times in a row with "
+                "the same arguments, and it won't give anything new. Don't call it again. Answer the user now with "
+                "what you already know, or do a different step if one is really needed."})
     if task is not None:
         task["paused"] = True               # "keep going" now carries on with this task
     think("🛑 That's a lot of steps - pausing here.")
@@ -931,7 +1127,8 @@ def ready_info():
     models = llm.list_models()
     model = s["model"]
     active = brain(s)
-    info = {"provider": s.get("provider", "ollama"), "cloud_models": s.get("cloud_models") or {},
+    info = {"avatar_roam": body_module.roam_mode(s), "routing": {k: v for k, v in router.options(s).items() if k in router.ROUTING_KEYS},
+            "provider": s.get("provider", "ollama"), "cloud_models": s.get("cloud_models") or {},
             "cloud_defaults": cloud.DEFAULT_MODELS, "keys": cloud.has_keys(), "brain": active,
             "providers": {k: v["label"] for k, v in cloud.PROVIDERS.items()}}
     on_cloud = active != model
@@ -998,8 +1195,11 @@ def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
                    autonomy=s["autonomy"], think=s["think"], reasoning=s.get("reasoning", "auto"), camera=s["camera"], screen=s["screen"],
-                   notifications=s["notifications"], suggest=s.get("suggest", False), asleep=nap["asleep"],
+                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), suggest=s.get("suggest", False), asleep=nap["asleep"],
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
+                   presence=s.get("presence", False), presence_lock=s.get("presence_lock", False),
+                   error_help=s.get("error_help", True), away=presence.state["away"],
+                   presence_note=presence.state["note"], presence_checks=presence.state["checks"],
                    autostart=STARTUP_LNK.exists(),
                    voice=s["voice"], wake=s["wake"], voice_name=mouth.voice_name, ears=ears.status, heard=ears.heard,
                    vision_model=llm.vision_model(s["model"]), **ready_info())
@@ -1016,6 +1216,8 @@ def setup():
         s["provider"] = body["provider"]
     if cloud_model and s["provider"] in cloud.PROVIDERS:
         s["cloud_models"] = dict(s.get("cloud_models") or {}, **{s["provider"]: cloud_model})
+    if body.get("avatar_roam") in body_module.ROAM_MODES:
+        s["avatar_roam"] = body["avatar_roam"]
     if "think" in body:
         s["think"] = bool(body["think"])
     if body.get("reasoning") in REASONING_CHOICES:
@@ -1041,6 +1243,16 @@ def setup():
         s["power_ok"] = bool(body["power_ok"])
     if "reaction_sounds" in body:
         s["reaction_sounds"] = bool(body["reaction_sounds"])    # avatar.py reads it through sfx.enabled()
+    if isinstance(body.get("routing"), dict):       # 🔀 the Model dialog's smart-switching choices -> config/model_routing.json
+        try:
+            router.save(body["routing"])
+        except (TypeError, ValueError):
+            pass
+        for k in router.ROUTING_KEYS:               # a copy in settings.json would override the file
+            s.pop(k, None)
+    for k in ("presence", "presence_lock", "error_help", "notif_sleep"):
+        if k in body:
+            s[k] = body[k] is True
     save_settings(s)
     if "notifications" in body:
         notif_watcher.start() if s["notifications"] else notif_watcher.stop()
@@ -1260,6 +1472,7 @@ def look_first(text, activity):
     Nova to look, take the picture first and hand her the result, so she describes what's really there.
     (If camera/screen viewing is switched off, the tool itself tells Nova so - no made-up answers either way.)
     Clear video-player requests (full screen, captions...) are done the same way."""
+    text = _unspoken(text)       # only the user's words: the 📱 phone note itself mentions "the screen"
     video_action = next((a for rx, a in VIDEO_ASK if rx.search(text)), None)
     if video_action and tools._video_window():
         name, args = "video_control", {"action": video_action}
@@ -1308,11 +1521,14 @@ def _cap_history():
         task["start"] = max(0, task["start"] - cut)
 
 
-def answer(text):
-    """Run one user message through Nova. Returns (result dict, http status)."""
+def answer(text, quiet=False, remote=False):
+    """Run one user message through Nova. Returns (result dict, http status).
+    quiet: don't say the answer out loud (📱 phone requests - the user isn't at the laptop).
+    remote: the request came from the phone, so every action that changes something asks first (is_risky)."""
     note_task()
     with lock:
         stop_flag.clear()           # a Stop pressed for the last request doesn't cancel this one
+        state["remote"] = remote
         state.pop("sleep_after", None)
         _cap_history()
         n, old_pending = len(state["messages"]), state["pending"]
@@ -1349,8 +1565,11 @@ def answer(text):
             return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
         _cap_history()
     thoughts_done()
-    speak(out.pop("say", out.get("reply")))
-    bubble(out.get("reply"))
+    if quiet:
+        out.pop("say", None)
+    else:
+        speak(out.pop("say", out.get("reply")))
+        bubble(out.get("reply"))
     after_turn(text, out)
     if state.pop("sleep_after", False):     # her brain understood "go to sleep" (go_to_sleep tool): now really sleep
         go_to_sleep("asked", quiet=True)
@@ -1728,6 +1947,26 @@ def _still_listening():
     return convo["on"] or bool(state["pending"]) or listen_state["single"]
 
 
+def ears_on():
+    """Light up 3D Nova's ears while the microphone is taking in a request; returns the function that turns them
+    off. The waves grow while a voice is coming in (transcriber.hearing_at). A heartbeat keeps them on for as long
+    as listening lasts - the old "I'm listening" bubble showed for a fixed time and other bubbles replaced it."""
+    done = threading.Event()
+
+    def beat():
+        last = None
+        next_keepalive = 0.0
+        while not done.is_set():
+            hearing = time.time() - getattr(transcriber, "hearing_at", 0.0) < 0.4
+            if hearing != last or time.time() >= next_keepalive:
+                avatar_client.send("listen", on=True, hearing=hearing, secs=2.5, timeout=1)
+                last, next_keepalive = hearing, time.time() + 1.0
+            done.wait(0.15)
+        avatar_client.send("listen", on=False, timeout=1)
+    threading.Thread(target=beat, daemon=True).start()
+    return done.set
+
+
 def silent_loop():
     global transcriber
     if listen_state["loop"]:
@@ -1740,8 +1979,11 @@ def silent_loop():
                 time.sleep(0.2)
             if not _still_listening():
                 break
-            avatar_client.send("say", text=voice.LISTENING, secs=9, timeout=2)
-            kind, text = transcriber.listen()
+            ears_off = ears_on()
+            try:
+                kind, text = transcriber.listen()
+            finally:
+                ears_off()
             if not _still_listening():    # she was sent to sleep while listening
                 break
             if kind == "text":
@@ -1812,18 +2054,23 @@ def go_to_sleep(reason="asked", quiet=False):
     listen_state["single"] = False
     ear_close()
     task_log(f"SLEEP ({reason})")
+    nap["reason"] = reason                  # "asked" = the user's choice: presence won't wake her (on_presence)
     if (reason == "asked" or was_on) and not quiet:
         line = ("Okay, I'll take a nap in the corner. Say “Hey Nova” when you need me 😴" if reason == "asked" else
                 "It's been quiet for a while, so I'll take a nap in the corner. Say “Hey Nova” when you need me 😴")
         announce(line)
-    sleep_body()
+        sleep_body(after_words=True)      # the goodnight first, then she lies down
+    else:
+        sleep_body()
 
 
-def confirm_pending(approved):
-    """Answer the Allow / No question Nova asked (from the chat page or by voice)."""
+def confirm_pending(approved, quiet=False, remote=None):
+    """Answer the Allow / No question Nova asked (from the chat page, by voice, or 📱 from the phone)."""
     with lock:
         if not state["pending"]:
             return {"reply": "", "activity": []}, 200
+        if remote is not None:
+            state["remote"] = remote
         stop_flag.clear()
         nap["last_task"] = time.time()
         activity = []
@@ -1843,8 +2090,11 @@ def confirm_pending(approved):
             task_log(f"ERROR in confirm: {type(e).__name__}: {e}")
             return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
     thoughts_done()
-    speak(out.pop("say", out.get("reply")))
-    bubble(out.get("reply"))
+    if quiet:
+        out.pop("say", None)
+    else:
+        speak(out.pop("say", out.get("reply")))
+        bubble(out.get("reply"))
     return out, 200
 
 
@@ -1858,6 +2108,13 @@ def heard(text, via="bubble"):
         go_to_sleep("asked")
         return
     note_task()
+    if help_first():                   # "yes" right after "Notepad shows an error - want me to help?"
+        helped = take_help(text)
+        if helped is not None:
+            push_event({"me": text, **helped})
+            if via != "silent":
+                ear_listen_after_speech() if convo["on"] else ear_close()
+            return
     said = take_offer(text)            # "yes" right after "your email is ready - want to see it?"
     if said is not None:
         push_event({"me": text, "reply": said})
@@ -1912,6 +2169,7 @@ if whisper:
 else:
     ears = voice.Ears(mouth, on_voice)
 ears.on_wake = on_wake
+ears.on_name = lambda: wake_body()      # (defined below)
 ears.on_sleep = lambda: go_to_sleep("asked")
 
 
@@ -1923,14 +2181,31 @@ IDLE_NAP = 300
 nap = {"asleep": False, "last_task": time.time()}
 
 
-def sleep_body():
+def sleep_body(after_words=False):
+    """after_words: she has just been given a goodnight line - let her say it standing, then lie down."""
     nap["asleep"] = True
-    avatar_client.send("sleep", on=True, timeout=3)
+    nap["gen"] = gen = nap.get("gen", 0) + 1
+    if not after_words:
+        avatar_client.send("sleep", on=True, timeout=3)
+        return
+
+    def later():
+        give_up = time.time() + 25
+        if settings()["voice"]:
+            while mouth.talking() and time.time() < give_up:
+                time.sleep(0.1)
+        else:
+            time.sleep(3)                 # (her bubble shows the line instead)
+        if nap["asleep"] and nap.get("gen") == gen:     # not woken again in the meantime
+            avatar_client.send("sleep", on=True, timeout=3)
+    threading.Thread(target=later, daemon=True).start()
 
 
 def wake_body():
     if nap["asleep"]:
         nap["asleep"] = False
+        nap["reason"] = None
+        nap["gen"] = nap.get("gen", 0) + 1
         avatar_client.send("sleep", on=False, timeout=3)
 
 
@@ -1982,6 +2257,7 @@ def job_done(job):
         line = f"Sorry, the {job['kind'].replace('_', ' ')} didn't work: {job['error']}"
         push_event({"reply": line, "kind": "job"})
         announce(line)
+        tell_away(line)
         return
     wake_body()
     if offer["job"] and offer["job"] is not job and time.time() < offer["until"]:
@@ -1990,6 +2266,7 @@ def job_done(job):
     line = job["result"] + " Want to see it?"
     push_event({"reply": "✅ " + line, "kind": "job", "offer": {"id": job["id"], "label": "Show it"}})
     announce("✅ " + line, spoken=line)
+    tell_away("✅ " + job["result"] + " It's on the laptop for when you're back.")
     react_later("happy")
     if settings()["wake"] and not convo["on"] and silent_ok():     # listen for the "yes"
         listen_state["single"] = True
@@ -2054,11 +2331,17 @@ def _speakable(n):
 
 
 def on_notifications(items):
-    if not settings()["notifications"] or not items:
+    s = settings()
+    if not s["notifications"] or not items:
+        return
+    items = [n for n in items if not notifications.is_muted(n, s.get("notif_muted"))]   # "don't read Claude's"
+    if not items:
         return
     for n in items:
         push_event({"reply": "🔔 " + _speakable(n), "kind": "notification"})
         task_log(f"NOTIFICATION from {n['app']}")
+    if nap["asleep"] and not settings().get("notif_sleep", False):
+        return              # napping: they're in the chat, but she only reads them out if ⚙ "…while I'm asleep" is on
     if len(items) == 1:
         line = "🔔 " + _speakable(items[0])
     else:
@@ -2072,6 +2355,290 @@ def on_notifications(items):
 
 
 notif_watcher = notifications.Watcher(on_notifications, on_note=lambda s: task_log(s))
+
+
+# ------------------------------------------------------------------ 📱 phone: talk to Nova through Telegram (phone.py)
+# Answers go back as text (she doesn't speak them on the empty laptop), and every action that changes something asks
+# first with Yes / No buttons, whatever the autonomy setting.
+
+PHONE_TAG = ("[from the user's phone via Telegram; they are away from the laptop and read your answer as a text "
+             "message, so keep it short and don't describe things only visible on the screen]")
+AWAY_IDLE = 300          # no keyboard / mouse for 5 minutes = the user is probably away (presence.py knows better)
+
+
+def user_away():
+    if presence.state["away"]:
+        return True
+    try:
+        return user_idle_secs() >= AWAY_IDLE
+    except Exception:
+        return False
+
+
+def tell_away(line):
+    """Something she just said out loud that the user would want to know even if they've left the laptop: sent to
+    their phone (if paired and forwarding is on), and kept for the 'welcome back' summary."""
+    if not user_away():
+        return
+    presence.missed(line)
+    try:
+        if phone.notify("🔔 " + line):
+            task_log(f"PHONE forwarded: {line[:120]}")
+    except Exception as e:
+        task_log(f"PHONE forward failed: {type(e).__name__}: {e}")
+
+
+def phone_message(text):
+    task_log(f"PHONE in: {text[:200]}")
+    if state["pending"] and len(text.split()) <= 4 and (YES_RE.search(text) or NO_RE.search(text)):
+        out, _ = confirm_pending(bool(YES_RE.search(text)) and not NO_RE.search(text), quiet=True, remote=True)
+    else:
+        out, _ = answer(f"{PHONE_TAG} {text}", quiet=True, remote=True)
+    push_event({"me": "📱 " + text, **{k: v for k, v in out.items() if k != "images"}})
+    task_log(f"PHONE out: {(out.get('reply') or out.get('error') or '')[:200]}")
+    return out
+
+
+def phone_confirm(approved):
+    out, _ = confirm_pending(approved, quiet=True, remote=True)
+    if not (out.get("reply") or out.get("pending") or out.get("activity") or out.get("error")):
+        out["reply"] = "That question isn't waiting any more."
+    push_event({"me": "📱 " + ("Yes" if approved else "No"), **{k: v for k, v in out.items() if k != "images"}})
+    return out
+
+
+def phone_status():
+    s = tools.stats()
+    bat = "no battery" if s["battery"] is None else f"battery {s['battery']}% ({'charging' if s['plugged'] else 'on battery'})"
+    jobs = [j for j in coworker.jobs if j.get("status") == "running"]
+    return (f"💻 Laptop: CPU {s['cpu']:.0f}%, memory {s['ram']:.0f}%, disk {s['disk']:.0f}%, {bat}, on for {s['uptime_h']} h."
+            + (f"\n🛠 Working on: {', '.join(j['title'] for j in jobs)}" if jobs else "")
+            + ("\n😴 I'm napping." if nap["asleep"] else "")
+            + ("\n🔒 Screen is locked." if presence.screen_locked() else ""))
+
+
+phone = phone_link.Phone(on_message=phone_message, on_confirm=phone_confirm, on_stop=lambda: stop_now(),
+                         status_text=phone_status)
+
+
+@app.get("/api/phone")
+def phone_get():
+    return jsonify(phone.info())
+
+
+@app.post("/api/phone")
+def phone_set():
+    """⚙ Phone: save / forget the bot token, unpair, new pairing code, forward reminders on/off."""
+    body = _body()
+    try:
+        if "token" in body:
+            return jsonify(phone.set_token(_text(body, "token")))
+        if body.get("unpair") is True:
+            return jsonify(phone.unpair())
+        if body.get("new_code") is True:
+            phone.new_pair_code()
+        if "forward" in body:
+            phone.set_forward(body["forward"] is True)
+    except phone_link.PhoneError as e:
+        return jsonify(error=str(e), **phone.info()), 400
+    return jsonify(phone.info())
+
+
+# ------------------------------------------------------------------ 👋 presence (presence.py): back -> greet, gone -> lock
+
+GREET_EVERY = 600        # at most one "welcome back" per 10 minutes
+_greeted = {"at": 0.0, "warned": False}
+
+
+def _first_name():
+    try:
+        p = knowledge.load()["profile"]
+        return (p.get("nickname") or p.get("name") or "").split()[0][:20]
+    except Exception:
+        return ""
+
+
+def presence_idle():
+    """Seconds since the user last did anything Nova can notice: keyboard / mouse, or talking to her."""
+    idle = user_idle_secs()
+    # Not mouth.busy(): her OWN voice (a reminder, a notification read out to an empty room) isn't the user being
+    # here - it used to count, so a notification made her "see" the user come back and greet nobody.
+    if convo["on"] or convo["thinking"]:
+        return 0.0
+    return min(idle, max(0.0, time.time() - convo["last_heard"]))
+
+
+def on_presence(ev):
+    task_log(f"PRESENCE {ev} ({presence.state['note']})")
+    if ev == "back" and nap["asleep"] and nap.get("reason") == "asked":
+        # The user told her to sleep ("Nova, go to sleep"): coming back doesn't overrule that. Only "Hey Nova" (or a
+        # typed message) wakes her, and what happened while they were away is kept for the next welcome.
+        task_log("PRESENCE back, but you asked me to sleep - staying asleep and quiet")
+        return
+    if ev == "back" and time.time() - _greeted["at"] >= GREET_EVERY:
+        _greeted["at"] = time.time()
+        if nap["asleep"]:
+            wake_body()
+            nap.update(asleep=False, last_task=time.time())
+        line = presence.welcome(_first_name())
+        push_event({"reply": line, "kind": "suggestion"})
+        announce(line)
+        react_later("wave", wait_for_speech=False)
+    elif ev == "lock_warn":
+        _greeted["warned"] = True
+        announce(f"Looks like you stepped away - I'll lock the laptop in {presence.LOCK_GRACE} seconds. "
+                 "Move the mouse to stop me.", spoken="Looks like you stepped away. Locking the laptop in a moment.")
+    elif ev == "lock":
+        _greeted["warned"] = False
+        tools.lock_screen()
+        task_log("PRESENCE locked the screen")
+    elif ev == "lock_cancel" and _greeted["warned"]:
+        _greeted["warned"] = False
+        bubble("Okay, not locking 👍", secs=3)
+
+
+def presence_watch():
+    while True:
+        time.sleep(5)
+        try:
+            s = settings()
+            if not s.get("presence"):
+                if presence.state["away"] or presence.state["locking_at"]:
+                    presence.reset()
+                continue
+            idle, before = presence_idle(), presence.state["checks"]
+            evs = presence.tick(time.time(), idle, presence.screen_locked(), presence.look,
+                                lock_on=bool(s.get("presence_lock")))
+            if presence.state["checks"] != before:      # each camera look, for "why didn't she notice I left?"
+                task_log(f"PRESENCE check {presence.state['checks']}: {presence.state['note']} "
+                         f"(idle {idle:.0f}s, misses {presence.state['misses']}, away {presence.state['away']})")
+            for ev in evs:
+                on_presence(ev)
+        except Exception as e:
+            task_log(f"presence watch: {type(e).__name__}: {e}")
+
+
+# ------------------------------------------------------------------ 🆘 trouble on screen (watcher.py): offer to help once
+
+HELP_SECS = 180          # a bare "yes" answers the help offer this long
+HELP_EVERY = 90          # at most one help offer per 90 s
+HELP_YES_RE = re.compile(r"^\W*(help( me)?|close it|fix it|please)\b", re.I)
+help_offer = {"item": None, "until": 0.0, "id": 0, "at": 0.0}
+screen_watch = watcher.Watcher()
+help_queue = []          # trouble found while an earlier offer was still fresh
+
+
+def offer_help(item):
+    help_offer.update(item=item, until=time.time() + HELP_SECS, id=help_offer["id"] + 1, at=time.time())
+    line, spoken = watcher.offer_line(item)
+    task_log(f"HELP OFFER {item['kind']} {item['proc']}: {item['title'][:60]} | {item['text'][:160]}")
+    push_event({"reply": "🆘 " + line, "kind": "suggestion",
+                "offer": {"id": help_offer["id"], "label": "Close it" if item["kind"] == "hung" else "Help me",
+                          "help": True}})
+    announce("🆘 " + line, spoken=spoken)
+    if settings()["wake"] and not convo["on"] and silent_ok():     # listen for the "yes"
+        listen_state["single"] = True
+        threading.Thread(target=silent_loop, daemon=True).start()
+
+
+def take_help(text, force=None, offer_id=None):
+    """'yes' / 'no' right after "want me to help with it?". Returns Nova's answer dict, or None if this isn't about it."""
+    item = help_offer["item"] if help_offer["until"] > time.time() else None
+    if not item or (offer_id is not None and offer_id != help_offer["id"]):
+        return None
+    clean = _unspoken(text).strip()
+    short = len(clean.split()) <= 6
+    yes = force is True or (force is None and short and bool(YES_RE.search(clean) or HELP_YES_RE.search(clean)))
+    no = force is False or (force is None and short and bool(NO_RE.search(clean)) and not yes)
+    if not (yes or no):
+        return None
+    help_offer.update(item=None, until=0.0)
+    note_task()
+    if no:
+        out = {"reply": "Okay, I'll leave it. 👍", "activity": []}
+    elif item["kind"] == "hung":
+        think(f"🧊 Closing {item['app']} - it stopped responding.")
+        out = {"reply": watcher.close_hung(item), "activity": ["Closed a frozen app"]}
+        task_log(f"HELP closed hung {item['proc']}: {out['reply']}")
+    else:
+        out, _ = answer(watcher.help_request(item))        # she speaks this answer herself
+        return out
+    announce(out["reply"])
+    return out
+
+
+def help_first():
+    """Is the help offer newer than a finished job's "want to see it?" (so a bare yes goes to it)?"""
+    return help_offer["until"] > time.time() and help_offer["at"] >= offer["until"] - OFFER_SECS
+
+
+def help_step():
+    """One look for trouble on screen (every 4 s)."""
+    if not settings().get("error_help", True):
+        return
+    found = screen_watch.scan()
+    if lock.locked() or state["pending"]:     # her own task opens dialogs too: she sees those herself
+        return
+    help_queue.extend(found)
+    del help_queue[:-5]
+    # Waits its turn (one offer per HELP_EVERY), and is dropped if the box closed / the app recovered meanwhile.
+    # (Live test: a frozen app found 60 s after an error-box offer used to be thrown away.)
+    help_queue[:] = [i for i in help_queue if watcher.still_there(i)]
+    if help_queue and time.time() - help_offer["at"] >= HELP_EVERY:
+        offer_help(help_queue.pop(0))
+
+
+def help_watch():
+    while True:
+        time.sleep(4)
+        try:
+            help_step()
+        except Exception as e:
+            task_log(f"help watch: {type(e).__name__}: {e}")
+
+
+@app.post("/api/help")
+def help_answer():
+    """The chat page's "Help me" / "Close it" / "Not now" buttons under a help offer."""
+    body = _body()
+    oid = body.get("id")
+    out = take_help("", force=body.get("yes") is True, offer_id=oid if isinstance(oid, int) else None)
+    return jsonify(out or {"reply": "That one isn't waiting any more.", "activity": []})
+
+
+# ------------------------------------------------------------------ 🔌 connectors (mcp.py)
+
+toolpick.EXTRA = mcp.tools_list
+toolpick.EXTRA_GROUPS = mcp.groups
+
+
+@app.get("/api/mcp")
+def mcp_get():
+    try:
+        text = json.dumps(mcp.load_config(), indent=2)
+    except mcp.MCPError:
+        text = mcp.config_file().read_text(encoding="utf-8")
+    return jsonify(config=text, **mcp.summary())
+
+
+@app.post("/api/mcp")
+def mcp_set():
+    """⚙ Connectors: save the config (the same JSON other MCP apps use) and reconnect every server."""
+    raw = _text(_body(), "config")
+    try:
+        cfg = json.loads(raw or '{"mcpServers": {}}')
+    except ValueError as e:
+        return jsonify(error=f"That isn't valid JSON: {e}"), 400
+    if isinstance(cfg, dict) and "mcpServers" not in cfg and cfg and all(isinstance(v, dict) for v in cfg.values()):
+        cfg = {"mcpServers": cfg}          # just the servers was pasted
+    try:
+        mcp.save_config(cfg)
+    except mcp.MCPError as e:
+        return jsonify(error=str(e)), 400
+    mcp.start(wait=True)
+    task_log("CONNECTORS: " + "; ".join(f"{s['name']} {s['status']} {len(s['tools'])} tools {s['error'][:80]}"
+                                        for s in mcp.summary()["servers"]))
+    return jsonify(config=json.dumps(cfg, indent=2), **mcp.summary())
 
 
 # ------------------------------------------------------------------ suggestions about what the user is working on
@@ -2154,6 +2721,24 @@ def suggest_watch():
             task_log(f"suggest watch: {type(e).__name__}: {e}")
 
 
+def busy_now():
+    """Is she working on something (a request, or a task in the background)? Her body shows it: at her desk."""
+    return lock.locked() or convo["thinking"] or coworker.running()
+
+
+def work_watch():
+    """Tells 3D Nova when she starts and stops being busy, so she sits at her laptop while working."""
+    last = None
+    while True:
+        try:
+            busy = bool(busy_now())
+            if busy != last and avatar_client.send("work", on=busy, timeout=2) is not None:
+                last = busy
+        except Exception as e:
+            task_log(f"work watch: {type(e).__name__}: {e}")
+        time.sleep(0.4)
+
+
 _background = {"started": False}
 
 
@@ -2165,6 +2750,11 @@ def start_background():
     _background["started"] = True
     threading.Thread(target=idle_watch, daemon=True).start()
     threading.Thread(target=suggest_watch, daemon=True).start()
+    phone.start()                               # only if a bot token is saved
+    mcp.start()                                 # 🔌 connectors in data/mcp.json, each on its own thread
+    threading.Thread(target=presence_watch, daemon=True).start()
+    threading.Thread(target=work_watch, daemon=True).start()
+    threading.Thread(target=help_watch, daemon=True).start()
     if settings()["notifications"]:
         notif_watcher.start()
 # The listener is started by the running app (desktop.py / __main__ below), never as a side effect of importing
@@ -2213,6 +2803,10 @@ def chat():
         go_to_sleep("asked")
         return jsonify(reply="Okay, I'll take a nap in the corner 😴 Message me or say “Hey Nova” when you need me.",
                        activity=[])
+    if help_first():
+        helped = take_help(text)
+        if helped is not None:
+            return jsonify(helped)
     said = take_offer(text)
     if said is not None:
         announce(said)
@@ -2256,6 +2850,33 @@ def get_events():
     out = events[:]
     events.clear()
     return jsonify(events=out, speaking=mouth.lips, ears=ears.status, heard=ears.heard[-1:] if settings()["wake"] else [])
+
+
+quit_hook = None          # set by desktop.py: closes the windows, tray, 3D Nova and the server
+
+
+def quit_nova():
+    """Shut Nova down completely (not the laptop): ears, notifications, phone, connectors, 3D Nova, then the process."""
+    task_log("QUIT (asked)")
+    for f in (stop_now, mouth.stop, ears.stop, notif_watcher.stop, ear_close):
+        try:
+            f()
+        except Exception:
+            pass
+    avatar_client.send("quit", timeout=2)
+    if quit_hook:
+        try:
+            quit_hook()
+        except Exception:
+            pass
+    threading.Timer(3, lambda: os._exit(0)).start()   # whatever is still running (phone, connectors) stops with us
+
+
+@app.post("/api/quit")
+def quit_api():
+    """The chat's ⏻ Quit button."""
+    threading.Timer(0.5, quit_nova).start()            # answer the page first
+    return jsonify(ok=True)
 
 
 @app.post("/api/stop")
@@ -2312,6 +2933,7 @@ def pulse():
         _alerts["cpu_since"] = None
     for line in say:
         announce(line)
+        tell_away(line)
     return jsonify(stats=s, say=say)
 
 

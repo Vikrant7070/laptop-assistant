@@ -126,7 +126,8 @@ def text_protocol(tools):
 
 
 def _parse_text_call(text, tool_names):
-    """Find a {"tool": ..., "args": ...} object in a reply."""
+    """Find a {"tool": ..., "args": ...} object in a reply - or {"name": ..., "arguments": ...}, the shape a model
+    with native tool calling (qwen2.5-coder) sometimes writes as plain text instead of making a real call."""
     for m in re.finditer(r"\{", text):
         depth = 0
         for i in range(m.start(), len(text)):
@@ -136,11 +137,63 @@ def _parse_text_call(text, tool_names):
                     obj = json.loads(text[m.start():i + 1])
                 except ValueError:
                     break
-                if isinstance(obj, dict) and obj.get("tool") in tool_names:
-                    args = obj.get("args") or {}
-                    return obj["tool"], args if isinstance(args, dict) else {}
+                name = obj.get("tool", obj.get("name")) if isinstance(obj, dict) else None
+                if isinstance(name, str) and name in tool_names:
+                    args = obj.get("args", obj.get("arguments")) or {}
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except ValueError:
+                            args = {}
+                    return name, args if isinstance(args, dict) else {}
                 break
     return None
+
+
+PY_CALL_RE = re.compile(r"```[a-z]*\s*([a-z_]+\s*\(.*?\))\s*```", re.S | re.I)
+
+
+def _parse_code_call(src, tools):
+    """run_in_terminal("python --version") or run_in_terminal(command="...") for a real tool -> (name, args).
+    Plain values only (strings, numbers, True/False); positional ones fill the tool's parameters in order."""
+    import ast
+    try:
+        node = ast.parse(src.strip(), mode="eval").body
+    except SyntaxError:
+        return None
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+        return None
+    tool = next((t for t in tools if t["name"] == node.func.id), None)
+    if not tool:
+        return None
+    schema = tool["input_schema"]
+    order = list(schema.get("required", [])) + [k for k in schema.get("properties", {}) if k not in schema.get("required", [])]
+    try:
+        args = {k: ast.literal_eval(v) for k, v in zip(order, node.args)}
+        args.update({kw.arg: ast.literal_eval(kw.value) for kw in node.keywords if kw.arg})
+    except ValueError:
+        return None
+    if len(node.args) > len(order) or any(k not in schema.get("properties", {}) for k in args):
+        return None
+    return tool["name"], args
+
+
+FENCE_RE = re.compile(r"^```[a-z]*\s*|\s*```$", re.I)
+
+
+def _unwrap_fake_call(text):
+    """A reply that is only a 'call' to a tool that doesn't exist - {"name": "print", "arguments": {"text": "..."}} -
+    is the model's answer in disguise: return the words inside it, or None if the reply isn't like that."""
+    body = FENCE_RE.sub("", text.strip())
+    try:
+        obj = json.loads(body)
+    except ValueError:
+        return None
+    if not (isinstance(obj, dict) and isinstance(obj.get("name", obj.get("tool")), str)):
+        return None
+    args = obj.get("arguments", obj.get("args"))
+    words = [v.strip() for v in (args.values() if isinstance(args, dict) else [args]) if isinstance(v, str) and v.strip()]
+    return " ".join(words) or None
 
 
 def _post_stream(path, body, on_text, timeout=600, on_think=None):
@@ -184,13 +237,20 @@ def reset_cloud():
     _cloud_down.update(until=0.0, why="")
 
 
+def cloud_resting():
+    """True while a recent cloud failure means chat() would go straight to the local model anyway."""
+    return time.time() < _cloud_down["until"]
+
+
 def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_think=None, num_predict=200,
-         reasoning="low"):
+         reasoning="low", keep_alive=None):
     """One model turn. Returns (assistant_message_to_store, text, [ {id,name,args} ]).
     on_text(piece) gets the reply piece by piece while it is being written, so Nova can start speaking the first
     sentence before the last one exists. on_think(piece) gets the model's own reasoning, when it shows any (a local
     thinking model, or a summary from Gemini / Claude), for the chat's "what Nova is thinking" log.
     reasoning ("low" | "high" | "max") sets how hard a cloud model thinks first.
+    keep_alive: how long Ollama keeps this model on the GPU afterwards (default KEEP_ALIVE). A bigger model the router
+    borrowed for one task uses a short one, so it doesn't sit on the 6 GB card pushing the everyday model off.
     For a cloud model ("cloud:provider:name"), any failure (no internet, bad key, credit ran out...) makes this
     turn run on the local Ollama model `fallback` instead; LAST["fallback"] then says why."""
     LAST["fallback"] = None
@@ -210,7 +270,7 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_th
         LAST["fallback"] = _cloud_down["why"]
         model = fallback
     native = supports_tools(model)
-    body = {"model": model, "messages": messages, "stream": False, "keep_alive": KEEP_ALIVE,
+    body = {"model": model, "messages": messages, "stream": False, "keep_alive": keep_alive or KEEP_ALIVE,
             "options": {"num_ctx": NUM_CTX, "temperature": 0.6,
                         "num_predict": num_predict,  # replies are spoken: short (200). Also stops a small model rambling in loops
                         "repeat_penalty": 1.15}}
@@ -220,13 +280,20 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_th
         body["think"] = think
     msg = None
     thought = []
+    emitted, held = [], []
     if (on_text or on_think) and native:
-        emitted = []
 
         def got_text(piece):
-            if on_text:
-                emitted.append(piece)
-                on_text(piece)
+            if not on_text:
+                return
+            if not emitted:
+                held.append(piece)
+                start = "".join(held).lstrip()
+                if not start or start.startswith(("{", "`")):
+                    return              # may be a tool call written as text: never speak it (sent after, if not)
+                piece, held[:] = "".join(held), []
+            emitted.append(piece)
+            on_text(piece)
 
         def got_thought(piece):
             thought.append(piece)
@@ -239,6 +306,7 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_th
                 raise OllamaError("Nova's brain stopped in the middle of a reply.")
             msg = None         # nothing said yet: do it the plain way (which also handles a GPU crash)
     if msg is None:
+        held.clear()            # a half-streamed start is replaced by the full reply below
         msg = _run("/api/chat", body)["message"]
         if on_think and not thought:    # not streamed: hand over the reasoning in one piece
             inline = "\n".join(re.findall(r"<think>(.*?)</think>", msg.get("content") or "", re.S))
@@ -247,6 +315,22 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_th
     text = clean(msg.get("content", ""))
     calls = []
     if native:
+        if not msg.get("tool_calls"):
+            names = {t["name"] for t in tools}
+            found = _parse_text_call(text, names) if text.lstrip()[:1] in ("{", "`") else None
+            fence = None if found or not names else re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S)
+            if fence:           # "Let me try another way: ```json {call}```" - words first, then the call
+                found = _parse_text_call(fence.group(1), names)
+            if not found and names:     # ```python\nrun_in_terminal("python --version")\n``` - a call written as code
+                fence = PY_CALL_RE.search(text)
+                found = _parse_code_call(fence.group(1), tools) if fence else None
+            if found:           # a native model wrote its call as text: make it a real call
+                msg["tool_calls"] = [{"function": {"name": found[0], "arguments": found[1]}}]
+                text = text[:fence.start()].strip() if fence else ""
+            else:
+                text = _unwrap_fake_call(text) or text
+                if on_text and held and not emitted:
+                    on_text(text)           # it was ordinary text after all (or an answer dressed up as a call)
         for i, c in enumerate(msg.get("tool_calls") or []):
             fn = c.get("function", {})
             args = fn.get("arguments") or {}

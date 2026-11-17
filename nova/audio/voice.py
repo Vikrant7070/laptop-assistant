@@ -14,7 +14,6 @@ from pathlib import Path
 from nova.avatar import avatar_client
 from nova.shared import ROOT
 
-LISTENING = "👂 I'm listening…"   # the one "speak now" bubble (several places used to show slightly different ones)
 PREFERRED_VOICES = ("Heera", "Zira", "Aria", "Jenny")
 ONECORE = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices"
 
@@ -799,6 +798,7 @@ class WhisperTranscriber:
         self.failures = 0
         self.error = None
         self.level = 0.0       # loudness of the last thing heard, for the status notes
+        self.hearing_at = 0.0  # when the microphone last caught a voice (3D Nova's ear waves grow while you speak)
         self.using = None      # which model ended up loaded, e.g. "large-v3-turbo on cuda"
         self.language = "en"   # what the last sentence was taken as: "en", or "hi" for Hindi/Hinglish
         self.last_audio, self.seconds = None, 0.0
@@ -913,6 +913,7 @@ class WhisperTranscriber:
                 else:
                     quiet, last_sound, voiced = 0.0, spoken, voiced + self.BLOCK
                     power += rms * rms
+                    self.hearing_at = time.time()
                 # Only "Hey Nova" so far and she has shown "I'm listening": keep this same recording open for the
                 # request (up to 3.5 s), so its first word isn't lost while the microphone is reopened. Once the
                 # request has been spoken (sound well after the wake word), the normal short pause ends it.
@@ -1056,7 +1057,9 @@ class _EarsBase:
 
     def _woke_for_conversation(self):
         self._note("heard 'Nova, wake up' - conversation mode")
-        avatar_client.send("wave", timeout=2)
+        if getattr(self, "on_name", None):
+            self.on_name()
+        avatar_client.send("wave", quiet=True, timeout=2)
         if self.on_wake:
             threading.Thread(target=self.on_wake, kwargs={"conversation": True}, daemon=True).start()
 
@@ -1078,6 +1081,7 @@ class WhisperEars(_EarsBase):
         self.on_wake = None        # set by the app: listen for the request (conversation=True for "wake up")
         self.on_sleep = None
         self.paused = None         # set by the app: True while it is already listening for a request itself
+        self.on_name = None        # set by the app: her name was just heard - get up now if she's napping
         self.quiet_until = 0.0
         self.online_off = False
         self.skip_next = False
@@ -1086,6 +1090,13 @@ class WhisperEars(_EarsBase):
         self.early = 0.0           # when her name was last spotted mid-sentence (the bubble is already showing)
         self.early_bare = False    # ...and nothing but her name had been said at that point
         self.peeking = False
+
+    def _named(self):
+        if self.on_name:
+            try:
+                self.on_name()
+            except Exception:
+                pass
 
     def _peek(self, audio):
         """Runs while the user is still speaking: if the sentence starts with her name, react right away."""
@@ -1098,8 +1109,9 @@ class WhisperEars(_EarsBase):
             if m and not EARS_SLEEP_RE.search(text) and not EARS_WAKEUP_RE.search(text):
                 self.early_bare = not text[m.end():].strip(" ,.!?-…")
                 self.early = time.time()
-                avatar_client.send("say", text=LISTENING, secs=8, timeout=2)
-                avatar_client.send("wave", timeout=2)
+                self._named()
+                avatar_client.send("listen", on=True, secs=8, timeout=2)
+                avatar_client.send("wave", quiet=True, timeout=2)
         finally:
             self.peeking = False
 
@@ -1191,6 +1203,8 @@ class WhisperEars(_EarsBase):
             return
         if getattr(self.w, "profile", None):
             self.w.profile.learn(getattr(self.w, "voice_level", 0.0))   # this is the user: remember how loud they are
+        if not EARS_SLEEP_RE.search(low):
+            self._named()
         if EARS_SLEEP_RE.search(low):
             self._asked_to_sleep()
         elif EARS_WAKEUP_RE.search(low):
@@ -1198,14 +1212,14 @@ class WhisperEars(_EarsBase):
         elif len(rest.split()) >= 2:                       # "Hey Nova, what's the time?" in one breath
             self._note(f"heard 'Hey Nova' + request (mic level {self.w.level:.2f}): {rest}"[:160])
             if not early:
-                avatar_client.send("wave", timeout=2)
+                avatar_client.send("wave", quiet=True, timeout=2)
             avatar_client.send("say", text=f"“{rest}”", secs=4, timeout=2)
             threading.Thread(target=self.on_text, args=(rest,), daemon=True).start()
         else:
             self._note(f"heard 'Hey Nova' (mic level {self.w.level:.2f})")
             if not early:     # (if early, the same bubble is up already and the app's listener keeps it up)
-                avatar_client.send("wave", timeout=2)
-                avatar_client.send("say", text=LISTENING, secs=6, timeout=2)
+                avatar_client.send("wave", quiet=True, timeout=2)
+                avatar_client.send("listen", on=True, secs=6, timeout=2)
             if self.on_wake:
                 threading.Thread(target=self.on_wake, daemon=True).start()
 
@@ -1329,13 +1343,13 @@ class Ears(_EarsBase):
                     continue   # the user is mid-sentence in voice typing; "nova" in their words isn't a new wake
                 self.skip_next = False
                 self._note("heard 'Hey Nova'")
-                avatar_client.send("wave", timeout=2)
+                avatar_client.send("wave", quiet=True, timeout=2)
                 if self.mode == "typing" and self.on_wake:
                     self.quiet_until = time.time() + 20
-                    avatar_client.send("say", text=LISTENING, secs=6, timeout=2)
+                    avatar_client.send("listen", on=True, secs=6, timeout=2)
                     threading.Thread(target=self.on_wake, daemon=True).start()
                 else:
-                    avatar_client.send("say", text=LISTENING, secs=6, timeout=2)
+                    avatar_client.send("listen", on=True, secs=6, timeout=2)
             elif self.skip_next and (line.startswith("TEXT:") or line == "NOTHING"):
                 self.skip_next = False
                 continue

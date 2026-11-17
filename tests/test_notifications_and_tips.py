@@ -167,3 +167,56 @@ def test_asking_for_suggestions_looks_at_the_screen():
     for t in ("any suggestions for what I'm working on?", "give me some tips on this", "what should I do next"):
         assert app.SCREEN_ASK.search(t), t
     assert not app.SCREEN_ASK.search("suggest a good movie")
+
+
+# ---------------------------------------------------------------- muting one app ("don't read Claude's notifications")
+
+CLAUDE = {"id": 9, "app": "Claude", "title": "Claude", "body": "Your task is done", "time": time.time()}
+
+
+def test_same_app_is_forgiving_but_not_sloppy():
+    assert notifications.same_app("Claude", "cloude")          # speech recognition garble
+    assert notifications.same_app("claude", "Claude (desktop)")
+    assert not notifications.same_app("Mail", "Gmail")
+    assert not notifications.same_app("WhatsApp", "Claude")
+    assert notifications.resolve_app("cloude app", {"Claude", "WhatsApp"}) == "Claude"
+    assert notifications.resolve_app("telegram", set()) == "Telegram"
+
+
+def test_mute_and_resume_an_app():
+    set_settings(notifications=True)
+    notifications.recent_apps.add("Claude")
+    assert "won't read notifications from Claude" in tools.mute_notifications("cloude")
+    assert app.settings()["notif_muted"] == ["Claude"]
+    assert "already muted" in tools.mute_notifications("Claude")
+    assert "Claude" in tools.mute_notifications()               # list them
+
+    app.on_notifications([CLAUDE])                              # muted: not read, not shown
+    assert app.mouth.said == [] and app.events == []
+    app.on_notifications([CLAUDE, N1])                          # the others still are
+    assert app.mouth.said == ["WhatsApp: Mom - Call me when you're free"]
+
+    assert "read notifications from Claude again" in tools.mute_notifications("claude", mute=False)
+    assert app.settings()["notif_muted"] == []
+    app.mouth.said.clear()
+    app.on_notifications([CLAUDE])
+    assert app.mouth.said == ["Claude: Claude - Your task is done"]
+
+
+def test_read_notifications_skips_muted_apps(monkeypatch):
+    set_settings(notifications=True, notif_muted=["Claude"])
+    monkeypatch.setattr(notifications, "latest", lambda count=5: [CLAUDE, N1])
+    out = tools.read_notifications()
+    assert "WhatsApp" in out and "Your task is done" not in out and "Muted apps" in out
+
+
+def test_unmute_all():
+    set_settings(notif_muted=["Claude", "Slack"])
+    assert "every app again" in tools.mute_notifications("all", mute=False)
+    assert app.settings()["notif_muted"] == []
+
+
+def test_mute_request_finds_the_tool():
+    from nova.brain import toolpick
+    assert "mute_notifications" in toolpick.pick("don't read notifications from claude app")
+    assert "mute_notifications" in toolpick.pick("resume reading claude notifications")

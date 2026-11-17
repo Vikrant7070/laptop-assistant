@@ -17,7 +17,7 @@ from nova.actions import tools
 
 CORE = ["get_datetime", "get_system_status", "open_app", "open_website", "open_path", "list_windows", "window_action",
         "press_keys", "type_text", "run_powershell", "run_in_terminal", "react", "update_profile", "learn_lesson", "recall_knowledge",
-        "more_tools", "go_to_sleep"]
+        "more_tools", "escalate", "go_to_sleep"]
 
 GROUPS = [
     {"list_clickable", "fill_in", "click_nth", "click_element", "scroll", "video_control", "media_control"},  # a page
@@ -29,6 +29,7 @@ GROUPS = [
     {"find_app", "search_installable_apps", "install_app", "uninstall_app", "list_installed_apps",
      "list_startup_apps"},                                                                                   # apps
     {"add_note", "list_notes", "set_reminder"},
+    {"read_notifications", "mute_notifications"},
     {"remember_fact", "forget_fact", "update_profile", "learn_lesson", "recall_knowledge"},
     {"look_at_screen", "look_through_camera", "take_screenshot"},
     {"list_top_processes", "kill_process", "get_system_status", "network_info"},
@@ -86,6 +87,8 @@ HINTS = {
     "install_app": "install download an app program",
     "uninstall_app": "uninstall remove an app program",
     "read_notifications": "read my notifications, any new messages, what did I miss, alerts, whatsapp mail",
+    "mute_notifications": "don't read notifications from an app, stop reading ignore mute silence that app's "
+                          "notifications, resume start reading unmute its notifications again",
     "draft_email": "draft write compose an email mail gmail to someone in the background",
     "write_document": "write a document letter notes essay list report in the background, make a doc",
     "show_finished_work": "show me the email, show it, open what you wrote, let me see the draft",
@@ -101,7 +104,13 @@ TOP = 6           # best-matching tools per request
 GROUPED = 2       # ...of which the best two bring their whole group
 MORE = 8          # tools added when she asks with more_tools
 
-BY_NAME = {t["name"]: t for t in tools.TOOLS}
+# 🔌 Connector tools (nova/actions/mcp.py) come and go while Nova runs; app.py points these at mcp.tools_list/groups.
+EXTRA = lambda: []           # noqa: E731
+EXTRA_GROUPS = lambda: []    # noqa: E731
+
+
+def _all():
+    return tools.TOOLS + EXTRA()
 
 
 def _text(t):
@@ -111,14 +120,14 @@ def _text(t):
 def _expand(names):
     out = set(names)
     for n in names:
-        for g in GROUPS:
+        for g in GROUPS + EXTRA_GROUPS():
             if n in g and len(g) <= 8:
                 out |= g
     return out
 
 
 def best(query, n, exclude=()):
-    cands = [t for t in tools.TOOLS if t["name"] not in exclude and t["name"] != "more_tools"]
+    cands = [t for t in _all() if t["name"] not in exclude and t["name"] != "more_tools"]
     s = retrieval.scores(query, [_text(t) for t in cands])
     ranked = sorted(zip(s, (t["name"] for t in cands)), reverse=True)
     return [name for score, name in ranked[:n] if score > 0]
@@ -126,18 +135,21 @@ def best(query, n, exclude=()):
 
 def pick(query, keep=()):
     """Names of the tools for this request, in the fixed TOOLS order (so equal sets give an identical prompt)."""
-    chosen = set(CORE) | set(n for n in keep if n in BY_NAME)
+    every = _all()
+    known = {t["name"] for t in every}
+    chosen = set(CORE) | set(n for n in keep if n in known)
     top = best(query, TOP, exclude=chosen)
     chosen |= set(top) | _expand(top[:GROUPED])
-    return [t["name"] for t in tools.TOOLS if t["name"] in chosen]
+    return [t["name"] for t in every if t["name"] in chosen]
 
 
 def add(have, need):
     """more_tools: the names to add for `need`, and the full new list."""
     new = _expand(best(need, MORE, exclude=set(have)))
     new -= set(have)
-    return sorted(new), [t["name"] for t in tools.TOOLS if t["name"] in set(have) | new]
+    return sorted(new), [t["name"] for t in _all() if t["name"] in set(have) | new]
 
 
 def schemas(names):
-    return [BY_NAME[n] for n in names if n in BY_NAME]
+    by_name = {t["name"]: t for t in _all()}
+    return [by_name[n] for n in names if n in by_name]

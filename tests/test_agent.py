@@ -70,7 +70,7 @@ def test_promise_without_tool_gets_one_nudge(brain):
 
 
 def test_turn_limit(brain):
-    fake, ran = brain([("", [("get_datetime", {})])] * 40)
+    fake, ran = brain([("", [("get_datetime", {"n": i})]) for i in range(40)])
     out, _ = app.answer("loop forever")
     assert "lot of steps" in out["reply"] and len(ran) <= app.MAX_TASK_TURNS
 
@@ -179,7 +179,7 @@ def test_long_task_does_not_count_as_quiet_time(brain):
 
 def test_command_only_task_gets_task_steps_not_question_limit(brain, monkeypatch):
     # A job done with commands (git, PowerShell) has no on-screen clicks; it used to stop after 10 turns.
-    fake, ran = brain([("", [("get_datetime", {})])] * 80)
+    fake, ran = brain([("", [("get_datetime", {"n": i})]) for i in range(80)])
     monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-test")
     s = app.settings()
     s["reasoning"] = "max"
@@ -190,7 +190,7 @@ def test_command_only_task_gets_task_steps_not_question_limit(brain, monkeypatch
 
 
 def test_keep_going_resumes_the_paused_task(brain):
-    fake, ran = brain([("", [("get_datetime", {})])] * app.MAX_TASK_TURNS + [("All done!", [])])
+    fake, ran = brain([("", [("get_datetime", {"n": i})]) for i in range(app.MAX_TASK_TURNS)] + [("All done!", [])])
     app.answer("set up the repo for me")
     assert app.state["task"]["paused"]
     out, _ = app.answer("keep going")

@@ -32,7 +32,6 @@ HOME = Path.home()
 DATA.mkdir(parents=True, exist_ok=True)
 NOTES_FILE = DATA / "notes.json"
 REMINDERS_FILE = DATA / "reminders.json"
-MEMORY_FILE = DATA / "memory.json"
 
 
 def _load(path, default):
@@ -1547,13 +1546,15 @@ def _grab_camera_jpeg(max_width=768):
     if busy:
         raise RuntimeError(f"The camera is being used by another app ({', '.join(busy)}). "
                            "Windows lets only one app use it at a time - close that app and ask me again.")
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        raise RuntimeError("I can't open the camera - another app may be using it, or it's switched off.")
-    ok, frame = False, None
-    for _ in range(10):  # let the camera adjust its exposure for a moment
-        ok, frame = cap.read()
-    cap.release()
+    from nova.actions import presence
+    with presence._cam:                     # the 👋 presence check uses the camera too: one at a time
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            raise RuntimeError("I can't open the camera - another app may be using it, or it's switched off.")
+        ok, frame = False, None
+        for _ in range(10):  # let the camera adjust its exposure for a moment
+            ok, frame = cap.read()
+        cap.release()
     if not ok or frame is None:
         raise RuntimeError("The camera didn't give me a picture.")
     if frame.mean() < 8:
@@ -1718,13 +1719,55 @@ def read_notifications(count=5):
         return ("Reading notifications is switched off. The user can switch it on in Nova's settings "
                 "(⚙ Model → Notifications).")
     from nova.actions import notifications
-    items = notifications.latest(count)
+    muted = _setting("notif_muted", []) or []
+    got = notifications.latest(count + 10 if muted else count)
+    items = [n for n in got if not notifications.is_muted(n, muted)][:max(1, min(int(count or 5), 20))]
+    skipped = f" (Muted apps not read: {', '.join(muted)}.)" if muted and len(items) < len(got) else ""
     if not items:
-        return "There are no notifications right now."
+        return "There are no notifications right now." + skipped
     now = time.time()
     return ("Notifications, newest first (read them to the user in a short, natural way; never read out codes, "
             "passwords or OTPs):\n" + "\n".join(f"- {_ago(now - n['time'])}: {notifications.describe(n, 300)}"
-                                                for n in items))
+                                                for n in items) + skipped)
+
+
+def mute_notifications(app="", mute=True):
+    """Stop (mute=True) or resume (mute=False) reading one app's notifications; no app = say which are muted."""
+    from nova.actions import notifications
+    with _files_lock:
+        path = DATA / "settings.json"
+        s = _load(path, {})
+        muted = list(s.get("notif_muted") or [])
+        spoken = str(app or "").strip()
+        if not spoken:
+            return ("Muted apps (their notifications are not read out): " + ", ".join(muted) + ".") if muted else \
+                "No apps are muted - I read notifications from every app."
+        if not mute and _norm_all(spoken):
+            s["notif_muted"] = []
+            _save(path, s)
+            return ("Done - I'll read notifications from every app again (unmuted: " + ", ".join(muted) + ").") \
+                if muted else "No apps were muted - I already read notifications from every app."
+        name = notifications.resolve_app(spoken, set(notifications.recent_apps) | set(muted))
+        if not name:
+            return "Which app? Tell me its name."
+        if mute:
+            if notifications.is_muted(name, muted):
+                return f"{name} is already muted - I won't read its notifications."
+            muted.append(name)
+            s["notif_muted"] = muted
+            _save(path, s)
+            return (f"Done - I won't read notifications from {name} any more (they still arrive in Windows). "
+                    f"Say 'resume {name} notifications' to hear them again.")
+        left = [m for m in muted if not notifications.same_app(m, name)]
+        if len(left) == len(muted):
+            return f"{name} wasn't muted - I already read its notifications."
+        s["notif_muted"] = left
+        _save(path, s)
+        return f"Done - I'll read notifications from {name} again."
+
+
+def _norm_all(words):
+    return words.lower().strip(" .") in ("all", "all apps", "everything", "every app", "everyone", "all of them")
 
 
 def draft_email(about, to="", subject=""):
@@ -1749,7 +1792,7 @@ def research_in_background(topic, focus="", kind="general", max_sources=3):
         path = re.search(r"[a-z]:\\[^\"'?*<>|]*", f"{topic} {focus}", re.I)
         folder = path.group(0).rstrip(" .") if path else ""
         if re.search(r"commit|git|change", f"{topic} {focus}", re.I):
-            call = f'run_in_terminal with command "git log -1"' + (f' and folder "{folder}"' if folder else "")
+            call = 'run_in_terminal with command "git log -1"' + (f' and folder "{folder}"' if folder else "")
         else:
             call = f'list_folder with path "{folder}"' if folder else "list_folder or read_text_file"
         return f"Not started: that's about files on this laptop, not the web. Call {call} now."
@@ -1807,6 +1850,11 @@ def list_skills():
 def delete_skill(name):
     from nova.actions import skills
     return skills.delete(name)
+
+
+def escalate(kind="deep", why=""):
+    # app.execute answers this one itself (it switches the brain); this is only the fallback.
+    return "Nothing to switch to."
 
 
 def more_tools(need=""):
@@ -2264,6 +2312,11 @@ TOOLS = [
                                                           "top-right", "bottom-left", "bottom-right"]}}, ["to"]),
     _tool("read_notifications", "Read the user's newest Windows notifications (messages, mail, reminders from apps).",
           {"count": N}),
+    _tool("mute_notifications", "Stop or resume reading out one app's notifications, and keep it: 'don't read "
+          "notifications from Claude' = mute true; 'resume / start reading Claude notifications again' = mute false; "
+          "app 'all' with mute false unmutes every app; no app = list the muted apps.",
+          {"app": {"type": "string", "description": "the app's name as the user said it, e.g. Claude, WhatsApp"},
+           "mute": {"type": "boolean", "description": "true = stop reading it, false = read it again"}}),
     _tool("draft_email", "Co-worker job in the BACKGROUND: you write an email and draft it in Gmail in a hidden browser "
           "window (never sent). The user keeps working; you tell them when it's ready. Use for 'draft/write an email'.",
           {"about": {"type": "string", "description": "what the email should say, with every detail the user gave"},
@@ -2307,6 +2360,11 @@ TOOLS = [
     _tool("more_tools", "You only see some of your tools right now. If none of them can do what the user asked, call "
           "this with the ability you need (e.g. 'change screen brightness', 'install an app') and you get more tools.",
           {"need": S}, ["need"]),
+    _tool("escalate", "Call this FIRST when the job is bigger than you can do well: kind='deep' for a complex, "
+          "multi-step or tricky job (a stronger brain writes a full plan for you to follow), kind='code' for writing, "
+          "fixing or reviewing code (a coding brain takes over). Never for simple things like opening an app, the "
+          "time or chat. Takes a minute to switch.",
+          {"kind": {"type": "string", "enum": ["deep", "code"]}, "why": S}, ["kind"]),
 ]
 
 # Approval tiers, used by the autonomy setting in app.py:

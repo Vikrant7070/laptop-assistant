@@ -21,6 +21,37 @@ import re
 
 from nova.shared import DATA
 
+ROAM_MODES = ("corner", "edge", "free")
+ROAM_DEFAULT = "corner"
+ROAM_RETURN_AFTER = 8.0      # seconds after her last errand (pointing, carrying a window) before she goes back "home"
+
+
+def roam_mode(settings=None):
+    """Where she hangs about while idle (setting "avatar_roam"): corner = stays in the bottom-right corner, only
+    leaving it to point at a button or carry a window, then walking back; edge = strolls only along the bottom
+    right of the screen; free = anywhere on the bottom edge or the screen (the old behaviour)."""
+    if settings is None:
+        try:
+            settings = json.loads((DATA / "settings.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            settings = {}
+    mode = settings.get("avatar_roam")
+    return mode if mode in ROAM_MODES else ROAM_DEFAULT
+
+
+def roam_spot(mode, area, sprite_w, sprite_h, rnd):
+    """Where her feet go for an idle stroll. area = (left, top, right, bottom) of the usable screen, rnd = random.uniform."""
+    left, top, right, bottom = area
+    home = (right - sprite_w * .42, bottom)                 # the nap corner: hair and "z" stay on screen
+    if mode == "corner":
+        return home
+    if mode == "edge":                                      # the right fifth of the bottom edge: never over the work
+        return rnd(max(left + 150, right - max(sprite_w * 1.6, (right - left) * .2)), home[0]), bottom
+    if rnd(0, 1) < .7:                                      # free: along the bottom ...
+        return rnd(left + 150, right - 150), bottom
+    return rnd(left + 150, right - 150), rnd(top + sprite_h, bottom)      # ... or anywhere
+
+
 MOVES_FILE = DATA / "moves.json"
 LOOK_FILE = DATA / "look.json"
 

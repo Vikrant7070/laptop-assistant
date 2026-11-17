@@ -112,3 +112,54 @@ def test_voice_sound_without_a_voice_engine_is_silent_but_ok(monkeypatch):
                                                         "sound": {"say": "Yay!"}}}, True, [], "m")
     assert out.startswith("OK") and "silent" in out
     body.forget_move("cheer")
+
+
+def test_ears_glow_exactly_while_listening(monkeypatch):
+    import time as _time
+    sent = []
+    monkeypatch.setattr(app.avatar_client, "send", lambda do, **k: sent.append((do, k.get("on"), k.get("hearing"))))
+    fake = type("T", (), {"hearing_at": 0.0})()
+    monkeypatch.setattr(app, "transcriber", fake, raising=False)
+    def wait_for(ok, secs=5.0, keep_hearing=False):      # polls instead of fixed sleeps, so a busy laptop can't fail it
+        end = _time.time() + secs
+        while _time.time() < end and not ok():
+            if keep_hearing:
+                fake.hearing_at = _time.time()           # the voice keeps coming in until the heartbeat notices
+            _time.sleep(0.02)
+        return ok()
+
+    off = app.ears_on()
+    assert wait_for(lambda: len(sent) >= 1)
+    assert wait_for(lambda: ("listen", True, True) in sent, keep_hearing=True)
+    off()
+    assert wait_for(lambda: sent[-1][:2] == ("listen", False))
+    assert sent[0] == ("listen", True, False)            # on, waiting
+    assert ("listen", True, True) in sent                # bigger waves while the voice comes in
+    assert sent[-1][:2] == ("listen", False)             # off the moment listening ends
+
+
+# ---- where she stays while idle (setting "avatar_roam") ----
+AREA = (0, 0, 1920, 1040)
+
+
+def test_default_is_to_stay_in_the_corner_and_the_spot_is_fixed():
+    assert body.roam_mode({}) == "corner" and body.roam_mode({"avatar_roam": "nonsense"}) == "corner"
+    spots = {body.roam_spot("corner", AREA, 300, 400, lambda a, b: (a + b) / 2) for _ in range(5)}
+    assert spots == {(1920 - 300 * .42, 1040)}
+
+
+def test_edge_mode_stays_on_the_bottom_right():
+    for r in (0.0, 0.5, 1.0):
+        x, y = body.roam_spot("edge", AREA, 300, 400, lambda a, b, r=r: a + (b - a) * r)
+        assert y == 1040 and x >= 1920 - 480 and x <= 1920 - 300 * .42
+
+
+def test_free_mode_can_still_go_anywhere():
+    xs = {body.roam_spot("free", AREA, 300, 400, lambda a, b, r=r: a + (b - a) * r)[1] for r in (0.0, 0.9)}
+    assert len(xs) == 2
+
+
+def test_dialog_saves_the_roam_choice(client):
+    j = client.post("/api/setup", json={"avatar_roam": "edge"}).get_json()
+    assert j["avatar_roam"] == "edge"
+    assert client.post("/api/setup", json={"avatar_roam": "bogus"}).get_json()["avatar_roam"] == "edge"
