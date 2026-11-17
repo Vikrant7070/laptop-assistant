@@ -76,8 +76,62 @@ def _parse(line):
     if isinstance(texts, str):            # ConvertTo-Json writes a one-item list as a plain string
         texts = [texts]
     texts = [" ".join(str(t).split()) for t in texts if str(t).strip()]
+    if (d.get("app") or "").strip():
+        recent_apps.add(d["app"].strip())
     return {"id": d["id"], "app": (d.get("app") or "An app").strip(), "title": texts[0] if texts else "",
             "body": " ".join(texts[1:]), "time": d.get("time") or 0}
+
+
+# ---------------------------------------------------------------- muted apps ("don't read Claude's notifications")
+# The list itself lives in settings.json ("notif_muted"); these helpers only match names. Speech recognition garbles
+# app names ("cloude" for Claude), so matching is forgiving, and a spoken name is snapped to an app Nova has seen.
+
+recent_apps = set()       # app names seen in notifications since Nova started
+
+
+def _norm(name):
+    return "".join(ch for ch in str(name or "").lower() if ch.isalnum())
+
+
+def same_app(a, b):
+    """'Claude' ~ 'claude' ~ 'Cloude' ~ 'Claude (desktop)'; 'Mail' is not 'Gmail'."""
+    import difflib
+    a, b = _norm(a), _norm(b)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    short, long_ = sorted((a, b), key=len)
+    if len(short) >= 4 and long_.startswith(short):
+        return True
+    return a[0] == b[0] and difflib.SequenceMatcher(None, a, b).ratio() >= 0.8    # first letter is rarely misheard
+
+
+def is_muted(n, muted):
+    app = n.get("app") if isinstance(n, dict) else n
+    return any(same_app(app, m) for m in muted or ())
+
+
+def resolve_app(spoken, known=None):
+    """The real app name the user means (from apps seen in notifications), or their words tidied up."""
+    import difflib
+    spoken = " ".join(str(spoken or "").split()).strip(" .'\"")
+    for suffix in (" app", " application", " notifications", " notification"):
+        if spoken.lower().endswith(suffix):
+            spoken = spoken[: -len(suffix)].strip()
+    known = sorted(set(known if known is not None else recent_apps) - {"An app"})
+    for k in known:
+        if _norm(k) == _norm(spoken):
+            return k
+    by_norm = {_norm(k): k for k in known}
+    close = [c for c in difflib.get_close_matches(_norm(spoken), list(by_norm), n=3, cutoff=0.7)
+             if c[:1] == _norm(spoken)[:1]]
+    if close:
+        return by_norm[close[0]]
+    for k in known:
+        if same_app(k, spoken):
+            return k
+    return spoken[:1].upper() + spoken[1:] if spoken else ""
 
 
 def describe(n, max_len=220):

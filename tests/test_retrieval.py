@@ -77,7 +77,7 @@ def test_tools_used_last_request_stay_for_the_next(brain, words_only):
 def test_cloud_brain_sees_every_tool(monkeypatch):
     monkeypatch.setattr(app.cloud, "parse", lambda m: ("gemini", "x") if m == "cloud" else None)
     app.state["task"] = {"tools": ["get_datetime"], "facts": ""}
-    assert len(app.active_tools("cloud")) == len(tools.TOOLS) - 1          # all but more_tools
+    assert len(app.active_tools("cloud")) == len(tools.TOOLS) - 2          # all but more_tools and escalate
     assert names(app.active_tools("local")) == ["get_datetime"]
 
 

@@ -43,6 +43,10 @@ def test_conversation_ends_only_when_told(listening, body, brain):
         app.heard(t, via="silent")
         assert app.convo["on"]
     app.heard("Nova, go to sleep", via="silent")
+    for _ in range(200):                 # she lies down right after saying goodnight (up to 10 s on a busy laptop)
+        if sleeps(body):
+            break
+        __import__("time").sleep(0.05)
     assert not app.convo["on"] and sleeps(body) == [True] and app.nap["asleep"]
     assert any("nap" in s for s in app.mouth.said)
 

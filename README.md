@@ -105,6 +105,51 @@ Tick **🖥 Let Nova see my screen** in **⚙ Model**, then ask things like "Wha
 - **Where screenshots go:** they stay in memory and go to the local vision model only. They're never saved or sent online, even if you use a cloud chat model.
 - **Secrets:** she's told never to read out passwords, API keys or tokens she sees. Still, close sensitive files before asking.
 
+## Phone: talking to Nova from Telegram
+Message Nova from your phone, like "what's my battery?", "is the research done?" or "remind me at 6 to call mom". She answers in the chat and doesn't speak on the empty laptop.
+1. In Telegram, message **@BotFather**, send `/newbot` and follow its steps.
+2. Paste the bot token into **⚙ Model → 📱 Phone** and click **Save token**. It's checked with Telegram, then saved encrypted (Windows DPAPI) in `data/phone.json`.
+3. Send your bot the 6-digit code Nova shows. Codes work for 10 minutes. From then on only that Telegram account can talk to her. Messages from anyone else get no reply.
+- **Always asks from the phone:** anything that changes things on the laptop (typing, clicks, files, commands, installs) comes with ✅ Yes / ❌ No buttons, even on Full access, because you can't see the screen.
+- **While you're away** (5 minutes without keyboard or mouse, or 👋 presence says you left), reminders and finished background jobs are also sent to your phone. You can switch this off in ⚙.
+- Commands: `/status` (laptop health), `/stop` (stop what she's doing), `/help`.
+- **Privacy:** these messages go through Telegram's servers. Screenshots and camera photos are never sent.
+
+## Connectors (MCP servers)
+Nova can use tools from [Model Context Protocol](https://modelcontextprotocol.io) servers, such as GitHub, calendars, databases or file servers. Paste the server's `"mcpServers"` JSON (the same format Claude Desktop uses) into **⚙ Model → 🔌 Connectors** and click **Save & connect**. It's saved in `data/mcp.json`.
+```json
+{"mcpServers": {"files": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/you/Documents"]},
+                "web":   {"url": "https://example.com/mcp", "headers": {"Authorization": "Bearer ..."}}}}
+```
+- Program servers (`command`) run hidden, with no console window. URL servers use streamable HTTP. Each tool appears as `mcp_<server>_<tool>`.
+- **Asking first:** a connector tool asks Allow / No unless the server marks it read-only, you add `"trusted": true` to that server, or you use Full access. `"disabled": true` turns a server off.
+- With the local brain only the connector tools that match the request are shown to her, as with her own tools. Cloud brains see all of them.
+- `npx` / `uvx` servers need Node.js / uv installed. Neither is installed on this laptop yet.
+- A server runs with your permissions, and any keys in `"headers"` / `"env"` are stored as plain text in `data/mcp.json`, so only add servers you trust.
+
+## Presence: she notices when you leave and come back
+Tick **👋 Notice when I leave and come back** in **⚙ Model**.
+- While you use the keyboard or mouse, the camera stays off. After a minute without input, she checks the camera for about two seconds (a few frames, then it's released). If she sees a face, she counts you as here (reading, or watching a film). If she sees an empty chair twice in a row, or the screen is locked, she counts you as away. Talking to her also counts as being here.
+- **Welcome back:** when you return after 2 minutes or more (counted from when you last touched the laptop), she wakes up, waves, and tells you what happened while you were away (reminders, finished jobs).
+- **Sleep and "Hey Nova":** seeing you come back only wakes her body and says hello. It never starts listening, so you still talk to her with "Hey Nova" (asleep or awake). If you told her "Nova, go to sleep", she stays asleep and quiet when you come back, and only "Hey Nova" or a typed message wakes her. Her own voice (a reminder or notification read out while you're away) never counts as you being back.
+- **🔒 Lock when I walk away** (optional): she warns you, waits 20 seconds, looks once more, then locks Windows. Move the mouse to stop her.
+- She only finds *a* face. She doesn't recognise who it is. Frames stay in memory and are thrown away straight after the check. A video call holding the camera counts as "here".
+- Face finding uses OpenCV's YuNet detector (`face_detection_yunet_2023mar.onnx`, ~230 KB, from the OpenCV model zoo). It's downloaded once, the first time presence runs, into `~/.cache/nova-face`. Until it's there, only the lock screen and 10 minutes without input count as away, and she never auto-locks.
+
+## Help with errors on screen
+Nova notices when an app shows an **error box** (a Windows message box that says error / failed / can't / not found…) or **stops responding** for 10 seconds. She offers once: "Notepad shows an error: … Want me to help with it?" or "Chrome isn't responding. Want me to close it?". Say or type "yes", or click **Help me** / **Close it**.
+- It costs almost nothing: no screenshots and no AI, just a look at the window list every 4 seconds. The error text goes to her brain only after you say yes.
+- She ignores her own windows, save prompts, dialogs that were already open when she started, and anything that comes up while she's doing a task for you. She never closes Windows itself (Explorer).
+- Closing a frozen app ends only the program that owns that window, and only if it's still frozen. Anything unsaved in it is lost, and she says so when she asks.
+- Switch it off with **🆘 Offer help** in **⚙ Model**. For tips about everything else on screen (not only error boxes), use 💡.
+
+## Smart switching between local models (⚙ Model)
+Nova's everyday brain is small and fast (`qwen3-vl:4b-instruct`). A bigger model is loaded only when a task needs it, once per task (a switch takes up to a minute or two on a 6 GB GPU):
+- **Coding** requests go to `qwen2.5-coder:7b`.
+- **Complex** requests first get a full plan from `deepseek-r1:8b` (it writes the plan; it does not use tools). The everyday brain follows the plan, or `qwen3:8b` does when the plan has more than 6 steps.
+- The everyday brain can also ask for a switch itself with the `escalate` tool. The next request starts on the everyday brain again.
+- Choose the models in the ⚙ Model dialog. All settings and the trigger words are in `config/model_routing.json` (kept in git, applied on the next request). Set `"auto_route": false` to switch it off. Cloud brains are never switched.
+
 ## How much she asks first (⚙ Model)
 - **Careful** (default): she asks before anything that changes things, including every click.
 - **Trusted:** she just does it, and asks only before shutdown, uninstalling, emptying the Recycle Bin or admin commands.
@@ -116,9 +161,9 @@ The code lives in the `nova/` package; `desktop.py` in the project folder is onl
 - `nova/avatar/avatar.py` is 3D Nova, a see-through always-on-top window that walks, talks and points. She listens for commands on port 5056 (`avatar_client.py` talks to her). Run her alone with `pythonw -m nova.avatar.avatar` from the project folder.
 - `static/nova3d.html` is her 3D model (Three.js). Open it at http://127.0.0.1:5055/static/nova3d.html to spin her around. With `?live=1` it is the hidden live renderer: `desktop.py` runs it in a hidden window, it poses her every frame and sends the pixels to `avatar.py` (`POST /frame`). The exported frames (**Export frames**) are only the fallback when live 3D is off.
 - `nova/avatar/body.py` checks and stores the moves she invents (`data/moves.json`) and her look (`data/look.json`), and picks her speech gestures. `nova/avatar/hearing.py` finds the beat in what the laptop plays.
-- `nova/brain/`: `llm.py` talks to Ollama, `cloud.py` to Gemini, OpenAI and Claude; `toolpick.py` and `retrieval.py` pick the tools and knowledge that matter for each request.
+- `nova/brain/`: `llm.py` talks to Ollama, `cloud.py` to Gemini, OpenAI and Claude; `router.py` decides which local model does a task; `toolpick.py` and `retrieval.py` pick the tools and knowledge that matter for each request.
 - `nova/audio/`: `voice.py` speaks and listens, `sfx.py` plays her reaction sounds.
-- `nova/actions/`: `tools.py` holds all the tools, plus `skills.py`, `notifications.py`, `coworker.py` and the knowledge bank (`knowledge.py`).
+- `nova/actions/`: `tools.py` holds all the tools, plus `skills.py`, `notifications.py`, `coworker.py` and the knowledge bank (`knowledge.py`). `phone.py` is the Telegram link, `mcp.py` the connector client (stdio + HTTP JSON-RPC, no extra package), `presence.py` the here/away logic, and `watcher.py` spots error boxes and frozen apps.
 - `nova/shared.py` holds the project and data folder paths and small helpers used everywhere.
 - `static/index.html` is the chat window. `data/` stores notes, memories and settings.
 

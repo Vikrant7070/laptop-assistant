@@ -9,6 +9,7 @@ wear a new look (nova/avatar/body.py). Whenever live frames stop arriving, the s
 
 Control API (used by tools.py / app.py):  POST http://127.0.0.1:5056/cmd  {"do": ..., ...}
   anim {name}            base animation: idle | talk | think | sleepy
+  work {on}              busy on a task (not listening): after a moment she sits at her desk, typing on a laptop
   sleep {on}             on: walk to the bottom-right corner and doze there (no wandering); off: wake up and wave
   say {text, secs}       speech bubble
   thought {text, secs}   thought cloud: what she's working on right now (empty text clears it)
@@ -23,6 +24,8 @@ Control API (used by tools.py / app.py):  POST http://127.0.0.1:5056/cmd  {"do":
   move {move}            play (and remember) a move the brain invented - body.clean_move format; needs live 3D
   look {look}            wear this look (body.load_look format); needs live 3D
   live {on}              use live 3D frames (on) or only the saved sprites (off)
+  listen {on, hearing, secs}  she is listening (glowing waves at her ears; bigger while a voice comes in),
+                         for secs unless renewed or turned off
   speech {words, secs, n, env, fps, start}  a sentence she is saying (voice.Mouth): its loudness moves her mouth
                          and body (live 3D) and its words pick a gesture (body.speech_gesture)
   show / hide
@@ -31,6 +34,7 @@ Run alone (from the project folder):  pythonw -m nova.avatar.avatar
 import ctypes
 import json
 import math
+import os
 import queue
 import random
 import textwrap
@@ -192,8 +196,14 @@ class Nova:
         self.thought = None          # (text, until): the thought cloud - what she's working on. Speech wins over it.
         self.visible = True
         self.next_wander = time.time() + random.uniform(8, 16)
+        self.roam = body.roam_mode()
+        self.roam_checked = time.time()
+        self.last_errand = 0.0       # when she last walked somewhere for a command (point, carry, walk_to)
         self.arrive_event = None
         self.carrying = False        # walking while holding a window: uses the "carry" animation, never turns around
+        self.working = False         # the assistant is busy on a task: she sits at her desk ("work" animation)
+        self.working_since = 0.0
+        self.working_end = 0.0       # when the assistant last stopped being busy (the desk stays a little longer)
         self.asleep = False          # napping in the bottom-right corner (5 minutes without a task, or "go to sleep")
         self.next_fidget = time.time() + random.uniform(20, 40)
         self.dibs = {}
@@ -205,6 +215,8 @@ class Nova:
         self.want = {"name": "idle", "t": 0}
         self.gestures = {}               # speech gestures in play (body.gesture_move), by name
         self.speech = None               # the sentence she is saying: {"start", "secs", "env", "fps"}
+        self.listen_until = 0.0          # her ears glow until then (the microphone is taking in a request)
+        self.hearing = False             # ...and a voice is coming in right now
         self.next_dance = time.time() + 20
         self.q = queue.Queue()
         self.drag = None
@@ -219,6 +231,7 @@ class Nova:
         self.root.bind("<Button-3>", lambda e: self.react(random.choice(("laugh", "dance", "spin", "love", "clap", "wave"))))
         threading.Thread(target=self.serve, daemon=True).start()
         threading.Thread(target=self.watch_battery, daemon=True).start()
+        threading.Thread(target=watch_parent, daemon=True).start()
         self.ears = hearing.LaptopEars(on_event=lambda e: self.q.put(({"do": "_heard", "what": e}, None, None)),
                                        enabled=sound_setting)
         self.ears.start()
@@ -268,6 +281,8 @@ class Nova:
             self.speech = None
         busy = self.oneshot and not self.oneshot["name"].startswith(("move:gesture_",) + tuple(body.SPEECH_REACTIONS))
         if not self.live_now() or self.asleep or self.carrying or self.target or busy:
+            return
+        if self.at_desk(time.time()):      # at her laptop she keeps typing while she talks (no standing up to gesture)
             return
         g = body.speech_gesture(cmd.get("words", ""), self.speech["secs"] if self.speech else 0, int(cmd.get("n") or 0))
         if isinstance(g, str):
@@ -396,10 +411,22 @@ class Nova:
         return fx, fy, flip
 
     def wander(self):
-        left, top, right, bottom = work_area()
-        if random.random() < .7:   # stroll along the bottom of the screen
-            return random.uniform(left + 150, right - 150), bottom
-        return random.uniform(left + 150, right - 150), random.uniform(top + self.sp.h, bottom)
+        """Where she goes when idle: by default she stays in the bottom-right corner so she never covers the user's
+        work (setting "avatar_roam": corner / edge / free - see body.roam_mode). Working, she goes to her desk there."""
+        mode = "corner" if self.working or time.time() - self.working_end < self.WORK_HOLD else self.roam
+        return body.roam_spot(mode, work_area(), self.sp.w, self.sp.h, random.uniform)
+
+    WORK_AFTER = 1.5     # seconds busy before the desk comes out (a quick answer shouldn't flash it)
+    WORK_HOLD = 6.0      # seconds she stays at the desk after the last step: a long task has gaps between its steps
+
+    def at_desk(self, now):
+        """Show her working at her laptop? Busy for a moment, standing at home - not listening, napping, walking or
+        just back from pointing at something (the desk would appear in the middle of the screen)."""
+        busy = self.working or now - self.working_end < self.WORK_HOLD
+        return (busy and now - self.working_since >= self.WORK_AFTER and not self.asleep
+                and now >= self.listen_until and not self.target and not self.drag
+                and now - self.last_errand > body.ROAM_RETURN_AFTER
+                and (self.live_now() or "work" in self.sp.images))
 
     def watch_battery(self):
         import psutil
@@ -418,6 +445,8 @@ class Nova:
     # ------------------------------------------------------------ commands from the assistant
     def handle(self, cmd, done, result):
         do = cmd.get("do")
+        if do in ("walk_to", "go_point", "carry_to", "_point"):
+            self.last_errand = time.time()           # she goes back to her corner a few seconds after the last one
         if do == "anim" and cmd.get("name") in self.sp.images:
             name = cmd["name"]
             if self.asleep and name != "talk":
@@ -425,6 +454,13 @@ class Nova:
             self.base = name
         elif do == "sleep":
             self.nap() if cmd.get("on") else self.wake_up()
+        elif do == "work":
+            on, now = bool(cmd.get("on")), time.time()
+            if on and not self.working and now - self.working_end >= self.WORK_HOLD:
+                self.working_since = now         # a new job (not the next step of the same one): the desk comes out
+            if self.working and not on:
+                self.working_end = now
+            self.working = on
         elif do == "_doze":
             if self.asleep:
                 self.base = "sleepy"
@@ -460,7 +496,8 @@ class Nova:
                 self.start_oneshot("happy")
         elif do in ("happy", "wave"):
             self.start_oneshot(do)
-            self.sound(do)
+            if not cmd.get("quiet"):     # quiet: the microphone is recording right now
+                self.sound(do)
         elif do == "react":
             ev = self.react(cmd.get("name", ""), cmd.get("repeat"))
             result["played"] = bool(ev)
@@ -495,6 +532,10 @@ class Nova:
                 self.root.deiconify()
         elif do == "reload":
             self.sp.load()
+        elif do == "quit":      # the chat's ⏻ Quit button / tray "Quit Nova": close her for good
+            done.set()
+            threading.Timer(0.3, lambda: os._exit(0)).start()
+            return
         elif do == "move":
             move, err = body.clean_move(**{k: cmd.get("move", {}).get(k) for k in ("name", "duration", "keys", "loop")})
             if err:
@@ -522,6 +563,10 @@ class Nova:
             self.live_on = bool(cmd.get("on"))
         elif do == "speech":
             self.on_speech(cmd)
+        elif do == "listen":
+            on = bool(cmd.get("on"))
+            self.listen_until = time.time() + float(cmd.get("secs") or 6) if on else 0.0
+            self.hearing = on and bool(cmd.get("hearing"))
         elif do == "_heard":
             self.heard(cmd.get("what"))
         if result is not None:       # commands she queues for herself (battery, dozing off) have no caller waiting
@@ -638,10 +683,13 @@ class Nova:
         self.drag = None
         if not self.asleep:
             self.next_wander = time.time() + random.uniform(20, 40)
+            self.last_errand = time.time()
 
     # ------------------------------------------------------------ main loop
     def tick(self):
         now = time.time()
+        if now - self.roam_checked > 5:                  # a change in the Model dialog applies within seconds
+            self.roam, self.roam_checked = body.roam_mode(), now
         try:
             while True:
                 self.handle(*self.q.get_nowait())
@@ -664,9 +712,10 @@ class Nova:
                 if abs(dx) > 2 and not self.carrying:
                     self.facing_left = dx < 0
                 moving = True
-        elif (not self.oneshot and self.base == "idle" and now > self.next_wander and not self.drag):
+        elif (not self.oneshot and self.base == "idle" and now > self.next_wander and not self.drag
+              and ((self.roam == "free" and not self.working) or now - self.last_errand > body.ROAM_RETURN_AFTER)):
             self.walk_to(*self.wander())
-            self.next_wander = now + random.uniform(15, 35)
+            self.next_wander = now + (random.uniform(3, 6) if self.roam == "corner" or self.working else random.uniform(15, 35))
         elif (not self.oneshot and self.base == "idle" and now > self.next_fidget and not self.drag and not self.target
               and not (self.bubble and now < self.bubble[1]) and not (self.thought and now < self.thought[1])):
             self.fidget()
@@ -702,15 +751,19 @@ class Nova:
             at = now * self.sp.fps * 1.3
         else:
             name, at = self.base, now * self.sp.fps
+            if name in ("idle", "think", "talk") and self.at_desk(now):
+                name = "work"
         n = self.count(name)
         idx = int(at) % n
         move = self.move_def(name[5:]) if name.startswith("move:") else None
         talk = self.talk_energy(now)
         # Grooving to the laptop's music: only while standing about (not talking, walking, napping or reacting).
         phase = self.ears.beat.phase(now) if not (talk is not None or moving or self.asleep or self.oneshot
-                                                  or self.base != "idle") else None
+                                                  or self.base != "idle" or name == "work") else None
         groove = {"phase": round(phase, 3), "amp": round(self.ears.beat.music["amp"], 2)} if phase is not None else None
-        self.want = {"name": name, "t": (at % n) / n if n > 1 else 0, "move": move, "talk": talk, "groove": groove}
+        listen = {"hearing": self.hearing} if now < self.listen_until else None
+        self.want = {"name": name, "t": (at % n) / n if n > 1 else 0, "move": move, "talk": talk, "groove": groove,
+                     "listen": listen}
         self.music_dance(now)
 
         flip = self.facing_left if name in ("walk", "point", "carry") else False
@@ -737,9 +790,11 @@ class Nova:
         if self.thought and now >= self.thought[1]:
             self.thought = None
         img, live = self.frame_image(name, idx, flip)
+        if not live and now < self.listen_until:      # the live renderer draws her ear waves itself
+            img = self.ear_waves(img, now)
         if self.bubble or self.thought:       # speaking beats thinking: the cloud waits under the speech bubble
             text, thought = (self.bubble[0], False) if self.bubble else (self.thought[0], True)
-            canvas, xoff, yoff = self.compose_bubble(img, text, thought)
+            canvas, xoff, yoff = self.compose_bubble(img, text, thought, self.pos[0] - fx)
             data, w, h = premultiplied_bgra(canvas), canvas.width, canvas.height
         elif live or name.startswith("move:"):     # not one of the cached sprite pictures
             data, w, h, xoff, yoff = premultiplied_bgra(img), sw, sh, 0, 0
@@ -749,23 +804,49 @@ class Nova:
         y = round(self.pos[1] - yoff - fy)
         self.blit(data, w, h, x, y)
 
-    def compose_bubble(self, frame, text, thought=False):
+    def ear_waves(self, frame, now):
+        """Sprite version of the listening sign: ripples of glowing arcs at both headphone cups."""
+        img = frame.copy()
+        g = ImageDraw.Draw(img)
+        w, h = img.size
+        speed, strength = (2.2, 1.0) if self.hearing else (0.9, 0.8)
+        for cx, (a0, a1) in ((0.79 * w, (-45, 45)), (0.21 * w, (135, 225))):
+            cy = 0.46 * h
+            for i in range(3):
+                ph = (now * speed - i / 3) % 1
+                r = w * (0.035 + 0.06 * ph)
+                alpha = int(255 * (1 - ph) * strength)
+                g.arc((cx - r, cy - r, cx + r, cy + r), a0, a1, fill=(110, 231, 249, alpha), width=max(2, round(w / 90)))
+        return img
+
+    def compose_bubble(self, frame, text, thought=False, sx=None):
         """Her frame with a bubble above it: a speech bubble with a pointed tail, or (thought=True) a thought cloud -
-        rounder, tinted, with little circles rising from her head instead of a tail."""
+        rounder, tinted, with little circles rising from her head instead of a tail.
+        sx = where her frame's left edge is on the screen: the bubble slides sideways to stay fully on the screen
+        (she lives at the right edge), while its tail keeps pointing at her."""
         text = textwrap.fill(text, 30)
         d = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
         l, t, r, b = d.multiline_textbbox((0, 0), text, font=self.font, spacing=4)
         pad = 14 if thought else 12
         bw, bh = r - l + pad * 2, b - t + pad * 2
         tail = 22 if thought else 14
-        cw = max(frame.width, bw + 4)
         ch = frame.height + bh + tail
+        fw = frame.width
+        if sx is None:
+            sx = 0
+            left, right = -10 ** 6, 10 ** 6
+        else:
+            left, _, right, _ = work_area()
+        bub_left = sx + (fw - bw) / 2                                    # centred over her ...
+        bub_left = max(min(bub_left, right - 6 - bw), left + 6)          # ... unless that runs off the screen
+        canvas_left = min(sx, bub_left)
+        cw = int(max(sx + fw, bub_left + bw) - canvas_left) + 1
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        xoff = (cw - frame.width) // 2
+        xoff = int(sx - canvas_left)
         canvas.alpha_composite(frame, (xoff, bh + tail))
         g = ImageDraw.Draw(canvas)
-        bx = (cw - bw) // 2
-        mx = cw // 2
+        bx = int(bub_left - canvas_left)
+        mx = int(min(max(xoff + fw / 2, bx + 24), bx + bw - 24))         # the tail stays over her, inside the bubble
         line = (124, 92, 255, 255)
         if thought:
             fill = (236, 250, 254, 240)
@@ -801,6 +882,22 @@ class Nova:
         gdi32.SelectObject(mem, old)
         gdi32.DeleteDC(mem)
         user32.ReleaseDC(None, screen)
+
+
+def watch_parent():
+    """Close when the Nova app that started her is gone (it passes its pid in NOVA_PARENT), so a crashed or killed
+    Nova never leaves an old copy of her walking about on the screen, running yesterday's code."""
+    try:
+        parent = int(os.environ.get("NOVA_PARENT", "0"))
+    except ValueError:
+        return
+    if not parent:
+        return
+    import psutil
+    while True:
+        time.sleep(3)
+        if not psutil.pid_exists(parent):
+            os._exit(0)
 
 
 if __name__ == "__main__":

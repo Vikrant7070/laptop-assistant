@@ -147,6 +147,11 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 .card code{background:var(--panel2);padding:1px 6px;border-radius:5px;color:var(--text)}
 .opt{display:block;font-size:13px;color:var(--muted);margin:6px 0;cursor:pointer}.opt b{color:var(--text)}
 .card{max-height:92vh;overflow:auto}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px;position:sticky;top:-26px;background:var(--panel);padding:8px 0;z-index:2;border-bottom:1px solid var(--line)}
+.tabs button{background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.tabs button.on{color:var(--text);border-color:var(--accent2);background:var(--panel)}
+.pane{display:none}.pane.on{display:block}
+.card:has(.tabs){width:min(560px,94vw)}
 .sel{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px;color:var(--text);font:inherit;margin:6px 0}
 
 @media (max-width:1100px){.app{grid-template-columns:260px 1fr}aside.right{display:none}}
@@ -266,6 +271,7 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
         <button id="resetBtn" title="Start a fresh conversation">↺ New chat</button>
         <button id="kbBtn" title="What Nova knows about you, and what she has learned" onclick="location.href='/knowledge'">🧠 Knowledge</button>
         <button id="keyBtn" title="Choose model">⚙ Model</button>
+        <button id="quitBtn" title="Shut Nova down completely (windows, 3D Nova, listening, tray icon)">⏻ Quit</button>
       </div>
     </header>
     <div id="earLine" style="display:none;padding:6px 22px;font-size:12.5px;color:var(--accent2);border-bottom:1px solid var(--line)"></div>
@@ -295,6 +301,16 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
       <button class="yes" id="retry">Retry</button>
     </div>
     <div id="pick" style="display:none">
+<div class="tabs" id="setupTabs">
+<button type="button" data-tab="brain" class="on">🧠 Brain</button>
+<button type="button" data-tab="access">🔐 Permissions</button>
+<button type="button" data-tab="senses">👀 Senses</button>
+<button type="button" data-tab="nova">🎭 Nova</button>
+<button type="button" data-tab="alerts">🔔 Alerts</button>
+<button type="button" data-tab="phone">📱 Phone</button>
+<button type="button" data-tab="tools">🔌 Connectors</button>
+</div>
+<div class="pane on" data-pane="brain">
       <p style="margin-bottom:2px"><b>Who thinks for me?</b></p>
       <select id="provider" class="sel">
         <option value="ollama">💻 Local model (Ollama) - free, stays on this laptop</option>
@@ -322,20 +338,72 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
         <option value="high">🧠 High - reasons step by step (slower, more tokens)</option>
         <option value="max">🔥 Max - the model's deepest reasoning (slowest, most tokens)</option>
       </select>
-      <p class="mood" style="margin:2px 0 0">Used by the cloud brain (Gemini, ChatGPT, Claude); a local thinking model also thinks on High/Max. Her reasoning shows in the 💭 thinking log.</p>
+      <p class="mood" style="margin:2px 0 0">Used by the cloud brain (Gemini, ChatGPT, Claude); a local thinking model thinks only if you pick High or Max here (Auto never makes it think - that is slow on a laptop GPU). Her reasoning shows in the 💭 thinking log.</p>
       <label class="mood"><input type="checkbox" id="think"> Always let a local thinking model (e.g. DeepSeek) "think", even on Low/Auto</label>
+      <h3 style="margin-top:16px">🔀 Smart switching (local models)</h3>
+      <label class="mood" style="display:block"><input type="checkbox" id="autoRoute"> Switch to a bigger brain when a task needs it (coding, complex plans). Each switch loads a model - up to a minute or two.</label>
+      <div id="routeBox">
+        <p class="mood" style="margin:8px 0 2px">💻 Coding brain - takes over code tasks:</p><select id="coderModel" class="sel"></select>
+        <p class="mood" style="margin:8px 0 2px">🧠 Planning brain - writes a full plan for complex tasks (no tools):</p><select id="deepModel" class="sel"></select>
+        <p class="mood" style="margin:8px 0 2px">🛠 Strong tool brain - carries out long plans:</p><select id="heavyModel" class="sel"></select>
+        <p class="mood" style="margin:8px 0 2px">…when a plan has more than <input type="number" id="heavySteps" min="1" max="30" style="width:56px"> steps (otherwise the model chosen above does it).</p>
+        <p class="mood" style="margin:4px 0 0">Saved in <code>config/model_routing.json</code> (kept in git), where you can also edit the trigger words.</p>
+      </div>
+</div>
+<div class="pane" data-pane="access">
       <h3 style="margin-top:16px">How much should I ask first?</h3>
       <label class="opt"><input type="radio" name="aut" value="careful"> <b>Careful</b> - ask before anything that changes things (typing, files, windows, installs, commands)</label>
       <label class="opt"><input type="radio" name="aut" value="trusted"> <b>Trusted</b> - just do it; ask only before shutdown, uninstalling, emptying the bin or admin commands</label>
       <label class="opt"><input type="radio" name="aut" value="full"> <b>Full access</b> - never ask <span style="color:var(--warn)">(a small local model can misunderstand - use with care)</span></label>
       <label class="mood" style="display:block;margin-top:10px"><input type="checkbox" id="powerOk"> ⏻ Shut down / restart when I ask, without asking first (she closes all windows and clears notifications, then shuts down in 30 s - say "cancel shutdown" to stop)</label>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="autostart"> Start Nova with Windows (in the tray)</label>
+</div>
+<div class="pane" data-pane="senses">
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="camera"> 📷 Let Nova see me through the camera (only when I ask; photos stay in memory, never saved)</label>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="screen"> 🖥 Let Nova see my screen (only when I ask; screenshots stay in memory, never saved)</label>
       <p id="visionNote" class="mood" style="margin:4px 0 0 22px"></p>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="suggest"> 💡 Suggest things about what I'm working on (a look at my screen at most every 10 min, only while I'm active; needs 🖥 screen; the picture never leaves this laptop)</label>
+      <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="presence"> 👋 Notice when I leave and come back (after a minute without keyboard or mouse she checks the camera for about two seconds; she finds a face, she doesn't recognise who; nothing is saved)</label>
+      <label class="mood" style="display:block;margin:4px 0 0 22px"><input type="checkbox" id="presenceLock"> 🔒 …and lock the laptop when I walk away (she warns first - move the mouse to stop her)</label>
+</div>
+<div class="pane" data-pane="nova">
+      <h3 style="margin-top:16px">🧍 Where should 3D Nova stay?</h3>
+      <select id="avatarRoam" class="sel">
+        <option value="corner">📍 Bottom-right corner - she only leaves it to point at a button or move a window, then goes back</option>
+        <option value="edge">↔ Stroll along the bottom-right edge only</option>
+        <option value="free">🚶 Wander anywhere on the screen (she may cover your work)</option>
+      </select>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="sounds"> 🔊 Play a little sound with 3D Nova's reactions (giggle, claps, "hmm?"…)</label>
+</div>
+<div class="pane" data-pane="alerts">
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="notifications"> 🔔 Check my notifications and read new ones out to me</label>
+      <label class="mood" style="display:block;margin-top:6px;margin-left:22px"><input type="checkbox" id="notifSleep"> 😴 …even while Nova is asleep (off: she stays quiet while napping; they still show up in the chat)</label>
+      <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="errorHelp"> 🆘 Offer help when an app shows an error box or stops responding (no screenshots - she only reads the error message, and sends it to her brain only if I say yes)</label>
+</div>
+<div class="pane" data-pane="phone">
+      <h3 style="margin-top:16px">📱 Talk to me from your phone (Telegram)</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">1. In Telegram, message <b>@BotFather</b>, send <code>/newbot</code> and follow its steps. 2. Paste the token it gives you here. 3. Send your bot the pairing code Nova shows. Only your account can then talk to her; anything that changes things on the laptop asks you first with Yes / No buttons. Messages go through Telegram's servers.</p>
+        <input id="phoneToken" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your bot token (123456789:ABC...)">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button id="phoneSave" class="yes" style="width:auto;padding:8px 14px">Save token</button>
+          <a id="phoneNewCode" href="#" style="font-size:13px;display:none">New pairing code</a>
+          <a id="phoneUnpair" href="#" style="font-size:13px;display:none">Unpair my phone</a>
+          <a id="phoneForget" href="#" style="font-size:13px;display:none">Forget the bot</a>
+        </div>
+        <p id="phoneNote" class="mood" style="margin:6px 0 0"></p>
+        <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="phoneForward"> Send reminders and finished jobs to my phone while I'm away from the laptop</label>
+      </div>
+</div>
+<div class="pane" data-pane="tools">
+      <h3 style="margin-top:16px">🔌 Connectors (MCP servers)</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Extra tools from MCP servers (GitHub, calendars, databases…). Paste the <code>"mcpServers"</code> JSON from a server's instructions - the same format Claude Desktop uses. Add <code>"trusted": true</code> to a server to let her use it without asking; <code>"disabled": true</code> turns one off. Servers run on this laptop with your permissions, so only add ones you trust.</p>
+        <textarea id="mcpCfg" class="sel" rows="7" spellcheck="false" style="font-family:Consolas,monospace;font-size:12.5px;resize:vertical" placeholder='{"mcpServers": {"files": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/you/Documents"]}}}'></textarea>
+        <button id="mcpSave" class="yes" style="width:auto;padding:8px 14px">Save &amp; connect</button>
+        <div id="mcpStatus" class="mood" style="margin-top:6px"></div>
+      </div>
+</div>
       <button class="yes" id="saveModel" style="margin-top:12px">Save &amp; wake up Nova</button>
     </div>
     <p id="keyErr" style="color:var(--bad)"></p>
@@ -346,6 +414,10 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 const $ = s => document.querySelector(s);
 const log = $("#log"), orb = $("#orb"), input = $("#input");
 let voiceOn = true, handsFree = false, busy = false, NAME = "Nova";
+document.querySelectorAll("#setupTabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#setupTabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("#pick .pane").forEach(p => p.classList.toggle("on", p.dataset.pane === b.dataset.tab));
+});
 
 /* ---------------- capabilities panel ---------------- */
 const CAPS = [
@@ -536,7 +608,9 @@ function showOffer(o) {
   const d = document.createElement("div"); d.className = "confirm";
   d.innerHTML = `<button class="yes">${esc(o.label || "Show it")}</button><button class="no">Not now</button>`;
   const go = async show => { d.querySelectorAll("button").forEach(b => b.disabled = true); d.style.opacity = .6;
-    try { const j = await api("/api/offer", {show, id: o.id}); add("nova", j.reply); } catch (e) { add("err", e.message); } };
+    if (o.help && show) { add("me", o.label || "Help me"); return handle(api("/api/help", {yes: true, id: o.id})); }   // 🆘 she works on it
+    try { const j = await api(o.help ? "/api/help" : "/api/offer", o.help ? {yes: false, id: o.id} : {show, id: o.id}); add("nova", j.reply); }
+    catch (e) { add("err", e.message); } };
   d.querySelector(".yes").onclick = () => go(true); d.querySelector(".no").onclick = () => go(false);
   log.append(d); log.scrollTop = 1e9;
 }
@@ -605,6 +679,11 @@ $("#handsBtn").onclick = async e => {
 };
 $("#resetBtn").onclick = async () => { await api("/api/reset"); log.innerHTML = ""; thoughtBox = null; hideCloud(); greet(); };
 $("#keyBtn").onclick = async () => openSetup(await loadStatus());
+$("#quitBtn").onclick = async () => {
+  if (!confirm("Shut Nova down completely? She stops listening, 3D Nova and the tray icon go away. Start her again with \"Start Nova.bat\".")) return;
+  try { await api("/api/quit", {}); } catch (e) {}
+  add("nova", "Bye! Shutting down completely 👋");
+};
 $("#setup").onclick = e => { if (e.target.id === "setup" && window.__ready) $("#setup").classList.remove("show"); };
 /* ---- brain choice: local Ollama model, or a cloud model with the user's own API key ---- */
 let st = null;
@@ -664,6 +743,16 @@ $("#forgetKey").onclick = async e => {
   await api("/api/cloud/key", {provider: p, key: ""});
   st.keys[p] = false; keyPlaceholder(p); fillCloud([], ""); $("#cloudNote").textContent = "Key forgotten.";
 };
+function fillRouting(s) {
+  const r = s.routing || {}, names = s.models || [];
+  $("#autoRoute").checked = r.auto_route !== false; $("#heavySteps").value = r.heavy_steps || 6;
+  for (const [id, key] of [["coderModel", "coder_model"], ["deepModel", "deep_model"], ["heavyModel", "heavy_model"]]) {
+    const want = r[key] || "", list = names.includes(want) || !want ? names : [want, ...names];   // keep a chosen model that isn't installed visible
+    $("#" + id).innerHTML = list.map(m => `<option ${m === want ? "selected" : ""}>${esc(m)}</option>`).join("");
+  }
+  $("#routeBox").style.opacity = $("#autoRoute").checked ? 1 : .5;
+}
+$("#autoRoute").onchange = () => { $("#routeBox").style.opacity = $("#autoRoute").checked ? 1 : .5; };
 function openSetup(s) {
   st = s;
   $("#keyErr").textContent = "";
@@ -677,15 +766,55 @@ function openSetup(s) {
       : `<option value="">No models yet - run: ollama pull ${esc(s.default_model)}</option>`;
     $("#toolNote").textContent = s.ready ? (s.tools ? "✓ This model supports tool calling." : "This model has no native tool calling - I'll use a text-based fallback (works, but less reliably).") : "";
     $("#think").checked = s.think; $("#autostart").checked = s.autostart; $("#camera").checked = s.camera; $("#screen").checked = s.screen;
-    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications;
+    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep;
+    $("#errorHelp").checked = s.error_help !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
     $("#visionNote").innerHTML = s.vision_model ? `Eyes: <b>${esc(s.vision_model)}</b> ✓`
       : `She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`;
     document.querySelectorAll("[name=aut]").forEach(r => r.checked = r.value === s.autonomy);
   }
+  fillRouting(s); $("#avatarRoam").value = s.avatar_roam || "corner";
   $("#reasoning").value = s.reasoning || "auto";
   $("#sounds").checked = s.reaction_sounds !== false; $("#powerOk").checked = !!s.power_ok;
   $("#setup").classList.add("show");
+  loadPhone(); loadMcp();
 }
+/* ---------------- 📱 phone + 🔌 connectors (their own Save buttons) ---------------- */
+function showPhone(p) {
+  const n = $("#phoneNote");
+  $("#phoneToken").placeholder = p.configured ? `Bot @${p.bot || "?"} saved ✓ (paste a new token to replace it)` : "Paste your bot token (123456789:ABC...)";
+  n.innerHTML = !p.configured ? "No bot yet."
+    : p.paired ? `✓ Paired with <b>${esc(p.paired_name || "your account")}</b> via <b>@${esc(p.bot)}</b>. ${p.running ? "Listening." : "Not listening."}`
+    : p.pair_code ? `Now open <b>@${esc(p.bot)}</b> in Telegram and send it this code: <b style="font-size:18px;letter-spacing:2px">${esc(p.pair_code)}</b> (works for 10 minutes)`
+    : `The pairing code expired - click "New pairing code".`;
+  if (p.note) n.innerHTML += `<br><span style="color:var(--warn)">${esc(p.note)}</span>`;
+  $("#phoneNewCode").style.display = p.configured && !p.paired ? "" : "none";
+  $("#phoneUnpair").style.display = p.paired ? "" : "none";
+  $("#phoneForget").style.display = p.configured ? "" : "none";
+  $("#phoneForward").checked = p.forward !== false;
+}
+async function loadPhone() { try { showPhone(await (await fetch("/api/phone")).json()); } catch (e) {} }
+async function phoneDo(body) {
+  try { showPhone(await api("/api/phone", body)); $("#phoneToken").value = ""; }
+  catch (e) { $("#phoneNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+$("#phoneSave").onclick = () => { const t = $("#phoneToken").value.trim(); if (t) { $("#phoneNote").textContent = "Checking the token with Telegram…"; phoneDo({token: t}); } };
+$("#phoneNewCode").onclick = e => { e.preventDefault(); phoneDo({new_code: true}); };
+$("#phoneUnpair").onclick = e => { e.preventDefault(); phoneDo({unpair: true}); };
+$("#phoneForget").onclick = e => { e.preventDefault(); phoneDo({token: ""}); };
+$("#phoneForward").onchange = () => phoneDo({forward: $("#phoneForward").checked});
+function showMcp(j) {
+  const icon = {connected: "🟢", failed: "🔴", starting: "🟡", disabled: "⚪", stopped: "⚪"};
+  $("#mcpStatus").innerHTML = (j.error ? `<span style="color:var(--bad)">${esc(j.error)}</span><br>` : "") +
+    (j.servers.length ? j.servers.map(s => `${icon[s.status] || "•"} <b>${esc(s.name)}</b> - ${esc(s.status)}` +
+      (s.tools.length ? `: ${s.tools.length} tool${s.tools.length === 1 ? "" : "s"} (${esc(s.tools.slice(0, 6).join(", "))}${s.tools.length > 6 ? "…" : ""})` : "") +
+      (s.trusted ? " · trusted" : "") + (s.error ? `<br><span style="color:var(--bad)">${esc(s.error)}</span>` : "")).join("<br>") : "No connectors yet.");
+}
+async function loadMcp() { try { const j = await (await fetch("/api/mcp")).json(); $("#mcpCfg").value = j.config; showMcp(j); } catch (e) {} }
+$("#mcpSave").onclick = async () => {
+  $("#mcpStatus").textContent = "Connecting… (a server that npx has to download can take ~30 s the first time)";
+  try { const j = await api("/api/mcp", {config: $("#mcpCfg").value}); $("#mcpCfg").value = j.config; showMcp(j); }
+  catch (e) { $("#mcpStatus").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+};
 $("#retry").onclick = async () => { const s = await loadStatus(); s.ollama ? openSetup(s) : ($("#keyErr").textContent = "Still can't reach Ollama on port 11434."); };
 $("#saveModel").onclick = async () => {
   const p = $("#provider").value;
@@ -697,7 +826,11 @@ $("#saveModel").onclick = async () => {
       provider: p, cloud_model: p !== "ollama" ? $("#cloudModel").value : undefined,
       autonomy: document.querySelector("[name=aut]:checked")?.value, autostart: $("#autostart").checked,
       camera: $("#camera").checked, screen: $("#screen").checked,
-      suggest: $("#suggest").checked, notifications: $("#notifications").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked});
+      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
+      avatar_roam: $("#avatarRoam").value,
+      routing: {auto_route: $("#autoRoute").checked, coder_model: $("#coderModel").value, deep_model: $("#deepModel").value,
+        heavy_model: $("#heavyModel").value, heavy_steps: +$("#heavySteps").value || 6},
+      error_help: $("#errorHelp").checked, presence: $("#presence").checked, presence_lock: $("#presenceLock").checked});
     if (!s.ready) { $("#keyErr").textContent = "That model isn't available."; return; }
     $("#setup").classList.remove("show"); const first = !window.__ready; window.__ready = true; loadStatus(); if (first) greet();
   } catch (e) { $("#keyErr").textContent = e.message; }

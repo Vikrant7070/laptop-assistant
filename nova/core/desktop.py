@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -127,23 +128,33 @@ def main():
 
     server.ear_hooks.update(show=show_ear, hide=ear.hide)
     body = {"proc": None, "shown": True}
-    if not avatar_client.running():
-        pyw = Path(sys.executable).with_name("pythonw.exe")
-        body["proc"] = subprocess.Popen([str(pyw if pyw.exists() else sys.executable), "-m", "nova.avatar.avatar"], cwd=str(ROOT))
+    if avatar_client.running():      # a leftover from an earlier run would keep its old code: replace her
+        avatar_client.send("quit", timeout=2)
+        for _ in range(30):
+            if not avatar_client.running():
+                break
+            time.sleep(0.1)
+    pyw = Path(sys.executable).with_name("pythonw.exe")
+    body["proc"] = subprocess.Popen([str(pyw if pyw.exists() else sys.executable), "-m", "nova.avatar.avatar"], cwd=str(ROOT),
+                                    env={**os.environ, "NOVA_PARENT": str(os.getpid())})
     server.avatar_reload_hook = lambda: avatar_client.send("reload", timeout=5)
 
     def toggle_body(icon, _):
         body["shown"] = not body["shown"]
         avatar_client.send("show" if body["shown"] else "hide", timeout=3)
 
-    def quit_app(icon, _=None):
+    def quit_app(icon=None, _=None):
+        """Tray "Quit Nova" and the chat's ⏻ Quit button: close everything Nova runs."""
+        if quitting["v"]:
+            return
         quitting["v"] = True
-        icon.stop()
-        keyboard.unhook_all()
-        if body["proc"]:
-            body["proc"].terminate()
-        window.destroy()
-        srv.shutdown()
+        for f in (lambda: (icon or tray).stop(), keyboard.unhook_all, lambda: avatar_client.send("quit", timeout=2),
+                  lambda: body["proc"] and body["proc"].terminate(), window.destroy, srv.shutdown):
+            try:
+                f()
+            except Exception:
+                pass
+        threading.Timer(2, lambda: os._exit(0)).start()
 
     def toggle_live(icon, _):
         s = server.settings()
@@ -161,6 +172,7 @@ def main():
 
     window.events.closing += on_closing
     server.show_window_hook = show
+    server.quit_hook = quit_app
     server.ears.set_mode("typing")   # after the wake word, the app listens (silent recognizer, or the bubble)
     threading.Thread(target=server.warm_brain, daemon=True).start()   # so the first answer isn't the slow one
     if server.settings()["wake"]:
@@ -177,7 +189,7 @@ def main():
         pystray.MenuItem("Dance to music playing on the laptop", toggle_hearing,
                          checked=lambda _: server.settings().get("react_to_sound", True)),
         pystray.MenuItem("Start with Windows", toggle_autostart, checked=lambda _: server.STARTUP_LNK.exists()),
-        pystray.MenuItem("Quit Nova", quit_app),
+        pystray.MenuItem("Quit Nova (shut her down completely)", quit_app),
     ))
     tray.run_detached()
     webview.start(gui="edgechromium")
