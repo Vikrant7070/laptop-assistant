@@ -164,6 +164,8 @@ How you work:
   without reciting it, and never save passwords, PINs, ID numbers, email addresses or phone numbers.
 - Your 3D body can act things out. When the user asks you to dance, laugh, clap, spin, bow, wave and so on, call
   react - don't just say you did. (Your body also reacts by itself after you speak, so don't describe gestures.)
+  Everything you write is spoken aloud, so never write stage directions like [react: "laugh"], *laughs* or
+  *(I'm dancing)* - call react instead.
   If they ask for a move you don't have, ask whether to invent it (new_move) or do one you know.
 - You have skills: routines the user taught you, saved as files. When one clearly fits a request, its name is at
   the end of these instructions - use run_skill; if the request is only a question or merely similar, don't run it.
@@ -1274,6 +1276,18 @@ def save_task_as_skill_now(args):
     return msg
 
 
+RESEARCH_CUE = re.compile(
+    r"\b(research|look (it |that |this )?up|look into|find out|search|google|investigate|dig (in|into)|compare|"
+    r"comparison|versus|vs\.?|latest|news|current|today'?s|prices?|reviews?|best|top \d+|sources?|report|"
+    r"on the (web|internet)|online|in the background|deep dive)\b", re.I)
+
+
+def _asked_to_research(task):
+    """Did the user's request ask for research / looking something up? (Explaining a topic is not.)"""
+    goal = (task or {}).get("goal") or ""
+    return bool(RESEARCH_CUE.search(_unspoken(goal)))
+
+
 def _execute_one(c, approved, activity, model):
     check_stop()
     if is_risky(c) and not approved:
@@ -1303,6 +1317,12 @@ def _execute_one(c, approved, activity, model):
         out = queue_reaction(c["args"] or {}, activity)
     elif c["name"] == "new_move" and avatar_client.running():
         out = queue_new_move(c["args"] or {}, activity)
+    elif c["name"] == "research_in_background" and not _asked_to_research(state.get("task")):
+        # 2026-11-18: she sent "explain how airplanes fly" and "tell me fun facts" to web research - 4 Chrome jobs piled
+        # up, replies took 40-76 s and she kept interrupting with "research done". Plain questions are answered at once.
+        out = ("Not run - the user did not ask you to research or look anything up. Answer from what you know "
+               "in a few sentences now. If you're not sure of something, say so or ask them, don't guess.")
+        think("🙅 That's a plain question - I'll just answer instead of researching.", cloud_too=False)
     elif c["name"] == "go_to_sleep":
         state["sleep_after"] = True         # she says goodnight first; heard()/chat() then really end the conversation
         activity.append(FRIENDLY["go_to_sleep"])
@@ -1363,6 +1383,8 @@ class SpeechStream:
     """Collects the reply as the model writes it and sends each finished sentence to Nova's voice straight away."""
 
     END = re.compile(r"(?<=[.!?।])\s+|\n+")
+    CLOSED_STAGE = re.compile(shared.REACT_MARKER_RE.pattern + r"|\*\(.*?\)\*|\(\*.*?\*\)", re.I)
+    OPEN_STAGE = re.compile(r"\[[^\]\n]*$|\*\((?:(?!\)\*)[^\n])*$|(?:^|\n)[ \t]*([*_])(?![*_\s])[^*_\n]*$")
 
     def __init__(self):
         self.buf = ""
@@ -1381,6 +1403,9 @@ class SpeechStream:
             self.buf, self.cut = self.buf[:m.start()], True       # request as "[spoken] ..."): stop there
         elif re.search(r"\[(?:c(?:h(?:e(?:c)?)?)?|s(?:p(?:o(?:k(?:e(?:n)?)?)?)?)?)?$", self.buf):
             return                                                # a half-written marker: wait for the rest
+        if self.OPEN_STAGE.search(self.buf):
+            return              # a half-written '[react: ...]' / '*(...)*' / '*italic line*': wait, so it isn't said
+        self.buf = self.CLOSED_STAGE.sub(" ", self.buf)   # whole now: drop it before it's cut into sentences
         while True:
             m = self.END.search(self.buf)
             if not m:
@@ -1443,6 +1468,10 @@ def _agent_loop(activity):
     unsaid = []      # reply text that has not been spoken yet (text spoken while it was being written isn't here)
 
     def result(reply, **extra):
+        stage = shared.stage_reaction(shared.stage_directions(reply or "")[1])   # '[react: "laugh"]' -> after_turn plays it
+        if stage:
+            extra.setdefault("stage_reaction", stage)
+        reply = re.sub(r"[ \t]{2,}", " ", shared.REACT_MARKER_RE.sub(" ", reply or "")).strip()   # ...and not on screen
         say = " ".join(unsaid).strip()
         if not say and not spoken:
             say = reply                     # e.g. the plain "Done!"
@@ -1519,6 +1548,15 @@ def _agent_loop(activity):
             task_log(f"NOVA SAYS: {text[:300]}")
         did_something = did_something or bool(calls)
         claimed_body = bool(BODY_CLAIM_RE.search(text or "")) and not state.get("react_after")
+        invent = state.get("invent")        # "make one up" - but no new_move call yet (react_after is set by new_move)
+        if invent and not calls and not nudged and not state.get("react_after"):
+            nudged = True
+            think(f"🙈 I said I'd make the '{invent}' move but didn't - doing it properly now.")
+            state["messages"].append({"role": "user", "content":
+                f"[note from Nova's system] You haven't made the move yet. Call new_move NOW for '{invent}': a short "
+                "name, a duration in seconds, and 4-8 keys (each {\"at\": 0..1, plus poses such as right_arm_out, "
+                "left_arm_out, lean_side, jump, head_nod}). Then say one short line."})
+            continue
         if not calls and not nudged and (claimed_body or (not did_something and PROMISE_RE.search(text or ""))):
             # Small models sometimes *say* "I'm clicking it now" without calling a tool. Make her follow through.
             nudged = True
@@ -1912,6 +1950,8 @@ def push_event(e):
 
 
 mouth.on_start = lambda words, timing="": task_log(f"VOICE starts: {words[:60]}  ({timing})")   # "she's slow / out of sync"
+mouth.on_gap = lambda secs, who, words="": task_log(f"VOICE PAUSE {secs:.1f}s mid-reply, waiting for the {who} "
+                                                    f"(before: {words[:40]})")   # brain = text late, voice = synth slow
 
 
 def speak(text):
@@ -2124,7 +2164,12 @@ def _say_final(final, activity):
 BODY_WORDS = {"dance": "dance", "dancing": "dance", "laugh": "laugh", "laughing": "laugh", "clap": "clap",
               "clapping": "clap", "applaud": "clap", "spin": "spin", "spinning": "spin", "twirl": "spin",
               "wave": "wave", "waving": "wave", "bow": "bow", "bowing": "bow", "nod": "nod", "yawn": "yawn",
-              "facepalm": "facepalm", "shrug": "confused", "jump": "happy", "jumping": "happy", "cheer": "happy"}
+              "facepalm": "facepalm", "shrug": "confused", "jump": "happy", "jumping": "happy", "cheer": "happy",
+              "cry": "sad", "crying": "sad", "giggle": "laugh", "hug": "love", "blush": "love", "gasp": "surprised",
+              "stretch": "yawn"}
+STYLE_WORDS = r"\b(desi|indian|bollywood|punjabi|funky|crazy|silly|fancy|wild|cute|funny|cool|gangnam|hip hop)\b"
+DANCE_NAMES = ["thumka", "bhangra", "garba", "dandiya", "kathak", "ghoomar", "lavani", "nagin", "robot", "moonwalk",
+               "macarena", "twerk", "floss", "breakdance", "salsa", "tango", "waltz", "ballet", "disco", "bollywood"]
 DANCE_WORDS = r"(dance|dancing|move|moves|step|steps|thumka|jig|twerk|moonwalk|pose|routine|groove|nachna|naach|nach)"
 _NAME = r"(?:hey |hi |ok |okay )?(?:nova|novah|noah|nover|nava|nowa|sophia)"
 _BODY_POLITE = re.compile(rf"^\W*(?:{_NAME}\W+)?(?:(?:no|nope|nah|arey|arre|yaar|oh)\W+)*|(?:\W+{_NAME})?\W*$", re.I)
@@ -2177,6 +2222,11 @@ def body_command(text):
                 task["tools"] = list(task["tools"]) + ["new_move"]
             state["messages"][-1]["content"] += (f"\n[note from Nova's system: they want you to invent the move "
                                                  f"'{asked['what']}' now with new_move, then say one short line]")
+            state["invent"] = asked["what"]
+            try:        # designing the poses takes the brain ~20 s: say something at once instead of going quiet
+                mouth.say(random.choice(("Okay, let me think of one.", "Alright, give me a moment to make it up.")))
+            except Exception:
+                pass
             return None                       # the brain designs the move
         if re.search(r"\b(usual|normal|regular|old|known|dance|that one|the one you know)\b", t, re.I):
             t = "dance"
@@ -2196,7 +2246,13 @@ def body_command(text):
                                                                   else (2 if re.search(r"\btwice\b", t, re.I) else None))
         name = _known_move(what)
         if not name:
-            if not (m.group("verb") and re.fullmatch(rf"(?:[a-z']+ ){{0,3}}{DANCE_WORDS}", what, re.I)):
+            import difflib
+            words = what.lower().split()
+            looks_like_move = (
+                re.fullmatch(rf"(?:[a-z']+ ){{0,3}}{DANCE_WORDS}", what, re.I)      # "robot dance", "thumka"
+                or (len(words) <= 3 and re.search(STYLE_WORDS, what, re.I))          # "desi dunca" (misheard "thumka")
+                or any(difflib.get_close_matches(w, DANCE_NAMES, 1, 0.7) for w in words))   # "bangra", "roboto"
+            if not (m.group("verb") and looks_like_move):
                 return None                  # not "do a <something> dance" ("play dance songs"): the brain handles it
             reply = (f"I don't know a {what} yet. Should I make one up, or do my usual dance?")
             state["body_ask"] = {"what": what, "at": time.time()}
@@ -2281,6 +2337,7 @@ def answer(text, quiet=False, remote=False):
         stop_flag.clear()           # a Stop pressed for the last request doesn't cancel this one
         state["remote"] = remote
         state.pop("sleep_after", None)
+        state.pop("invent", None)
         _cap_history()
         n, old_pending = len(state["messages"]), state["pending"]
         activity = []
@@ -2579,6 +2636,13 @@ def after_turn(user_text, out):
         clean_text = _unspoken(user_text)
         corrected = bool(CORRECTION_RE.search(clean_text))
         asked = state.pop("react_after", None)      # the brain's own pick (react tool) wins over the automatic one
+        state.pop("invent", None)
+        stage = out.get("stage_reaction") or shared.stage_reaction(shared.stage_directions(out.get("reply") or "")[1])
+        if not asked and stage:      # she wrote '[react: "laugh"]' / '*spins*' instead of calling react: do it
+            name = tools.reaction_name(stage)
+            if name in REACTIONS or name in body_module.load_moves():
+                task_log(f"STAGE DIRECTION without react -> playing {name}")
+                asked = {"name": name, "repeat": None}
         if not asked:      # she still only *said* she's dancing (even after the nudge): make her words true
             claims = list(BODY_CLAIM_RE.finditer(out.get("reply") or ""))
             claim = bool(claims)
@@ -2749,7 +2813,9 @@ def silent_loop():
                 break
             if kind == "text":
                 listen_state["single"] = False
-                avatar_client.send("say", text=f"“{text}”", secs=4, timeout=2)
+                # (kept up until her own first spoken sentence replaces it - Mouth._bubble)
+                avatar_client.send("say", text=f"“{text}”", secs=30, timeout=2)
+                task_log(f"HEARD {text[:60]!r} ({getattr(transcriber, 'timing_note', lambda: '')()})")
                 heard(text, via="silent")
             elif kind in ("silence", "unclear"):
                 rejected = getattr(transcriber, "rejected", "")
@@ -2888,6 +2954,7 @@ def heard(text, via="bubble"):
     text = text.strip()
     convo["last_heard"] = time.time()
     ears._note(f"heard: {text}"[:160])
+    push_event({"me": text})            # in the chat at once - not only after her answer (that can take 20 s)
     if wants_sleep(text):
         go_to_sleep("asked")
         return
@@ -2895,13 +2962,13 @@ def heard(text, via="bubble"):
     if help_first():                   # "yes" right after "Notepad shows an error - want me to help?"
         helped = take_help(text)
         if helped is not None:
-            push_event({"me": text, **helped})
+            push_event(dict(helped))
             if via != "silent":
                 ear_listen_after_speech() if convo["on"] else ear_close()
             return
     said = take_offer(text)            # "yes" right after "your email is ready - want to see it?"
     if said is not None:
-        push_event({"me": text, "reply": said})
+        push_event({"reply": said})
         announce(said)
         if via != "silent":
             ear_listen_after_speech() if convo["on"] else ear_close()
@@ -2916,7 +2983,9 @@ def heard(text, via="bubble"):
     finally:
         convo["thinking"] = False
     convo["asked"] = time.time() if str(out.get("say") or out.get("reply") or "").rstrip().endswith("?") else 0.0
-    push_event({"me": text, **out})   # shows up in the chat page's history too
+    if not (out.get("say") or out.get("reply")) and not mouth.busy():
+        avatar_client.send("say", text="", timeout=2)       # nothing was said back: take her "heard" bubble down
+    push_event(dict(out))             # shows up in the chat page's history too (what was said went in at the top)
     ears._note(f"answered: {out.get('reply') or out.get('error', '')}"[:160])
     if status != 200:     # (the reply itself was already said and shown by answer())
         announce("Sorry, my brain isn't answering. Is Ollama running?")
@@ -2953,6 +3022,7 @@ if whisper:
 else:
     ears = voice.Ears(mouth, on_voice)
 ears.on_wake = on_wake
+ears.log = task_log
 ears.on_name = lambda: wake_body()      # (defined below)
 ears.on_sleep = lambda: go_to_sleep("asked")
 

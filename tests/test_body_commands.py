@@ -10,9 +10,9 @@ S = "[spoken; speech recognition may have misheard words] "
 @pytest.fixture
 def body(monkeypatch):
     monkeypatch.setattr(app.avatar_client, "running", lambda: True)
-    monkeypatch.setattr(app.body_module, "load_moves", lambda: {"bhangra_bounce": {}, "star_jump": {}})
+    monkeypatch.setattr(app.body_module, "load_moves", lambda: {"bhangra_bounce": {}, "star_jump": {}, "salute": {}})
     from nova.avatar import body as b
-    monkeypatch.setattr(b, "load_moves", lambda: {"bhangra_bounce": {}, "star_jump": {}})
+    monkeypatch.setattr(b, "load_moves", lambda: {"bhangra_bounce": {}, "star_jump": {}, "salute": {}})
     for k in ("react_after", "body_ask", "remote"):
         app.state.pop(k, None)
     app.state["messages"] = [{"role": "user", "content": "x"}]
@@ -30,6 +30,9 @@ def body(monkeypatch):
     ("clap twice", "clap", 2),
     ("spin three times", "spin", 3),
     ("can you laugh", "laugh", None),
+    ("can you cry", "sad", None),
+    ("give me a hug", "love", None),
+    ("do a salute", "salute", None),
     ("do the bhangra", "bhangra_bounce", None),
     ("do a star jump", "star_jump", None),
     (S + "You are not dancing, Noah.", "dance", None),
@@ -45,7 +48,7 @@ def test_plain_body_requests_are_played(body, text, name, times):
 @pytest.mark.parametrize("text", [
     "open chrome", "what's the time", "dance music on youtube please play it now",
     "play some dance songs", "I am not dancing today", "can you search for salsa classes near me",
-    "you are not listening", "take a screenshot",
+    "you are not listening", "take a screenshot", "hello", "hi nova", "bye", "thank you",
 ])
 def test_other_requests_go_to_the_brain(body, text):
     assert app.body_command(text) is None
@@ -96,3 +99,54 @@ def test_go_back_to_sleep_is_understood():
     from nova.audio import voice
     assert app.wants_sleep(S + "Noah, go back to sleep.")
     assert voice.EARS_SLEEP_RE.search("noah, go back to sleep.")
+
+
+def test_misnamed_tool_argument_is_mapped(monkeypatch):
+    """'research_in_background {"query": ...}' failed with 'missing topic' (2026-11-18): one wrong name, one missing."""
+    from nova.actions import tools
+    got = {}
+    monkeypatch.setitem(tools.FUNCS, "research_in_background",
+                        lambda topic, focus="", kind="general", max_sources=3: got.update(topic=topic) or "ok")
+    assert tools.run_tool("research_in_background", {"query": "history of tea in India"}) == "ok"
+    assert got == {"topic": "history of tea in India"}
+
+
+def test_emoji_glue_and_flags_are_not_spoken():
+    from nova.audio import voice
+    t = voice._clean_for_speech('Tea came with the British 🇬🇧. Who knows? 🤷‍♂️ [react: "laugh"] ☕️')
+    assert t == "Tea came with the British . Who knows?"
+    assert voice.RealMouth._sentences("Hi there. ‍️ !") == ["Hi there."]
+
+
+@pytest.mark.parametrize("text", ["do a desi dunca", "Do a desi thumka", "do a funky move", "perform a salsa", "do a bangra"])
+def test_misheard_or_unknown_dance_asks(body, text):
+    out = app.body_command(text)
+    assert out and out["reply"].startswith("I don't know a") and "react_after" not in app.state
+
+
+@pytest.mark.parametrize("text", ["do a backup", "do a search for cats", "do a cool search for shoes online", "show me the report"])
+def test_do_a_something_else_is_not_a_move(body, text):
+    assert app.body_command(text) is None
+
+
+@pytest.mark.parametrize("goal,allowed", [
+    ("explain how airplanes fly in six sentences", False),
+    ("tell me three fun facts about the UK", False),
+    ("what is the difference between a virus and a bacterium", False),
+    ("give me a motivational speech", False),
+    ("please research the history of tea in India", True),
+    ("look up the best laptop under 60000", True),
+    ("find out who won the match", True),
+    ("compare iphone and pixel", True),
+    ("[spoken; speech recognition may have misheard words] research tiger roars", True),
+])
+def test_plain_questions_are_not_sent_to_web_research(goal, allowed):
+    assert app._asked_to_research({"goal": goal}) is allowed
+
+
+def test_research_tool_is_refused_for_a_plain_question(monkeypatch):
+    app.state["task"] = {"goal": "explain how airplanes fly", "steps": 0, "did": [], "used": [], "tools": None}
+    ran = []
+    monkeypatch.setattr(app.tools, "run_tool", lambda n, a: ran.append(n) or "started")
+    out = app._execute_one({"name": "research_in_background", "args": {"topic": "airplanes"}}, True, [], "m")
+    assert "Not run" in out and ran == []

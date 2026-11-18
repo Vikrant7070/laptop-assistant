@@ -2727,7 +2727,13 @@ def run_tool(name, args):
     try:
         import inspect
         allowed = inspect.signature(FUNCS[name]).parameters
-        args = {k: v for k, v in (args or {}).items() if k in allowed}  # local models sometimes add extras
+        args = dict(args or {})
+        extra = [k for k in args if k not in allowed]
+        missing = [k for k, p in allowed.items() if p.default is inspect.Parameter.empty and k not in args
+                   and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)]
+        if len(extra) == 1 and len(missing) == 1:     # {"query": ...} for topic: the small model misnamed the one it needs
+            args[missing[0]] = args.pop(extra[0])
+        args = {k: v for k, v in args.items() if k in allowed}  # local models sometimes add extras
         return str(FUNCS[name](**args))
     except Exception as e:
         return f"Error in {name}: {e}"

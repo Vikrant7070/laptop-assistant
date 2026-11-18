@@ -4,6 +4,7 @@ Avoids duplicating definitions across tools.py, avatar.py, desktop.py, knowledge
 """
 import ctypes
 import os
+import re
 from ctypes import wintypes
 from pathlib import Path
 
@@ -16,6 +17,49 @@ REACTIONS = (
     "laugh", "dance", "spin", "clap", "surprised", "sad", "confused", "nod", "shake",
     "facepalm", "bow", "love", "yawn", "look", "happy", "wave",
 )
+
+# ── Stage directions the brain writes instead of calling react ──
+# The small local brain writes '[react: "laugh"]', '*laughs*' or a whole line like '*(I'm dancing - desi vibes!)*'.
+# Read aloud, she *said* the reaction instead of doing it (2026-11-18). These are never spoken; the move they name
+# is played instead (app.after_turn).
+REACT_MARKER_RE = re.compile(r"\[\s*(?:react|reaction|action|gesture|emote|tool)\b[^\]\n]*\]", re.I)   # [react: "laugh"], [react, reaction=clap]
+_MARKER_NAME = re.compile(r"[:=]\s*[\"']?\s*([a-z_]+)", re.I)
+_MARKER_BARE = re.compile(r"^\[\s*[a-z]+[\s,]+[\"']?([a-z_]+)", re.I)
+STAGE_VERBS = {"laughs": "laugh", "laughing": "laugh", "giggles": "laugh", "giggling": "laugh", "chuckles": "laugh",
+               "waves": "wave", "waving": "wave", "dances": "dance", "dancing": "dance", "spins": "spin",
+               "spinning": "spin", "twirls": "spin", "twirling": "spin", "claps": "clap", "clapping": "clap",
+               "bows": "bow", "bowing": "bow", "nods": "nod", "nodding": "nod", "shrugs": "confused",
+               "yawns": "yawn", "jumps": "happy", "cheers": "happy", "smiles": "happy", "grins": "happy",
+               "facepalms": "facepalm", "gasps": "surprised", "cries": "sad", "sighs": "sad", "hugs": "love"}
+_BARE_VERBS = {"laugh": "laugh", "wave": "wave", "dance": "dance", "danced": "dance", "spin": "spin", "spun": "spin",
+               "clap": "clap", "clapped": "clap", "bow": "bow", "nod": "nod", "shrug": "confused"}   # inside *( ... )*
+_STAGE = [
+    REACT_MARKER_RE,
+    re.compile(r"\*\(.*?\)\*|\(\*.*?\*\)"),                                      # *(I'm dancing!)*
+    re.compile(r"(?m)^[ \t]*([*_])(?![*_\s])[^*_\n]+(?<![\s*_])\1[ \t]*$"),       # a whole line in *italics*
+    re.compile(r"\*(?:%s)(?:\s+[a-z]+){0,3}\*" % "|".join(STAGE_VERBS), re.I),   # *laughs* / *spins happily*
+]
+
+
+def stage_directions(text):
+    """(text without its stage directions, [the stage directions])."""
+    found = []
+    for rx in _STAGE:
+        text = rx.sub(lambda m: found.append(m.group(0)) or " ", text)
+    return text, found
+
+
+def stage_reaction(found):
+    """The move the first stage direction names ('[react: "laugh"]' -> 'laugh', '*spins*' -> 'spin'), or None."""
+    for bit in found:
+        if REACT_MARKER_RE.fullmatch(bit.strip()):
+            m = _MARKER_NAME.search(bit.strip())
+            if m:
+                return (m.group(1) or m.group(2)).lower()
+        for word in re.findall(r"[a-z]+", bit.lower()):
+            if word in STAGE_VERBS or word in _BARE_VERBS:
+                return STAGE_VERBS.get(word) or _BARE_VERBS[word]
+    return None
 
 
 def work_area():
