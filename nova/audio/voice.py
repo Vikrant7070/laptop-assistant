@@ -12,17 +12,21 @@ import time
 from pathlib import Path
 
 from nova.avatar import avatar_client
-from nova.shared import ROOT
+from nova.shared import ROOT, stage_directions
 
 PREFERRED_VOICES = ("Heera", "Zira", "Aria", "Jenny")
 ONECORE = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices"
 
 
 def _clean_for_speech(text):
+    text = stage_directions(text)[0]          # '*laughs*', '[react: "laugh"]': her body does it, she doesn't say it
     text = re.sub(r"[*_#`>|]", "", text)
     text = re.sub(r"\[spoken[^\]]*\]", "", text)
     text = re.sub(r"https?://\S+", "a link", text)
-    text = re.sub(r"[\U0001F300-\U0001FAFF☀-➿]", "", text)  # emoji
+    text = re.sub(r"[\U0001F300-\U0001FAFF\U0001F1E6-\U0001F1FF☀-➿]", "", text)  # emoji (and flags: 🇬🇧)
+    # ...and the invisible glue of combined emoji (🤷‍♂️ = shrug + joiner + ♂ + variation selector): left alone it
+    # became a "sentence" Kokoro can't say, so the slow Windows voice said it (7 s, 2026-11-18).
+    text = re.sub(r"[​-‏⁠︎️⃣]", "", text)
     return " ".join(text.split())
 
 
@@ -94,31 +98,59 @@ def _hindi_script(text):
     return re.sub(r"[A-Za-z']+", lambda m: HINGLISH_WORDS.get(m.group(0).lower(), m.group(0)), text)
 
 
-_brain_niced = {"at": 0.0, "pids": set()}
+VOICE_CUSHION = 3.0     # seconds of speech ready ahead of the speaker: below this, the voice gets the processor first
 
 
-def voice_first():
-    """Her voice goes before her brain: Ollama starts its model runner (llama-server, which does ~1/4 of the model
-    on the processor here) at ABOVE-normal priority, so it got the cores first while she was speaking. Put it below
-    normal - the user wants her to talk without pauses; slower thinking is fine. Measured 2026-11-18: a 3.6 s
-    sentence took 1.3-2.3 s to make next to the brain, 1.2-1.5 s once the brain was below normal. Ollama starts a
-    new runner when a model (re)loads, so this is checked again every 20 s, from the voice thread (cheap)."""
-    now = time.time()
-    if now - _brain_niced["at"] < 20:
-        return
-    _brain_niced["at"] = now
+class BrainBalance:
+    """Shares the processor between her voice (Kokoro) and her brain (Ollama's llama-server, which does ~1/4 of the
+    model on the processor here, and which Ollama starts at ABOVE-normal priority - so it used to win every core
+    while she spoke).
+    - The voice is about to run dry (less than VOICE_CUSHION s of speech ready) and is making the next sentence:
+      the brain drops to below normal for that moment, so she never pauses mid-reply.
+    - Otherwise (she has plenty ready, or isn't speaking) both run at normal priority, so the brain keeps writing
+      at full speed - the voice can't get far ahead anyway, it only says what the brain has written.
+    Measured 2026-11-18, 3.6 s sentence made next to a busy brain: 1.3-2.3 s at the brain's own priority, 1.2-1.5 s
+    with the brain below normal. Ollama starts a new runner when a model (re)loads, so the runner list is refreshed
+    in the background every 20 s."""
 
-    def scan():          # (listing processes takes ~50-100 ms: not in front of her sentence)
+    def __init__(self):
+        self.procs = []
+        self.low = None           # True: the brain is below normal right now
+        self.found_at = 0.0
+        self.lock = threading.Lock()
+
+    def _refresh(self):
         try:
             import psutil
-            for p in psutil.process_iter(["name"]):
-                if (p.info["name"] or "").lower() in ("llama-server.exe", "ollama_llama_server.exe") \
-                        and p.pid not in _brain_niced["pids"]:
-                    p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-                    _brain_niced["pids"].add(p.pid)
+            procs = [p for p in psutil.process_iter(["name"])
+                     if (p.info["name"] or "").lower() in ("llama-server.exe", "ollama_llama_server.exe")]
+        except Exception:
+            return
+        with self.lock:
+            new = {p.pid for p in procs} != {p.pid for p in self.procs}
+            self.procs = procs
+            if new:
+                self.low = None   # a new runner starts above normal: set it on the next call
+
+    def voice_needs_cpu(self, urgent):
+        if time.time() - self.found_at > 20:      # (listing processes takes ~50-100 ms: never in front of a sentence)
+            self.found_at = time.time()
+            threading.Thread(target=self._refresh, daemon=True).start()
+        with self.lock:
+            if self.low == urgent or not self.procs:
+                return
+            self.low = urgent
+            procs = list(self.procs)
+        try:
+            import psutil
+            level = psutil.BELOW_NORMAL_PRIORITY_CLASS if urgent else psutil.NORMAL_PRIORITY_CLASS
+            for p in procs:
+                p.nice(level)
         except Exception:
             pass
-    threading.Thread(target=scan, daemon=True).start()
+
+
+brain_balance = BrainBalance()
 
 
 class NeuralVoice:
@@ -156,7 +188,6 @@ class NeuralVoice:
 
     def synth(self, text):
         """(samples, sample_rate) for one sentence."""
-        voice_first()
         k = self.load()
         text = _hindi_script(text)
         # Clock times: "09:29" would be read "zero nine 29"; "9:00" as "nine zero zero".
@@ -209,6 +240,9 @@ class Mouth:
         self.voice_name = None
         self.neural = NeuralVoice() if NeuralVoice.available() else None
         self.on_start = None       # on_start(words, timing): she starts saying a reply (the app logs it)
+        self.on_gap = None         # on_gap(secs, "brain"|"voice", words): a pause mid-reply, and whose fault (logged)
+        self.ready_secs = 0.0      # speech made but not started yet
+        self.play_until = 0.0      # when the sentence playing now ends
         self.bubbles = True        # show each sentence in 3D Nova's speech bubble while it is spoken
         self.bubble_until = 0.0
         self.tells = queue.Queue()
@@ -226,6 +260,8 @@ class Mouth:
         with self.lock:
             self.gen += 1
             self.pending = 0
+            self.ready_secs = 0.0
+            self.play_until = 0.0
         while not self.q.empty():
             self.q.get_nowait()
         while not self.audio.empty():
@@ -265,7 +301,8 @@ class Mouth:
 
     @staticmethod
     def _sentences(text):
-        sentences = [x for x in re.split(r"(?<=[.!?।])\s+", text) if x.strip()]  # sentence by sentence so "stop" is quick
+        sentences = [x for x in re.split(r"(?<=[.!?।])\s+", text)        # sentence by sentence so "stop" is quick
+                     if re.search(r"[^\W_]", x)]                            # (nothing to say in "?!" or "…")
         # A long opening sentence is cut in two, so she starts talking after preparing only a few words (the rest is
         # prepared while the first part plays): at its first comma, or else before a joining word ("... for 25
         # minutes | without touching ...").
@@ -275,6 +312,12 @@ class Mouth:
             joiner = re.compile(r"\s(?=(?:and|but|so|because|without|while|which|then|or)\s)", re.I)
             at = comma.end() if comma and comma.end() > 8 else next(
                 (m.end() for m in joiner.finditer(first) if 25 <= m.end() <= 80), None)
+            if not at and len(first) > 70:
+                # Still long ("Tea was introduced to India by the British East India Company in the 18th century,
+                # starting..." took 3.6 s to make): a later comma, else before a preposition around 30-65 chars in.
+                comma = re.search(r"[,;:—–]\s", first[20:65])
+                prep = re.compile(r"\s(?=(?:by|in|with|for|from|to|on|at|of|into|during|after|before|through)\s)", re.I)
+                at = (comma.end() + 20) if comma else next((m.end() for m in prep.finditer(first) if 30 <= m.end() <= 65), None)
             if at:
                 sentences = [first[:at].strip(), first[at:].strip()] + sentences[1:]
         return sentences
@@ -326,11 +369,16 @@ class Mouth:
                         left = []
                         break
                     t0 = time.time()
+                    brain_balance.voice_needs_cpu(self.ahead() < VOICE_CUSHION)
                     try:
                         samples, rate = self.neural.synth(sentence)
                     except Exception:
                         left = sentences[i:]          # the natural voice failed: the Windows voice says the rest
                         break
+                    finally:
+                        brain_balance.voice_needs_cpu(False)    # sentence made: the brain gets its full share again
+                    with self.lock:
+                        self.ready_secs += len(samples) / rate
                     self.audio.put((gen, samples, rate, sentence, (said_at, t0, time.time())))
                 else:
                     left = []
@@ -389,11 +437,17 @@ class Mouth:
                 if self.pending == 0 and self.q.empty():
                     first_of_reply = True
                 continue
+            secs = len(samples) / rate
+            with self.lock:
+                self.ready_secs = max(0.0, self.ready_secs - secs)
             if gen != self.gen:
                 continue
             try:
-                secs = len(samples) / rate
                 t_play = time.time()
+                if not first_of_reply and t_play - self.play_until > 0.4 and self.on_gap:
+                    # A pause in the middle of a reply: was the text late (brain) or the sound (voice)?
+                    self.on_gap(t_play - self.play_until, "brain" if synth_at > self.play_until else "voice", words)
+                self.play_until = t_play + secs
                 # One output stream stays open between sentences: opening the sound device took ~0.33 s every time,
                 # which delayed each sentence and left a gap between them.
                 if stream is None or stream.samplerate != rate or not stream.active:
@@ -432,6 +486,10 @@ class Mouth:
                 self._done_one(gen)
             if self.audio.empty() and self.pending == 0 and self.q.empty():
                 self._maybe_idle()
+
+    def ahead(self):
+        """Seconds of speech ready to come out: the rest of this sentence + the ones already made."""
+        return max(0.0, self.play_until - time.time()) + self.ready_secs
 
     def busy(self):
         return (self.speaking or self.pending > 0 or not self.q.empty() or not self.audio.empty()
@@ -841,7 +899,8 @@ class WhisperTranscriber:
         self.using = None      # which model ended up loaded, e.g. "large-v3-turbo on cuda"
         self.language = "en"   # what the last sentence was taken as: "en", or "hi" for Hindi/Hinglish
         self.last_audio, self.seconds = None, 0.0
-        self.skip = 0          # how many of WHISPER_CHOICES have been given up on
+        self.timing = {}       # seconds spent on each part of the last recording (pause, vad, gpu_wait, decode)
+        self.skip = 0         # how many of WHISPER_CHOICES have been given up on
         # Set by the app to mouth.busy: True while Nova is talking (or just stopped, or a reaction sound plays).
         # Whatever the microphone takes in then is her own voice, never a request - it is thrown away.
         self.self_voice = None
@@ -883,8 +942,16 @@ class WhisperTranscriber:
         return self.model
 
     def _decode(self, audio, hint, force=None):
+        t0 = time.time()
         with self.gpu:
+            self.timing["gpu_wait"] = time.time() - t0     # (waiting for the graphics card: the brain or a peek had it)
             return self._decode_now(audio, hint, force)
+
+    def timing_note(self):
+        """The last recording's delays in one line, for the task log."""
+        t = self.timing
+        return (f"end pause {t.get('pause', 0.0):.2f}s, vad {t.get('vad', 0.0):.2f}s, "
+                f"gpu wait {t.get('gpu_wait', 0.0):.2f}s, decode {t.get('decode', 0.0):.2f}s, {self.using}")
 
     def _decode_now(self, audio, hint, force=None):
         model = self.load()
@@ -894,8 +961,12 @@ class WhisperTranscriber:
             if dict(probs).get("en", 0.0) < ENGLISH_SURE:
                 language, hint = "hi", HINGLISH_HINT
         self.language = language
-        segs, _ = model.transcribe(audio, language=language, beam_size=3, vad_filter=True,
-                                   initial_prompt=hint, condition_on_previous_text=False)
+        # Quick path: _transcribe has already checked with Silero VAD that this is speech (no second pass), greedy
+        # decoding (beam 1) is much faster than beam 3, and nothing here uses segment times. The rare re-reading
+        # as plain English (force) keeps the careful settings.
+        segs, _ = model.transcribe(audio, language=language, beam_size=3 if force else 1, vad_filter=False,
+                                   initial_prompt=hint, condition_on_previous_text=False,
+                                   without_timestamps=True)
         # (the reading happens here) compression_ratio > 2.4 = the same words over and over ("open, open, open")
         return [s for s in segs if s.no_speech_prob < 0.6 and s.avg_logprob > -1.2 and s.compression_ratio < 2.4]
 
@@ -965,6 +1036,7 @@ class WhisperTranscriber:
                     break
                 if abort and abort():
                     return None
+        self.timing = {"pause": quiet}      # (how much quiet was waited out at the end: the recording's own delay)
         n_voiced = round(voiced / self.BLOCK)
         self.voice_level = float(np.sqrt(power / n_voiced)) if n_voiced else 0.0
         self.noise = float(floor or 0.0)
@@ -981,9 +1053,12 @@ class WhisperTranscriber:
         audio = (audio * min(0.9 / peak, 60.0)).astype(np.float32)   # bring a quiet microphone up to a normal level
         self.last_audio, self.seconds = audio, len(audio) / self.RATE  # (in memory only, replaced by the next one)
         # A second opinion on "is this a voice?" (keyboard clicks and bumps are not) before the slow part.
+        t0 = time.time()
         speech = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=500))
+        self.timing["vad"] = time.time() - t0
         if sum(s["end"] - s["start"] for s in speech) < 0.25 * self.RATE:
             return ""
+        t0 = time.time()
         try:
             segs = self._decode(audio, hint)
         except Exception:
@@ -992,6 +1067,7 @@ class WhisperTranscriber:
             # The graphics card gave up mid-sentence (usually: out of memory). Drop to the next model and redo it.
             self.model, self.skip = None, self.skip + 1
             segs = self._decode(audio, hint)
+        self.timing["decode"] = time.time() - t0 - self.timing.get("gpu_wait", 0.0)
         text = " ".join(s.text.strip() for s in segs).strip()
         if text.lower() in WHISPER_JUNK or " ".join(_words(text)) in JUNK_WORDS:
             return ""
@@ -1121,12 +1197,13 @@ class WhisperEars(_EarsBase):
         self.on_sleep = None
         self.paused = None         # set by the app: True while it is already listening for a request itself
         self.on_name = None        # set by the app: her name was just heard - get up now if she's napping
+        self.log = None            # set by the app: writes a line to the task log
         self.quiet_until = 0.0
         self.online_off = False
         self.skip_next = False
         self.running = False
         self.thread = None
-        self.early = 0.0           # when her name was last spotted mid-sentence (the bubble is already showing)
+        self.early = 0.0          # when her name was last spotted mid-sentence (the bubble is already showing)
         self.early_bare = False    # ...and nothing but her name had been said at that point
         self.peeking = False
 
@@ -1252,7 +1329,9 @@ class WhisperEars(_EarsBase):
             self._note(f"heard 'Hey Nova' + request (mic level {self.w.level:.2f}): {rest}"[:160])
             if not early:
                 avatar_client.send("wave", quiet=True, timeout=2)
-            avatar_client.send("say", text=f"“{rest}”", secs=4, timeout=2)
+            avatar_client.send("say", text=f"“{rest}”", secs=30, timeout=2)   # (her first spoken sentence replaces it)
+            if self.log:
+                self.log(f"HEARD {rest[:60]!r} ({self.w.timing_note()})")
             threading.Thread(target=self.on_text, args=(rest,), daemon=True).start()
         else:
             self._note(f"heard 'Hey Nova' (mic level {self.w.level:.2f})")
