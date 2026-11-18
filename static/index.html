@@ -397,6 +397,34 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
         <p id="phoneNote" class="mood" style="margin:6px 0 0"></p>
         <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="phoneForward"> Send reminders and finished jobs to my phone while I'm away from the laptop</label>
       </div>
+      <h3 style="margin-top:16px">📧 Gmail (read-only)</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Nova can look through your mail ("any important emails today?") but can never send, delete or change anything. Sign-in is Google's own page; she never sees your password. Steps to get the two values below are in the README ("Connect Gmail").</p>
+        <input id="gmClient" autocomplete="off" spellcheck="false" placeholder="Google client ID (….apps.googleusercontent.com)">
+        <input id="gmSecret" type="password" autocomplete="off" spellcheck="false" placeholder="Google client secret">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button id="gmSave" class="yes" style="width:auto;padding:8px 14px">Save</button>
+          <button id="gmConnect" style="width:auto;padding:8px 14px;display:none">Connect Gmail</button>
+          <a id="gmDisconnect" href="#" style="font-size:13px;display:none">Disconnect</a>
+        </div>
+        <p id="gmNote" class="mood" style="margin:6px 0 0"></p>
+        <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="emailCloud"> ☁️ Let the cloud brain read my mail too (off: only the local brain on this laptop ever sees it)</label>
+      </div>
+      <h3 style="margin-top:16px">📲 Nova on my iPhone (home-screen app)</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Chat with Nova from your iPhone, anywhere. It is a web page you add to your home screen; Nova stays on this laptop and the phone is only a window. It is reached through <b>Tailscale</b> (a private network just for your own devices) - nothing is opened to the internet. Steps are in <code>docs/iphone-app.md</code>. Anything that changes the laptop asks you Yes / No on the phone first.</p>
+        <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="mobOn"> Switch on the iPhone app</label>
+        <div id="mobBody" style="display:none">
+          <p id="mobUrl" class="mood" style="margin:6px 0 0"></p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button id="mobCode" class="yes" style="width:auto;padding:8px 14px">New pairing code</button>
+            <span id="mobCodeShow" style="font-size:22px;letter-spacing:3px;font-weight:700"></span>
+          </div>
+          <p class="mood" style="margin:6px 0 0">Paired phones:</p>
+          <div id="mobDevices" class="mood"></div>
+        </div>
+        <p id="mobNote" class="mood" style="margin:6px 0 0"></p>
+      </div>
 </div>
 <div class="pane" data-pane="forms">
       <h3 style="margin-top:16px">📝 My details for forms</h3>
@@ -778,7 +806,7 @@ function openSetup(s) {
       : `<option value="">No models yet - run: ollama pull ${esc(s.default_model)}</option>`;
     $("#toolNote").textContent = s.ready ? (s.tools ? "✓ This model supports tool calling." : "This model has no native tool calling - I'll use a text-based fallback (works, but less reliably).") : "";
     $("#think").checked = s.think; $("#autostart").checked = s.autostart; $("#camera").checked = s.camera; $("#screen").checked = s.screen;
-    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep; $("#phoneCalls").checked = s.phone_calls !== false; $("#phoneCloud").checked = !!s.phone_notes_cloud;
+    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep; $("#phoneCalls").checked = s.phone_calls !== false; $("#phoneCloud").checked = !!s.phone_notes_cloud; $("#emailCloud").checked = !!s.email_cloud;
     $("#errorHelp").checked = s.error_help !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
     $("#visionNote").innerHTML = s.vision_model ? `Eyes: <b>${esc(s.vision_model)}</b> ✓`
       : `She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`;
@@ -788,7 +816,7 @@ function openSetup(s) {
   $("#reasoning").value = s.reasoning || "auto";
   $("#sounds").checked = s.reaction_sounds !== false; $("#powerOk").checked = !!s.power_ok;
   $("#setup").classList.add("show");
-  loadPhone(); loadMcp(); loadForms();
+  loadPhone(); loadGmail(); loadMobile(); loadMcp(); loadForms();
 }
 /* ---------------- 📱 phone + 🔌 connectors (their own Save buttons) ---------------- */
 function showPhone(p) {
@@ -814,6 +842,50 @@ $("#phoneNewCode").onclick = e => { e.preventDefault(); phoneDo({new_code: true}
 $("#phoneUnpair").onclick = e => { e.preventDefault(); phoneDo({unpair: true}); };
 $("#phoneForget").onclick = e => { e.preventDefault(); phoneDo({token: ""}); };
 $("#phoneForward").onchange = () => phoneDo({forward: $("#phoneForward").checked});
+/* ---------------- 📧 Gmail ---------------- */
+let gmTimer = null;
+function showGmail(g) {
+  $("#gmNote").innerHTML = (g.error ? `<span style="color:var(--bad)">${esc(g.error)}</span><br>` : "") +
+    (g.connected ? `✓ Connected${g.email ? " as <b>" + esc(g.email) + "</b>" : ""}. Read-only.`
+     : g.connecting ? "Finish signing in on Google's page in your browser…"
+     : g.configured ? "Saved. Click Connect Gmail." : "Not set up yet.");
+  $("#gmClient").placeholder = g.configured ? "Client saved ✓ (paste a new ID to replace it)" : "Google client ID (….apps.googleusercontent.com)";
+  $("#gmConnect").style.display = g.configured && !g.connected && !g.connecting ? "" : "none";
+  $("#gmDisconnect").style.display = g.connected ? "" : "none";
+  clearTimeout(gmTimer);
+  if (g.connecting) gmTimer = setTimeout(loadGmail, 2000);
+}
+async function loadGmail() { try { showGmail(await (await fetch("/api/gmail")).json()); } catch (e) {} }
+async function gmailDo(body) {
+  try { showGmail(await api("/api/gmail", body)); $("#gmSecret").value = ""; $("#gmClient").value = ""; }
+  catch (e) { $("#gmNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+$("#gmSave").onclick = () => { const i = $("#gmClient").value.trim(), s = $("#gmSecret").value.trim(); if (i && s) gmailDo({client_id: i, client_secret: s}); };
+$("#gmConnect").onclick = () => gmailDo({connect: true});
+$("#gmDisconnect").onclick = e => { e.preventDefault(); gmailDo({disconnect: true}); };
+/* ---------------- 📲 Nova on iPhone ---------------- */
+let mobTimer = null;
+function showMobile(m) {
+  $("#mobOn").checked = !!m.on;
+  $("#mobBody").style.display = m.on ? "" : "none";
+  $("#mobUrl").innerHTML = m.url
+    ? `Open <b>${esc(m.url)}</b> in Safari on your iPhone (signed in to the same Tailscale account), then Share → Add to Home Screen.`
+    : `Tailscale isn't set up on this laptop yet. Install it, then run <code>${esc(m.serve)}</code> once - the address to open on your phone appears here.`;
+  $("#mobCodeShow").textContent = m.code ? m.code.replace(/(...)(...)/, "$1 $2") : "";
+  $("#mobDevices").innerHTML = (m.devices || []).length
+    ? m.devices.map(d => `📱 <b>${esc(d.name)}</b> <a href="#" data-dev="${esc(d.id)}" style="font-size:13px">Remove</a>`).join("<br>")
+    : "None yet.";
+  document.querySelectorAll("#mobDevices a[data-dev]").forEach(a => a.onclick = e => { e.preventDefault(); mobDo({remove: a.dataset.dev}); });
+  clearTimeout(mobTimer);
+  if (m.on && m.code) mobTimer = setTimeout(loadMobile, 4000);       // the code disappears once a phone has used it
+}
+async function loadMobile() { try { showMobile(await (await fetch("/api/mobile")).json()); } catch (e) {} }
+async function mobDo(body) {
+  try { showMobile(await api("/api/mobile", body)); $("#mobNote").textContent = ""; }
+  catch (e) { $("#mobNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+$("#mobOn").onchange = () => mobDo({on: $("#mobOn").checked});
+$("#mobCode").onclick = () => mobDo({new_code: true});
 function showMcp(j) {
   const icon = {connected: "🟢", failed: "🔴", starting: "🟡", disabled: "⚪", stopped: "⚪"};
   $("#mcpStatus").innerHTML = (j.error ? `<span style="color:var(--bad)">${esc(j.error)}</span><br>` : "") +
@@ -848,7 +920,7 @@ $("#saveModel").onclick = async () => {
       provider: p, cloud_model: p !== "ollama" ? $("#cloudModel").value : undefined,
       autonomy: document.querySelector("[name=aut]:checked")?.value, autostart: $("#autostart").checked,
       camera: $("#camera").checked, screen: $("#screen").checked,
-      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, phone_calls: $("#phoneCalls").checked, phone_notes_cloud: $("#phoneCloud").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
+      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, phone_calls: $("#phoneCalls").checked, phone_notes_cloud: $("#phoneCloud").checked, email_cloud: $("#emailCloud").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
       avatar_roam: $("#avatarRoam").value,
       routing: {auto_route: $("#autoRoute").checked, coder_model: $("#coderModel").value, deep_model: $("#deepModel").value,
         heavy_model: $("#heavyModel").value, heavy_steps: +$("#heavySteps").value || 6},

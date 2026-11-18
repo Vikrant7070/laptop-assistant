@@ -115,6 +115,30 @@ Message Nova from your phone, like "what's my battery?", "is the research done?"
 - Commands: `/status` (laptop health), `/stop` (stop what she's doing), `/help`.
 - **Privacy:** these messages go through Telegram's servers. Screenshots and camera photos are never sent.
 
+## Gmail: she can read your mail (read-only)
+
+Ask "any important emails today?", "summarise the email from my college" or "did Amazon send the delivery update?".
+Nova can search and read mail. She **cannot** send, delete or change anything (the only permission asked for is
+`gmail.readonly`; writing an email is still the separate `draft_email` job that you send yourself).
+
+One-time setup, about 5 minutes:
+
+1. Go to <https://console.cloud.google.com>, create a project called "Nova" and open **APIs & Services → Library**.
+   Search for **Gmail API** and click **Enable**.
+2. **OAuth consent screen**: user type **External**, app name "Nova", add your own address as a test user.
+   Then press **Publish app** (it stays unverified, which is fine for yourself). If you leave it in "Testing",
+   Google ends the sign-in after **7 days** and you have to connect again.
+3. **Credentials → Create credentials → OAuth client ID → Desktop app.** Copy the **client ID** and **client secret**.
+4. In Nova: ⚙ → Phone → **Gmail**, paste both, click **Save**, then **Connect Gmail**. Google's own sign-in opens in
+   your browser. Because the app is unverified, Google shows a warning: click **Advanced → Go to Nova (unsafe)** and
+   allow *"View your email messages and settings"*. Nova never sees your Google password.
+
+Privacy: the secret and the sign-in token are stored locked with Windows (only this Windows account can open them) in
+`data/gmail.json`, which is never committed. Mail is read **only by the local brain** - if a cloud brain is chosen,
+requests about email run on the local one instead - unless you tick "Let the cloud brain read my mail too". One-time
+codes and passwords inside mail are replaced with "(hidden)" before the brain or her voice get them. To stop it, click
+**Disconnect** (Google is told to drop the access), or remove Nova at <https://myaccount.google.com/permissions>.
+
 ## Connectors (MCP servers)
 Nova can use tools from [Model Context Protocol](https://modelcontextprotocol.io) servers, such as GitHub, calendars, databases or file servers. Paste the server's `"mcpServers"` JSON (the same format Claude Desktop uses) into **⚙ Model → 🔌 Connectors** and click **Save & connect**. It's saved in `data/mcp.json`.
 ```json
