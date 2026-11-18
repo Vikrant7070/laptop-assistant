@@ -55,7 +55,7 @@ def _unspoken(text):
 
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "notif_muted": [], "suggest": False,
+         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "notif_muted": [], "phone_calls": True, "phone_notes_cloud": False, "suggest": False,
          "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True,
          "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
          "skill_screen_checks": False, "skill_teach": True}
@@ -1703,7 +1703,8 @@ def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
                    autonomy=s["autonomy"], think=s["think"], reasoning=s.get("reasoning", "auto"), camera=s["camera"], screen=s["screen"],
-                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), suggest=s.get("suggest", False), asleep=nap["asleep"],
+                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), phone_calls=s.get("phone_calls", True),
+                   phone_notes_cloud=s.get("phone_notes_cloud", False), suggest=s.get("suggest", False), asleep=nap["asleep"],
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    presence=s.get("presence", False), presence_lock=s.get("presence_lock", False),
                    error_help=s.get("error_help", True), away=presence.state["away"],
@@ -1758,7 +1759,7 @@ def setup():
             pass
         for k in router.ROUTING_KEYS:               # a copy in settings.json would override the file
             s.pop(k, None)
-    for k in ("presence", "presence_lock", "error_help", "notif_sleep"):
+    for k in ("presence", "presence_lock", "error_help", "notif_sleep", "phone_calls", "phone_notes_cloud"):
         if k in body:
             s[k] = body[k] is True
     save_settings(s)
@@ -2985,12 +2986,46 @@ coworker.configure(write=write_text, on_done=job_done, on_note=lambda t: think(t
 SECRETY = re.compile(r"\b(otp|one[- ]time|code|password|passcode|pin|verification|cvv)\b", re.I)
 
 
-def _speakable(n):
-    """A notification as she says it: one-time codes and passwords are never read out."""
-    line = notifications.describe(n, 200)
+def _hide_codes(line):
     if SECRETY.search(line):
         line = re.sub(r"\b[\dA-Z]{4,8}\b(?=[^\w]|$)", "(hidden)", line)
     return line
+
+
+def _speakable(n):
+    """A notification as she says it: one-time codes and passwords are never read out."""
+    return _hide_codes(notifications.describe(n, 200))
+
+
+# The iPhone's notifications arrive through Phone Link (notifications.py). Her BRAIN decides what each one is (a ringing
+# call, a missed call, a message) and how to say it - "Rahul is calling you" / "a call from an unknown number" - so
+# there are no names or phrases in code. Only the local brain sees them unless ⚙ allows the cloud one.
+PHONE_NOTE_SECS = 8        # how long the brain gets to phrase one phone notification before the plain text is used
+PHONE_NOTE_MAX = 4         # at most this many per burst go to the brain; the rest are read as they are
+PHONE_CALL_WAIT = 2        # a ringing call waits at most this long for her own voice to finish
+phone_seen = {}            # notification id -> when: the same toast is not announced twice
+
+
+def phone_note(n):
+    """(kind, sentence) for one iPhone notification: "call", "missed_call", "message" or "other"."""
+    s = settings()
+    fallback = _speakable(n)
+    model = brain(s) if s.get("phone_notes_cloud") else s["model"]
+    msgs = [{"role": "system", "content": notifications.PHONE_PROMPT},
+            {"role": "user", "content": notifications.phone_prompt(n)}]
+    box = {}
+
+    def work():
+        try:
+            box["text"] = llm.chat(model, msgs, [], fallback=s["model"], num_predict=80)[1]
+        except Exception as e:
+            task_log(f"PHONE NOTE: brain failed ({type(e).__name__}: {e})")
+
+    th = threading.Thread(target=work, daemon=True)
+    th.start()
+    th.join(PHONE_NOTE_SECS)
+    kind, say = notifications.parse_phone_note(box.get("text"), fallback)
+    return kind, _hide_codes(say)
 
 
 def on_notifications(items):
@@ -3000,17 +3035,49 @@ def on_notifications(items):
     items = [n for n in items if not notifications.is_muted(n, s.get("notif_muted"))]   # "don't read Claude's"
     if not items:
         return
+    now = time.time()
+    for k in [k for k, t in phone_seen.items() if now - t > 60]:
+        phone_seen.pop(k, None)
+    lines, calls, missed, brained = [], [], [], 0
     for n in items:
-        push_event({"reply": "🔔 " + _speakable(n), "kind": "notification"})
-        task_log(f"NOTIFICATION from {n['app']}")
+        if notifications.is_phone(n):
+            if n.get("id") in phone_seen:
+                continue
+            phone_seen[n.get("id")] = now
+            if brained < PHONE_NOTE_MAX:
+                kind, say = phone_note(n)
+                brained += 1
+            else:
+                kind, say = "other", _speakable(n)
+            if kind in ("call", "missed_call") and not s.get("phone_calls", True):
+                continue                                  # ⚙ "tell me about phone calls" is off
+            task_log(f"NOTIFICATION from {n['app']} ({kind})")
+            (calls if kind == "call" else lines).append(say)
+            if kind == "missed_call":
+                missed.append(say)
+        else:
+            task_log(f"NOTIFICATION from {n['app']}")
+            lines.append(_speakable(n))
+    for line in calls + lines:
+        push_event({"reply": "🔔 " + line, "kind": "notification"})
     if nap["asleep"] and not settings().get("notif_sleep", False):
         return              # napping: they're in the chat, but she only reads them out if ⚙ "…while I'm asleep" is on
-    if len(items) == 1:
-        line = "🔔 " + _speakable(items[0])
+    if calls:               # a ringing phone can't wait: not queued behind long answers, and not sent to the phone itself
+        end = time.time() + PHONE_CALL_WAIT
+        while (lock.locked() or mouth.busy()) and time.time() < end:
+            time.sleep(0.2)
+        for line in calls:
+            announce("🔔 " + line, spoken=line)
+    for line in missed:
+        tell_away(line)     # a missed call is worth knowing about when they are away from the laptop
+    if not lines:
+        return
+    if len(lines) == 1:
+        line = "🔔 " + lines[0]
     else:
-        line = f"🔔 {len(items)} new notifications. " + " … ".join(_speakable(n) for n in items[:3])
-        if len(items) > 3:
-            line += f" … and {len(items) - 3} more."
+        line = f"🔔 {len(lines)} new notifications. " + " … ".join(lines[:3])
+        if len(lines) > 3:
+            line += f" … and {len(lines) - 3} more."
     end = time.time() + 30
     while (lock.locked() or mouth.busy()) and time.time() < end:    # don't talk over her own answer
         time.sleep(0.5)

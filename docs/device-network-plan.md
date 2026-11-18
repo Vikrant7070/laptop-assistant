@@ -66,6 +66,14 @@ cluttering the screen.
    Features → Calls **off** would hide it but probably also stops the call notification — confirm with one more test
    and let the user choose.
 
+**1a findings (2026-11-18, real iPhone via Phone Link):** the iPhone must have *Show Notifications* on for the
+laptop in Settings → Bluetooth, otherwise Windows gets nothing. Then Windows reports the **missed** call as app
+`Phone Link`, title `Phone`, body `<saved contact name> Missed Call` (e.g. "Rani 2024 Missed Call"); Windows also has
+toast channels `YourPhoneCalling` and `YourPhoneNotifications_com.apple.mobilephone`. Not yet seen live: the
+*ringing* toast and an unknown-number call (the user has no unknown caller - tested with dummy text and the real
+local brain instead: ~1 s per notification, correct kinds). Still to confirm in 1e: the ringing toast reaches the
+listener.
+
 **If the listener never sees calls**, stop and report to the user; don't build 1b–1c on guesses.
 
 ### 1b. Brain-written announcements for phone notifications
