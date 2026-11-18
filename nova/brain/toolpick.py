@@ -30,6 +30,7 @@ GROUPS = [
      "list_startup_apps"},                                                                                   # apps
     {"add_note", "list_notes", "set_reminder"},
     {"read_notifications", "mute_notifications"},
+    {"check_email", "read_email", "connect_gmail"},
     {"remember_fact", "forget_fact", "update_profile", "learn_lesson", "recall_knowledge"},
     {"look_at_screen", "look_through_camera", "take_screenshot"},
     {"list_top_processes", "kill_process", "get_system_status", "network_info"},
@@ -97,6 +98,9 @@ HINTS = {
     "install_app": "install download an app program",
     "uninstall_app": "uninstall remove an app program",
     "read_notifications": "read my notifications, any new messages, what did I miss, alerts, whatsapp mail",
+    "check_email": "check my email gmail inbox unread mail any important emails today did someone email me find the email from",
+    "read_email": "read the email open that mail summarise the email what does the email say",
+    "connect_gmail": "connect gmail link my gmail sign in to gmail set up gmail for nova give nova access to my email",
     "mute_notifications": "don't read notifications from an app, stop reading ignore mute silence that app's "
                           "notifications, resume start reading unmute its notifications again",
     "draft_email": "draft write compose an email mail gmail to someone in the background",

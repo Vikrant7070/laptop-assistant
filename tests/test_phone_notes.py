@@ -134,14 +134,36 @@ def test_the_same_notification_is_said_once(brain):
     assert app.mouth.said == ["Rani is calling."]
 
 
-def test_napping_keeps_quiet_but_still_shows_it(brain):
+def test_a_ringing_call_is_said_even_in_an_idle_nap(brain):
     brain([reply("call", "Rani is calling.")])
-    app.nap["asleep"] = True
+    app.nap.update(asleep=True, reason="idle")
     try:
         app.on_notifications([RINGING])
     finally:
-        app.nap["asleep"] = False
-    assert app.mouth.said == [] and app.events[-1]["reply"] == "🔔 Rani is calling."
+        app.nap.update(asleep=False, reason=None)
+    assert app.mouth.said == ["Rani is calling."] and cues == ["happy"]
+
+
+def test_go_to_sleep_silences_calls_and_messages(brain):
+    brain([reply("call", "Rani is calling."), reply("message", "Rahul: are you coming?")])
+    app.nap.update(asleep=True, reason="asked")
+    try:
+        app.on_notifications([RINGING])
+        app.on_notifications([WHATSAPP])
+    finally:
+        app.nap.update(asleep=False, reason=None)
+    assert app.mouth.said == [] and cues == []
+
+
+def test_an_idle_nap_still_holds_back_messages_and_missed_calls(brain):
+    brain([reply("message", "Rahul: are you coming?"), reply("missed_call", "You missed Rani.")])
+    app.nap.update(asleep=True, reason="idle")
+    try:
+        app.on_notifications([WHATSAPP])
+        app.on_notifications([MISSED])
+    finally:
+        app.nap.update(asleep=False, reason=None)
+    assert app.mouth.said == []
 
 
 # ---------------------------------------------------------------- safety and fallbacks

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nova</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Nova">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#7c5cff">
+<style>
+  :root { --bg:#f6f5fb; --card:#ffffff; --ink:#1d1b26; --soft:#6d6a7c; --line:#e3e0ef; --accent:#7c5cff; --me:#7c5cff; --meink:#fff;
+          --good:#1f9d57; --bad:#d6334d; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14121c; --card:#201d2d; --ink:#f0eef9; --soft:#a29fb5; --line:#33304a; --accent:#9b84ff; --me:#7c5cff; --good:#45c982; --bad:#ff6b82; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.4 -apple-system, system-ui, "Segoe UI", sans-serif;
+         display: flex; flex-direction: column; -webkit-text-size-adjust: 100%; }
+  header { padding: calc(env(safe-area-inset-top) + 10px) 16px 10px; display: flex; align-items: center; gap: 10px;
+           background: var(--card); border-bottom: 1px solid var(--line); }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--soft); flex: none; }
+  header .dot.on { background: var(--good); } header .dot.off { background: var(--bad); }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  header button { background: none; border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+  #sub { font-size: 12px; color: var(--soft); padding: 4px 16px; min-height: 22px; }
+  #log { flex: 1; overflow-y: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 8px; -webkit-overflow-scrolling: touch; }
+  .b { max-width: 86%; padding: 9px 13px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; background: var(--card); border: 1px solid var(--line); align-self: flex-start; }
+  .b.me { background: var(--me); color: var(--meink); border-color: var(--me); align-self: flex-end; }
+  .b.err { border-color: var(--bad); color: var(--bad); }
+  .ask { align-self: stretch; background: var(--card); border: 2px solid var(--accent); border-radius: 16px; padding: 12px 14px; }
+  .ask .q { font-weight: 600; margin-bottom: 4px; } .ask .d { font-size: 13px; color: var(--soft); margin-bottom: 10px; word-break: break-word; }
+  .ask .row { display: flex; gap: 10px; }
+  .ask button { flex: 1; font-size: 18px; padding: 12px; border-radius: 12px; border: 0; color: #fff; }
+  .ask .yes { background: var(--good); } .ask .no { background: var(--bad); } .ask button:disabled { opacity: .35; }
+  .ask .done { color: var(--soft); font-size: 14px; }
+  .typing { color: var(--soft); font-size: 14px; align-self: flex-start; padding: 2px 6px; }
+  form#send { display: flex; gap: 8px; padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px); background: var(--card); border-top: 1px solid var(--line); }
+  #text { flex: 1; font-size: 17px; padding: 11px 14px; border-radius: 22px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); min-width: 0; }
+  #go, #stop { font-size: 17px; border: 0; border-radius: 22px; padding: 0 18px; background: var(--accent); color: #fff; }
+  #stop { background: var(--bad); display: none; }
+  #pair { padding: 28px 22px; display: none; flex: 1; flex-direction: column; gap: 14px; overflow-y: auto; }
+  #pair h2 { margin: 6px 0 0; } #pair p { margin: 0; color: var(--soft); }
+  #pair input { font-size: 28px; letter-spacing: 6px; text-align: center; padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  #pair button { font-size: 18px; padding: 14px; border: 0; border-radius: 14px; background: var(--accent); color: #fff; }
+  #pairErr { color: var(--bad); min-height: 20px; }
+  .hint { font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+</style>
+</head>
+<body>
+<header>
+  <span id="dot" class="dot"></span>
+  <h1>Nova</h1>
+  <button id="forget" type="button" style="display:none">Unpair</button>
+</header>
+<div id="sub"></div>
+
+<section id="pair">
+  <h2>Pair with Nova 💜</h2>
+  <p>On your laptop open Nova's settings (⚙ → Phone → Nova on iPhone), click <b>New pairing code</b> and type the 6 digits here.</p>
+  <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······">
+  <button id="pairGo" type="button">Pair</button>
+  <div id="pairErr"></div>
+  <div id="installHint" class="hint" style="display:none">Tip: to keep Nova on your home screen, tap <b>Share</b> (the square with an arrow) → <b>Add to Home Screen</b>, then open her from there.</div>
+</section>
+
+<main id="log" aria-live="polite" style="display:none"></main>
+<form id="send" style="display:none" autocomplete="off">
+  <input id="text" placeholder="Message Nova…" enterkeyhint="send" autocomplete="off" autocapitalize="sentences">
+  <button id="stop" type="button">Stop</button>
+  <button id="go" type="submit">Send</button>
+</form>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+};
+let key = store.get("nova_key") || "";
+let after = Number(store.get("nova_after") || 0);
+let polling = false, askBox = null, typingEl = null, online = null;
+
+function show(paired) {
+  $("#pair").style.display = paired ? "none" : "flex";
+  $("#log").style.display = paired ? "flex" : "none";
+  $("#send").style.display = paired ? "flex" : "none";
+  $("#forget").style.display = paired ? "" : "none";
+  const standalone = window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+  $("#installHint").style.display = paired || standalone ? "none" : "";
+}
+function setOnline(on, why) {
+  if (online === on) return;
+  online = on;
+  $("#dot").className = "dot " + (on ? "on" : "off");
+  if (!on) $("#sub").textContent = why || "Can't reach Nova - is the laptop on and Tailscale connected?";
+}
+async function call(path, body, method) {
+  const r = await fetch(path, {method: method || (body ? "POST" : "GET"), cache: "no-store",
+    headers: Object.assign({"Content-Type": "application/json"}, key ? {Authorization: "Bearer " + key} : {}),
+    body: body ? JSON.stringify(body) : undefined});
+  if (r.status === 401) { unpaired("Nova no longer knows this phone - pair again."); throw new Error("not paired"); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function unpaired(msg) {
+  key = ""; store.del("nova_key"); after = 0; store.del("nova_after");
+  $("#pairErr").textContent = msg || ""; show(false);
+}
+
+/* ---- the conversation ---- */
+function bubble(text, cls) {
+  const el = document.createElement("div"); el.className = "b " + (cls || ""); el.textContent = text;
+  $("#log").appendChild(el); scroll(); return el;
+}
+function scroll() { const l = $("#log"); l.scrollTop = l.scrollHeight; }
+function working(on) {
+  if (on && !typingEl) { typingEl = document.createElement("div"); typingEl.className = "typing"; typingEl.textContent = "Nova is working…"; $("#log").appendChild(typingEl); scroll(); $("#stop").style.display = "block"; }
+  if (!on && typingEl) { typingEl.remove(); typingEl = null; $("#stop").style.display = "none"; }
+}
+function ask(e) {
+  if (e.text) bubble(e.text);
+  const box = document.createElement("div"); box.className = "ask";
+  const q = document.createElement("div"); q.className = "q"; q.textContent = "🙋 May I " + (e.what || []).join(", ") + "?";
+  box.appendChild(q);
+  if (e.detail) { const d = document.createElement("div"); d.className = "d"; d.textContent = e.detail; box.appendChild(d); }
+  const row = document.createElement("div"); row.className = "row";
+  const yes = document.createElement("button"); yes.className = "yes"; yes.textContent = "✅ Yes";
+  const no = document.createElement("button"); no.className = "no"; no.textContent = "❌ No";
+  const decide = ok => async () => {
+    yes.disabled = no.disabled = true;
+    try { await call("/m/confirm", {approved: ok}); row.remove(); const d = document.createElement("div"); d.className = "done"; d.textContent = ok ? "You said yes ✅" : "You said no ❌"; box.appendChild(d); }
+    catch (err) { yes.disabled = no.disabled = false; bubble("Couldn't send your answer: " + err.message, "err"); }
+  };
+  yes.onclick = decide(true); no.onclick = decide(false);
+  row.append(yes, no); box.appendChild(row); $("#log").appendChild(box); scroll(); askBox = box;
+}
+function handle(e) {
+  if (e.kind === "working") working(true);
+  else if (e.kind === "reply") { working(false); bubble(e.text); }
+  else if (e.kind === "error") { working(false); bubble(e.text, "err"); }
+  else if (e.kind === "ask") { working(false); ask(e); }
+}
+
+/* ---- long-polling Nova's events ---- */
+async function poll() {
+  if (polling || !key) return;
+  polling = true;
+  while (key) {
+    try {
+      const j = await call("/m/events?after=" + after + "&wait=25");
+      setOnline(true);
+      for (const e of j.events) { handle(e); after = Math.max(after, e.id); }
+      if (j.last < after) after = j.last;        // Nova restarted: her event numbers began again
+      store.set("nova_after", String(after));
+    } catch (err) {
+      if (!key) break;
+      setOnline(false);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  polling = false;
+}
+async function refreshStatus() {
+  if (!key) return;
+  try { const s = await call("/m/status"); setOnline(true); $("#sub").textContent = (s.text || "").split("\n").slice(0, 2).join("  ·  "); } catch (e) {}
+}
+
+/* ---- sending ---- */
+$("#send").onsubmit = async ev => {
+  ev.preventDefault();
+  const t = $("#text").value.trim(); if (!t) return;
+  $("#text").value = ""; bubble(t, "me");
+  try { await call("/m/chat", {text: t}); poll(); }
+  catch (err) { bubble("Couldn't reach Nova: " + err.message, "err"); }
+};
+$("#stop").onclick = () => call("/m/stop", {}).catch(() => {});
+
+/* ---- pairing ---- */
+$("#pairGo").onclick = async () => {
+  const code = $("#code").value.trim(); $("#pairErr").textContent = "";
+  if (code.length !== 6) { $("#pairErr").textContent = "Type the 6 digits from the laptop."; return; }
+  try {
+    const j = await call("/m/pair", {code, name: /iPad/.test(navigator.userAgent) ? "iPad" : "iPhone"});
+    key = j.key; store.set("nova_key", key); $("#code").value = ""; after = j.last || 0; store.set("nova_after", String(after));
+    show(true); bubble("Paired! Say hi to Nova 👋"); refreshStatus(); poll();
+  } catch (err) { $("#pairErr").textContent = err.message; }
+};
+$("#forget").onclick = async () => { if (confirm("Unpair this phone from Nova?")) { try { await call("/m/unpair", {}); } catch (e) {} unpaired(""); } };
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshStatus(); poll(); } });
+setInterval(() => { if (!document.hidden) refreshStatus(); }, 30000);
+show(!!key);
+if (key) { refreshStatus(); poll(); }
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+</script>
+</body>
+</html>

@@ -22,8 +22,10 @@ from nova.actions import coworker
 from nova.actions import knowledge
 from nova.brain import llm
 from nova.actions import mcp
+from nova.actions import gmail
 from nova.actions import notifications
 from nova.actions import phone as phone_link
+from nova.core import mobile as mobile_mod
 from nova.actions import presence
 from nova.actions import watcher
 from nova.brain import retrieval
@@ -56,7 +58,7 @@ def _unspoken(text):
 
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "notif_muted": [], "phone_calls": True, "phone_notes_cloud": False, "suggest": False,
+         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_notes_cloud": False, "suggest": False,
          "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True,
          "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
          "skill_screen_checks": False, "skill_teach": True}
@@ -309,7 +311,7 @@ FRIENDLY = {
     "update_profile": "Updated your profile", "learn_lesson": "Saved a lesson", "recall_knowledge": "Checked my knowledge bank",
     "react": "Acted it out", "new_move": "Made up a new move", "forget_move": "Forgot a move",
     "change_look": "Changed my look", "drag_window": "Moved a window", "more_tools": "Found more tools", "escalate": "Switched brain",
-    "read_notifications": "Read your notifications", "mute_notifications": "Changed which apps' notifications I read", "draft_email": "Started drafting an email",
+    "read_notifications": "Read your notifications", "check_email": "Looked in your Gmail", "connect_gmail": "Opened the Gmail sign-in", "read_email": "Read an email", "mute_notifications": "Changed which apps' notifications I read", "draft_email": "Started drafting an email",
     "write_document": "Started writing a document", "research_in_background": "Started researching in the background", "show_finished_work": "Showed finished work",
     "background_jobs": "Checked background jobs", "stop_background_job": "Stopped a background job",
     "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
@@ -617,6 +619,9 @@ CONTINUE_RE = re.compile(r"^\W*(please\s+)?(ok(ay)?\W+)?(keep going|carry on|con
                          r"finish (it|that|the task)|jaari rakho|chalu rakho|aage badho|karte raho)\b", re.I)
 
 
+EMAIL_WORDS = re.compile(r"\b(e-?mails?|mails?|gmail|inbox|unread|otp|verification code)\b", re.I)    # her mail stays local
+
+
 def new_task(goal):
     """Start a request. Returns a note to add to the user's message (only when a paused task is resumed)."""
     task_log(f"\n=== {time.strftime('%Y-%m-%d')} REQUEST: {goal[:300]}")
@@ -661,6 +666,9 @@ def new_task(goal):
     if cloud.parse(brain(s)) and llm.cloud_resting():   # the cloud failed a moment ago: this whole task runs locally
         state["task"]["model"] = s["model"]
         task_log(f"CLOUD RESTING -> local {s['model']} for this task")
+    if cloud.parse(brain(s)) and not s.get("email_cloud") and not state["task"].get("model") and EMAIL_WORDS.search(clean):
+        state["task"]["model"] = s["model"]      # her mail never goes to a cloud brain unless ⚙ allows it
+        task_log(f"EMAIL: local {s['model']} for this task")
     if not cloud.parse(task_brain(s)):
         choose_local_route(state["task"], s)
     task_log(f"PICKED {len(picked) if picked else 'all'} tools ({retrieval.status()}): "
@@ -1752,7 +1760,7 @@ def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
                    autonomy=s["autonomy"], think=s["think"], reasoning=s.get("reasoning", "auto"), camera=s["camera"], screen=s["screen"],
-                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), phone_calls=s.get("phone_calls", True),
+                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), phone_calls=s.get("phone_calls", True), email_cloud=bool(s.get("email_cloud")),
                    phone_notes_cloud=s.get("phone_notes_cloud", False), suggest=s.get("suggest", False), asleep=nap["asleep"],
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    presence=s.get("presence", False), presence_lock=s.get("presence_lock", False),
@@ -1808,7 +1816,7 @@ def setup():
             pass
         for k in router.ROUTING_KEYS:               # a copy in settings.json would override the file
             s.pop(k, None)
-    for k in ("presence", "presence_lock", "error_help", "notif_sleep", "phone_calls", "phone_notes_cloud"):
+    for k in ("presence", "presence_lock", "error_help", "notif_sleep", "email_cloud", "phone_calls", "phone_notes_cloud"):
         if k in body:
             s[k] = body[k] is True
     save_settings(s)
@@ -3241,7 +3249,7 @@ def on_notifications(items):
         return
     now = time.time()
     if any(notifications.is_phone(n) and n.get("id") not in phone_seen for n in items) and s.get("phone_calls", True) and (
-            not nap["asleep"] or s.get("notif_sleep", False)):
+            not nap["asleep"] or s.get("notif_sleep", False) or nap.get("reason") != "asked"):
         ring_cue()          # the moment it arrives: a sound now, her words follow once the brain and the voice are ready
     for k in [k for k, t in phone_seen.items() if now - t > 60]:
         phone_seen.pop(k, None)
@@ -3267,14 +3275,17 @@ def on_notifications(items):
             lines.append(_speakable(n))
     for line in calls + lines:
         push_event({"reply": "🔔 " + line, "kind": "notification"})
-    if nap["asleep"] and not settings().get("notif_sleep", False):
+    quiet = nap["asleep"] and not settings().get("notif_sleep", False)
+    if quiet and not (calls and nap.get("reason") != "asked"):
         return              # napping: they're in the chat, but she only reads them out if ⚙ "…while I'm asleep" is on
     if calls:               # a ringing phone can't wait: not queued behind long answers, and not sent to the phone itself
-        end = time.time() + PHONE_CALL_WAIT
+        end = time.time() + PHONE_CALL_WAIT          # (it is said even in an idle nap - only "go to sleep" silences it)
         while (lock.locked() or mouth.busy()) and time.time() < end:
             time.sleep(0.2)
         for line in calls:
             announce("🔔 " + line, spoken=line)
+    if quiet:
+        return              # the ringing call was the exception; everything else waits for her to wake
     for line in missed:
         tell_away(line)     # a missed call is worth knowing about when they are away from the laptop
     if not lines:
@@ -3356,6 +3367,121 @@ def phone_status():
 
 phone = phone_link.Phone(on_message=phone_message, on_confirm=phone_confirm, on_stop=lambda: stop_now(),
                          status_text=phone_status)
+
+
+# ------------------------------------------------------------------ 📱 Nova on the iPhone (mobile.py): her web app over Tailscale
+# The page is installed from Safari ("Add to Home Screen"); every request is paired and answered like the Telegram
+# remote: short text answers, and anything that changes something asks first with Yes / No, whatever the autonomy.
+
+MOBILE_TAG = ("[from the user's phone app (the Nova web app on their iPhone); they may be away from the laptop and read "
+              "your answer as a short text message, so keep it brief and don't describe things only visible on the screen]")
+
+
+def mobile_message(text):
+    task_log(f"MOBILE in: {text[:200]}")
+    if state["pending"] and len(text.split()) <= 4 and (YES_RE.search(text) or NO_RE.search(text)):
+        out, _ = confirm_pending(bool(YES_RE.search(text)) and not NO_RE.search(text), quiet=True, remote=True)
+    else:
+        out, _ = answer(f"{MOBILE_TAG} {text}", quiet=True, remote=True)
+    push_event({"me": "📱 " + text, **{k: v for k, v in out.items() if k != "images"}})
+    task_log(f"MOBILE out: {(out.get('reply') or out.get('error') or '')[:200]}")
+    return out
+
+
+def mobile_confirm(approved):
+    out, _ = confirm_pending(approved, quiet=True, remote=True)
+    if not (out.get("reply") or out.get("pending") or out.get("activity") or out.get("error")):
+        out["reply"] = "That question isn't waiting any more."
+    push_event({"me": "📱 " + ("Yes" if approved else "No"), **{k: v for k, v in out.items() if k != "images"}})
+    return out
+
+
+mobile = mobile_mod.Mobile(on_message=mobile_message, on_confirm=mobile_confirm, on_stop=lambda: stop_now(),
+                           status_text=phone_status, state=lambda: {"asleep": bool(nap["asleep"]), "busy": lock.locked()})
+
+
+def tailscale_url():
+    """Nova's private https address if Tailscale is installed and 'serve' is set up: shown in settings so it can be typed
+    on the phone. "" when Tailscale isn't there."""
+    import shutil
+    import subprocess
+    exe = shutil.which("tailscale") or "C:/Program Files/Tailscale/tailscale.exe"
+    try:
+        out = subprocess.run([exe, "status", "--json"], capture_output=True, text=True, timeout=6,
+                             creationflags=0x08000000).stdout
+        name = (json.loads(out).get("Self") or {}).get("DNSName", "").rstrip(".")
+        return f"https://{name}" if name else ""
+    except Exception:
+        return ""
+
+
+def mobile_info():
+    return {"on": bool(settings().get("mobile")), "running": mobile.running(), "code": mobile.pairing(),
+            "devices": mobile.devices(), "url": tailscale_url(), "port": mobile_mod.PORT,
+            "serve": f"tailscale serve --bg --https=443 http://127.0.0.1:{mobile_mod.PORT}"}
+
+
+@app.get("/api/mobile")
+def mobile_get():
+    return jsonify(mobile_info())
+
+
+@app.post("/api/mobile")
+def mobile_set():
+    """⚙ Nova on iPhone: switch on/off, new pairing code, remove a paired device."""
+    body = _body()
+    if "on" in body:
+        s = settings()
+        s["mobile"] = body["on"] is True
+        save_settings(s)
+        mobile.start() if s["mobile"] else mobile.stop()
+    if body.get("new_code") is True:
+        if not mobile.running():
+            return jsonify(error="Switch Nova on iPhone on first.", **mobile_info()), 400
+        mobile.new_pair_code()
+    if "remove" in body:
+        mobile.remove(str(body["remove"]))
+    return jsonify(mobile_info())
+
+
+# ------------------------------------------------------------------ 📧 Gmail, read-only (gmail.py)
+
+def email_allowed():
+    """Her mail is read by the local brain only - unless ⚙ allows the chosen cloud brain to see it too."""
+    s = settings()
+    return bool(s.get("email_cloud")) or not cloud.parse(task_brain(s))
+
+
+tools.email_ok = email_allowed
+
+
+@app.get("/api/gmail")
+def gmail_get():
+    return jsonify(**gmail.status(), connecting=gmail.connecting["on"], error=gmail.connecting["error"])
+
+
+@app.post("/api/gmail")
+def gmail_set():
+    """⚙ Gmail: save the Google client, connect (Google's own sign-in opens in the browser), disconnect."""
+    body = _body()
+    try:
+        if "client_id" in body or "client_secret" in body:
+            gmail.save_client(_text(body, "client_id"), _text(body, "client_secret"))
+        if body.get("connect") is True and not gmail.connecting["on"]:
+            gmail.connecting.update(on=True, error="")
+
+            def go():
+                try:
+                    gmail.connect()
+                except gmail.GmailError as e:
+                    gmail.connecting["error"] = str(e)
+                    task_log(f"GMAIL connect: {e}")
+            threading.Thread(target=go, daemon=True).start()
+        if body.get("disconnect") is True:
+            gmail.disconnect()
+    except gmail.GmailError as e:
+        return jsonify(error=str(e), **gmail.status()), 400
+    return jsonify(**gmail.status(), connecting=gmail.connecting["on"], error=gmail.connecting["error"])
 
 
 @app.get("/api/phone")
@@ -3710,6 +3836,8 @@ def start_background():
     threading.Thread(target=idle_watch, daemon=True).start()
     threading.Thread(target=suggest_watch, daemon=True).start()
     phone.start()                               # only if a bot token is saved
+    if settings().get("mobile"):
+        mobile.start()                          # the iPhone web app's server (127.0.0.1 only)
     mcp.start()                                 # 🔌 connectors in data/mcp.json, each on its own thread
     threading.Thread(target=presence_watch, daemon=True).start()
     threading.Thread(target=work_watch, daemon=True).start()
@@ -3817,7 +3945,7 @@ quit_hook = None          # set by desktop.py: closes the windows, tray, 3D Nova
 def quit_nova():
     """Shut Nova down completely (not the laptop): ears, notifications, phone, connectors, 3D Nova, then the process."""
     task_log("QUIT (asked)")
-    for f in (stop_now, mouth.stop, ears.stop, notif_watcher.stop, ear_close):
+    for f in (stop_now, mouth.stop, ears.stop, notif_watcher.stop, mobile.stop, ear_close):
         try:
             f()
         except Exception:
