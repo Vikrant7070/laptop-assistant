@@ -32,6 +32,7 @@ NEURAL_DIR = Path.home() / ".cache" / "nova-voice"
 NEURAL_MODEL, NEURAL_VOICES = "kokoro-v1.0.int8.onnx", "voices-v1.0.bin"
 NEURAL_VOICE = "hf_alpha"      # Hindi female voice; she also speaks English, with an Indian accent. Others: hf_beta
 NEURAL_SPEED = 1.05
+NEURAL_THREADS = 4             # Kokoro's CPU threads (see NeuralVoice.load)
 DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 # Nova's small model sometimes writes Hindi in English letters. Spelled that way the voice would read it as English
 # words, so the commonest Hinglish words are put back into Hindi script before speaking.
@@ -93,6 +94,33 @@ def _hindi_script(text):
     return re.sub(r"[A-Za-z']+", lambda m: HINGLISH_WORDS.get(m.group(0).lower(), m.group(0)), text)
 
 
+_brain_niced = {"at": 0.0, "pids": set()}
+
+
+def voice_first():
+    """Her voice goes before her brain: Ollama starts its model runner (llama-server, which does ~1/4 of the model
+    on the processor here) at ABOVE-normal priority, so it got the cores first while she was speaking. Put it below
+    normal - the user wants her to talk without pauses; slower thinking is fine. Measured 2026-11-18: a 3.6 s
+    sentence took 1.3-2.3 s to make next to the brain, 1.2-1.5 s once the brain was below normal. Ollama starts a
+    new runner when a model (re)loads, so this is checked again every 20 s, from the voice thread (cheap)."""
+    now = time.time()
+    if now - _brain_niced["at"] < 20:
+        return
+    _brain_niced["at"] = now
+
+    def scan():          # (listing processes takes ~50-100 ms: not in front of her sentence)
+        try:
+            import psutil
+            for p in psutil.process_iter(["name"]):
+                if (p.info["name"] or "").lower() in ("llama-server.exe", "ollama_llama_server.exe") \
+                        and p.pid not in _brain_niced["pids"]:
+                    p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+                    _brain_niced["pids"].add(p.pid)
+        except Exception:
+            pass
+    threading.Thread(target=scan, daemon=True).start()
+
+
 class NeuralVoice:
     """Kokoro text-to-speech: sounds far more human than the Windows voices, runs offline on the processor
     (about 2.7x faster than real time here). Reads Hindi script as Hindi and English letters as English, mixed
@@ -113,11 +141,22 @@ class NeuralVoice:
     def load(self):
         if self.k is None:
             from kokoro_onnx import Kokoro
-            self.k = Kokoro(str(NEURAL_DIR / NEURAL_MODEL), str(NEURAL_DIR / NEURAL_VOICES))
+            try:
+                # 4 threads, not one per core: with the default, Kokoro and the half-on-CPU brain (Ollama 24/76 CPU/GPU)
+                # fought over every core - measured 2026-11-18 while both ran: brain 16.7 -> 30 tok/s with 4, and the
+                # voice no slower (1.4-2.2 s for a 4 s sentence).
+                import onnxruntime as ort
+                so = ort.SessionOptions()
+                so.intra_op_num_threads = NEURAL_THREADS
+                sess = ort.InferenceSession(str(NEURAL_DIR / NEURAL_MODEL), so, providers=["CPUExecutionProvider"])
+                self.k = Kokoro.from_session(sess, str(NEURAL_DIR / NEURAL_VOICES))
+            except Exception:
+                self.k = Kokoro(str(NEURAL_DIR / NEURAL_MODEL), str(NEURAL_DIR / NEURAL_VOICES))
         return self.k
 
     def synth(self, text):
         """(samples, sample_rate) for one sentence."""
+        voice_first()
         k = self.load()
         text = _hindi_script(text)
         # Clock times: "09:29" would be read "zero nine 29"; "9:00" as "nine zero zero".
@@ -765,7 +804,7 @@ WAKE_RE = re.compile(rf"^\W*(?:\S+\s+)?(?:he[yi]|hi|ok)?{NOVA_NAMES}(?!\w)"
                      # A soft "Hey Nova" on its own can come out as "See you, Noah." - a short phrase that ends in
                      # her name is a call too.
                      rf"|^\W*(?:\S+\W+){{0,2}}{NOVA_NAMES}\W*$", re.I)
-EARS_SLEEP_RE = re.compile(r"go to sleep|stop listening|good ?night|so ?jao|so ?ja\b|sunna band|shubh ratri|सो जा", re.I)
+EARS_SLEEP_RE = re.compile(r"go (?:back )?to sleep|back to sleep|stop listening|good ?night|so ?jao|so ?ja\b|sunna band|shubh ratri|सो जा", re.I)
 EARS_WAKEUP_RE = re.compile(r"wake up|are you there|uth ?jao|\butho\b|jaag ?jao|\bjaago\b|उठ|जाग", re.I)
 
 

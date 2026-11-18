@@ -124,7 +124,7 @@ PHONE_PROMPT = (
     '{"kind": "call" | "missed_call" | "message" | "other", "say": "<one short sentence Nova says out loud>"}. '
     "kind is call while the phone is ringing, missed_call after a call was missed. For a call, say who is calling if "
     "the notification shows a saved contact's name; if it shows only a phone number, or nothing, say it is an unknown "
-    "number and do not read the number out. For a message say the app and who it is from, then a short gist. "
+    "number and do not read the number out. Keep it very short: at most 8 words for a call. For a message say the app and who it is from, then a short gist. "
     "Never say one-time codes, OTPs or passwords.")
 
 
@@ -286,7 +286,7 @@ class Watcher:
             if self.timer_on:
                 return
             self.timer_on = True
-        threading.Timer(0.4, self._flush).start()
+        threading.Timer(0.15, self._flush).start()
 
     def _flush(self):
         with self.lock:
