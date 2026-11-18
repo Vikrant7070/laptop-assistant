@@ -65,6 +65,12 @@ from nova.brain import cloud  # noqa: E402
 from nova.brain import router  # noqa: E402
 from nova.core import app  # noqa: E402
 from nova.actions import skills  # noqa: E402
+from nova.actions import checks  # noqa: E402
+from nova.actions import recorder  # noqa: E402
+
+recorder.ENABLED = False          # never install real mouse/keyboard hooks in tests (tests patch recorder's functions)
+
+checks.real_evaluate = checks.evaluate     # the autouse fixture below replaces evaluate; tests of the checks use this
 
 
 def _point_data_at(folder):
@@ -97,6 +103,8 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "_screen_allowed", lambda: False)
     monkeypatch.setattr(app, "react_later", lambda *a, **k: None)
     monkeypatch.setattr(app, "review_turn", lambda why: None)
+    # skill step checks look at the real desktop: a test says what they find (or patches checks.evaluate itself)
+    monkeypatch.setattr(checks, "evaluate", lambda *a, **k: (True, "ok (test)"))
     # background co-worker jobs, naps and offers start fresh, and never open real windows
     from nova.actions import coworker
     coworker.jobs.clear()

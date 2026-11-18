@@ -308,6 +308,7 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 <button type="button" data-tab="nova">🎭 Nova</button>
 <button type="button" data-tab="alerts">🔔 Alerts</button>
 <button type="button" data-tab="phone">📱 Phone</button>
+<button type="button" data-tab="forms">📝 Forms</button>
 <button type="button" data-tab="tools">🔌 Connectors</button>
 </div>
 <div class="pane on" data-pane="brain">
@@ -393,6 +394,15 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
         </div>
         <p id="phoneNote" class="mood" style="margin:6px 0 0"></p>
         <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="phoneForward"> Send reminders and finished jobs to my phone while I'm away from the laptop</label>
+      </div>
+</div>
+<div class="pane" data-pane="forms">
+      <h3 style="margin-top:16px">📝 My details for forms</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Say <i>"fill in this form"</i> and Nova types these into the boxes for you, then leaves it for you to check - she never presses Submit by herself. They're saved only on this laptop, and her AI brain is only told <i>which</i> boxes she filled, never what's in them (a screenshot she takes afterwards can still show the filled form). <b>Passwords, OTPs, card, bank and ID numbers are never kept here</b> - for logins she opens the box and your browser's password manager fills it; for codes she waits while you type them.</p>
+        <div id="formFields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 10px;margin-top:8px"></div>
+        <button id="formsSave" class="yes" style="width:auto;padding:8px 14px;margin-top:8px">Save my details</button>
+        <span id="formsNote" class="mood" style="margin-left:8px"></span>
       </div>
 </div>
 <div class="pane" data-pane="tools">
@@ -776,7 +786,7 @@ function openSetup(s) {
   $("#reasoning").value = s.reasoning || "auto";
   $("#sounds").checked = s.reaction_sounds !== false; $("#powerOk").checked = !!s.power_ok;
   $("#setup").classList.add("show");
-  loadPhone(); loadMcp();
+  loadPhone(); loadMcp(); loadForms();
 }
 /* ---------------- 📱 phone + 🔌 connectors (their own Save buttons) ---------------- */
 function showPhone(p) {
@@ -809,6 +819,16 @@ function showMcp(j) {
       (s.tools.length ? `: ${s.tools.length} tool${s.tools.length === 1 ? "" : "s"} (${esc(s.tools.slice(0, 6).join(", "))}${s.tools.length > 6 ? "…" : ""})` : "") +
       (s.trusted ? " · trusted" : "") + (s.error ? `<br><span style="color:var(--bad)">${esc(s.error)}</span>` : "")).join("<br>") : "No connectors yet.");
 }
+function showForms(j) {
+  $("#formFields").innerHTML = j.fields.map(f => `<label class="mood" style="display:flex;flex-direction:column;gap:2px">${esc(f.label)}
+    <input data-k="${esc(f.key)}" value="${esc(f.value)}" autocomplete="off" spellcheck="false" ${f.key === "birth_date" ? 'placeholder="e.g. 15/08/1998"' : ""}></label>`).join("");
+}
+async function loadForms() { try { showForms(await (await fetch("/api/forms")).json()); } catch (e) {} }
+$("#formsSave").onclick = async () => {
+  const details = {}; document.querySelectorAll("#formFields input").forEach(i => details[i.dataset.k] = i.value);
+  try { showForms(await api("/api/forms", {details})); $("#formsNote").textContent = "Saved on this laptop ✓"; }
+  catch (e) { $("#formsNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+};
 async function loadMcp() { try { const j = await (await fetch("/api/mcp")).json(); $("#mcpCfg").value = j.config; showMcp(j); } catch (e) {} }
 $("#mcpSave").onclick = async () => {
   $("#mcpStatus").textContent = "Connecting… (a server that npx has to download can take ~30 s the first time)";
