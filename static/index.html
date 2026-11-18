@@ -379,6 +379,8 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 <div class="pane" data-pane="alerts">
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="notifications"> 🔔 Check my notifications and read new ones out to me</label>
       <label class="mood" style="display:block;margin-top:6px;margin-left:22px"><input type="checkbox" id="notifSleep"> 😴 …even while Nova is asleep (off: she stays quiet while napping; they still show up in the chat)</label>
+      <label class="mood" style="display:block;margin-top:6px;margin-left:22px"><input type="checkbox" id="phoneCalls"> 📞 Tell me when my iPhone rings or I miss a call (needs Phone Link; her brain says who it is)</label>
+      <label class="mood" style="display:block;margin-top:6px;margin-left:22px"><input type="checkbox" id="phoneCloud"> ☁️ Let the cloud brain phrase iPhone notifications too (off: only the local brain ever sees them)</label>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="errorHelp"> 🆘 Offer help when an app shows an error box or stops responding (no screenshots - she only reads the error message, and sends it to her brain only if I say yes)</label>
 </div>
 <div class="pane" data-pane="phone">
@@ -776,7 +778,7 @@ function openSetup(s) {
       : `<option value="">No models yet - run: ollama pull ${esc(s.default_model)}</option>`;
     $("#toolNote").textContent = s.ready ? (s.tools ? "✓ This model supports tool calling." : "This model has no native tool calling - I'll use a text-based fallback (works, but less reliably).") : "";
     $("#think").checked = s.think; $("#autostart").checked = s.autostart; $("#camera").checked = s.camera; $("#screen").checked = s.screen;
-    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep;
+    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep; $("#phoneCalls").checked = s.phone_calls !== false; $("#phoneCloud").checked = !!s.phone_notes_cloud;
     $("#errorHelp").checked = s.error_help !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
     $("#visionNote").innerHTML = s.vision_model ? `Eyes: <b>${esc(s.vision_model)}</b> ✓`
       : `She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`;
@@ -846,7 +848,7 @@ $("#saveModel").onclick = async () => {
       provider: p, cloud_model: p !== "ollama" ? $("#cloudModel").value : undefined,
       autonomy: document.querySelector("[name=aut]:checked")?.value, autostart: $("#autostart").checked,
       camera: $("#camera").checked, screen: $("#screen").checked,
-      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
+      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, phone_calls: $("#phoneCalls").checked, phone_notes_cloud: $("#phoneCloud").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
       avatar_roam: $("#avatarRoam").value,
       routing: {auto_route: $("#autoRoute").checked, coder_model: $("#coderModel").value, deep_model: $("#deepModel").value,
         heavy_model: $("#heavyModel").value, heavy_steps: +$("#heavySteps").value || 6},

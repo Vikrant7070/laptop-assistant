@@ -112,6 +112,52 @@ def is_muted(n, muted):
     return any(same_app(app, m) for m in muted or ())
 
 
+# ---------------------------------------------------------------- the user's iPhone, through Microsoft Phone Link
+# Phone Link turns the iPhone's calls and notifications into ordinary Windows notifications from the app "Phone Link"
+# (seen live 2026-11-18: app "Phone Link", title "Phone", body "<contact name or number> Missed Call"). WHO is calling
+# and how to say it is the brain's job, not a rule here: it gets the notification text and answers in JSON.
+
+PHONE_APP = "Phone Link"
+PHONE_KINDS = ("call", "missed_call", "message", "other")
+PHONE_PROMPT = (
+    "A notification just arrived from the user's iPhone. Reply with JSON only, no other text: "
+    '{"kind": "call" | "missed_call" | "message" | "other", "say": "<one short sentence Nova says out loud>"}. '
+    "kind is call while the phone is ringing, missed_call after a call was missed. For a call, say who is calling if "
+    "the notification shows a saved contact's name; if it shows only a phone number, or nothing, say it is an unknown "
+    "number and do not read the number out. For a message say the app and who it is from, then a short gist. "
+    "Never say one-time codes, OTPs or passwords.")
+
+
+def is_phone(n):
+    """Is this one of the iPhone's notifications (relayed by Phone Link)?"""
+    return same_app(n.get("app") if isinstance(n, dict) else n, PHONE_APP)
+
+
+def phone_prompt(n):
+    """The text the brain gets for one phone notification."""
+    return "App: %s" % n.get("app") + chr(10) + "Title: %s" % n.get("title") + chr(10) + "Text: %s" % n.get("body")
+
+
+def parse_phone_note(text, fallback):
+    """The brain's JSON answer as (kind, say). Anything unreadable gives ("other", fallback)."""
+    s = str(text or "").strip()
+    if s.startswith("```"):
+        s = s.strip("`")
+        s = s[4:] if s.lower().startswith("json") else s
+    i, j = s.find("{"), s.rfind("}")
+    try:
+        d = json.loads(s[i:j + 1]) if 0 <= i < j else None
+    except ValueError:
+        d = None
+    if not isinstance(d, dict):
+        return "other", fallback
+    kind = str(d.get("kind") or "").strip().lower()
+    say = " ".join(str(d.get("say") or "").split())
+    if not say:
+        return "other", fallback
+    return (kind if kind in PHONE_KINDS else "other"), say
+
+
 def resolve_app(spoken, known=None):
     """The real app name the user means (from apps seen in notifications), or their words tidied up."""
     import difflib
