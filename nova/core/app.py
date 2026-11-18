@@ -3000,7 +3000,8 @@ def _speakable(n):
 # The iPhone's notifications arrive through Phone Link (notifications.py). Her BRAIN decides what each one is (a ringing
 # call, a missed call, a message) and how to say it - "Rahul is calling you" / "a call from an unknown number" - so
 # there are no names or phrases in code. Only the local brain sees them unless ⚙ allows the cloud one.
-PHONE_NOTE_SECS = 8        # how long the brain gets to phrase one phone notification before the plain text is used
+PHONE_NOTE_SECS = 15       # how long the brain gets before the plain text is used (a cold 4B model took >8 s live;
+                           # a call rings ~25 s)
 PHONE_NOTE_MAX = 4         # at most this many per burst go to the brain; the rest are read as they are
 PHONE_CALL_WAIT = 2        # a ringing call waits at most this long for her own voice to finish
 phone_seen = {}            # notification id -> when: the same toast is not announced twice
@@ -3024,6 +3025,8 @@ def phone_note(n):
     th = threading.Thread(target=work, daemon=True)
     th.start()
     th.join(PHONE_NOTE_SECS)
+    if th.is_alive():
+        task_log(f"PHONE NOTE: brain took longer than {PHONE_NOTE_SECS} s - reading the plain text")
     kind, say = notifications.parse_phone_note(box.get("text"), fallback)
     return kind, _hide_codes(say)
 
