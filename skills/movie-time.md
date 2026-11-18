@@ -1,12 +1,18 @@
 ---
 name: movie-time
-description: Clear the screen, turn on dark mode, set brightness and volume, and open Netflix
-when: movie time, movie mode, let's watch a movie
-kind: routine
+format: 2
+description: Clears the screen, turns on dark mode, sets brightness and volume, and opens Netflix. Use when the user wants to watch a movie.
+examples: movie time, movie mode, let's watch a movie
+invoke: confirm_if_fuzzy
+status: active
 ---
-- minimize_all_windows
-- set_dark_mode enabled=true
-- set_brightness percent=85
-- open_website url_or_search=netflix.com
-- set_volume action=up, steps=10
-- say Popcorn ready? Enjoy the movie, boss!
+s1. minimize_all_windows
+s2. set_dark_mode enabled=true
+    expect: dark_mode on
+    on_fail: skip
+s3. set_brightness percent=85
+s4. open_website url_or_search=netflix.com
+    expect: window_open "Netflix"
+    on_fail: retry 1, then skip
+s5. set_volume action=up, steps=10
+s6. say Popcorn ready? Enjoy the movie, boss!

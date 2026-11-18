@@ -150,6 +150,16 @@ Nova's everyday brain is small and fast (`qwen3-vl:4b-instruct`). A bigger model
 - The everyday brain can also ask for a switch itself with the `escalate` tool. The next request starts on the everyday brain again.
 - Choose the models in the ⚙ Model dialog. All settings and the trigger words are in `config/model_routing.json` (kept in git, applied on the next request). Set `"auto_route": false` to switch it off. Cloud brains are never switched.
 
+## Skills: things you teach her (`skills/*.md`)
+A skill is a small text file of steps that **code** runs, one by one - not instructions the small model has to remember. After each step the code checks it really worked (a window opened, the page shows the text, the screen is fullscreen), and the "done" at the end is worded from what happened, never by the model. Format and rules: the docstring at the top of `nova/actions/skills.py`; the design and the research behind it: `docs/skills-v2-plan.md`.
+- She starts a skill only on words that really ask for it. A request that merely sounds like one gets a "Run my '…' skill?" question first, and if you say no, that sentence never starts it again. Each skill can list `not_for` phrases.
+- Teach her: "when I say movie time, do X, Y, Z" (`save_skill`), or finish a task and say "remember that" (`save_task_as_skill`: a draft made from the steps she really did; it becomes a real skill after it works twice).
+- Show her: say **"watch me"** (or press **Ctrl+Alt+W**), do the task yourself, say **"done"**, then tell her its name. She records what you clicked (by name, not screen position), the page each browser shows, what you left in each box, and which app is in front - never passwords, codes or keystrokes (a sign-in becomes one "sign in if needed" step). Nothing is recorded unless you say "watch me"; the recording stays in memory and only the cleaned-up steps are kept (`nova/actions/recorder.py`).
+- If you take over while a skill runs (or a step fails), she stops and asks "Want to show me how it should go?" - say yes, do that step yourself, say "done", and she changes just that step (with your OK) and carries on. Switch it off with `skill_teach: false` in `data/settings.json`.
+- Correct her: "no, also mute it" changes just that step (`edit_skill`). Every old version is kept in `skills/.history/` ("undo that skill change"), results are counted in `skills/.stats/`, and a skill that keeps failing is retired.
+- Check how well the matching works on your own laptop: close Nova and run `python -m nova.skill_eval` (add any wrong start to `tests/skill_triggers.jsonl`).
+- `skill_screen_checks` (a switch in `data/settings.json`, off by default) adds a screenshot check to steps that have no other check; it costs a few seconds per step.
+
 ## How much she asks first (⚙ Model)
 - **Careful** (default): she asks before anything that changes things, including every click.
 - **Trusted:** she just does it, and asks only before shutdown, uninstalling, emptying the Recycle Bin or admin commands.

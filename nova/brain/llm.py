@@ -229,6 +229,8 @@ def _post_stream(path, body, on_text, timeout=600, on_think=None):
 
 # Set after every chat(): why the cloud brain wasn't used this time (None = it was, or none was chosen).
 LAST = {"fallback": None}
+TOOLCALL_TEXT_RE = re.compile(r"<tool_call>|\"arguments\"\s*:|^\s*\{\s*\"name\"|<think>(?![\s\S]*</think>)", re.I)
+log = lambda line: None        # app.py points this at the task log
 _cloud_down = {"until": 0.0, "why": ""}
 CLOUD_RETRY_SECS = 60   # after a cloud failure, use the local model for this long before trying the cloud again
 
@@ -328,6 +330,10 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_th
                 msg["tool_calls"] = [{"function": {"name": found[0], "arguments": found[1]}}]
                 text = text[:fence.start()].strip() if fence else ""
             else:
+                if names and TOOLCALL_TEXT_RE.search(text):
+                    # Qwen3 on Ollama (issue 14493) sometimes writes the call as plain text, so nothing runs and she
+                    # just narrates. Only noted here, so a day of use shows how often it happens.
+                    log("RAW TOOLCALL-AS-TEXT (not run): " + text[:500].replace("\n", " "))
                 text = _unwrap_fake_call(text) or text
                 if on_text and held and not emitted:
                     on_text(text)           # it was ordinary text after all (or an answer dressed up as a call)
