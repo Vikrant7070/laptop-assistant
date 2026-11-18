@@ -4,6 +4,7 @@ Run:  python app.py   (opens http://127.0.0.1:5055)
 """
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -149,6 +150,10 @@ How you work:
   never disable security software.
 - Before organizing a folder, call preview_organize_folder first and tell the user what will happen.
 - Never invent results or facts - only report what a tool actually returned. If a tool fails, say so.
+- When you are not sure what the user means, which thing they mean, or how to do it, ask ONE short question
+  instead of guessing (e.g. "Which file - the report or the notes?"). Never pretend to know or to have done it.
+- If the user says you didn't do something ("you're not dancing"), believe them: do it now with the tool, or say
+  honestly that you can't. Never insist that you did.
 - Messages marked [spoken] came through speech recognition and may contain misheard words. Work out the most
   likely meaning (e.g. "what size it" probably means "what time is it"); if it still doesn't make sense, briefly
   ask the user to repeat instead of guessing.
@@ -159,6 +164,7 @@ How you work:
   without reciting it, and never save passwords, PINs, ID numbers, email addresses or phone numbers.
 - Your 3D body can act things out. When the user asks you to dance, laugh, clap, spin, bow, wave and so on, call
   react - don't just say you did. (Your body also reacts by itself after you speak, so don't describe gestures.)
+  If they ask for a move you don't have, ask whether to invent it (new_move) or do one you know.
 - You have skills: routines the user taught you, saved as files. When one clearly fits a request, its name is at
   the end of these instructions - use run_skill; if the request is only a question or merely similar, don't run it.
   When the user teaches you something to do on a phrase ("when I say movie time, do X, Y and Z"), save it with
@@ -1414,6 +1420,10 @@ PROMISE_RE = re.compile(
     r"tap|launch|start|go to|navigat|lock|mut|paus|turn|set|shut|restart|remind|delet|mov|install)"
     r"|\b(lock|open|clos|play|search|launch|start|turn|mut|paus|set|shut|restart|delet|mov|install|clean)\w*ing\b"
     r"[^.!?]{0,30}\b(now|right away)\b|\bi'?ll do (it|that) (right away|now)\b", re.I)
+# "Reacting now... I'm dancing!" with no react call: her body never moved (2026-11-18 log).
+BODY_CLAIM_RE = re.compile(r"\b(?:i'?m|i am|i'?ll|let me|watch me)\s+(?:now\s+|just\s+|still\s+)?(?P<v>dancing|dance|clapping|clap|"
+                           r"spinning|spin|twirling|laughing|waving|bowing)\b|\breacting now\b|"
+                           r"\bi (?:just )?(?:did a (?:little )?)?(?P<w>danced|clapped|spun|dance|spin|clap)\b", re.I)
 
 
 REPEAT_LIMIT = 3      # the same tool call and result this many times in a row: she's told to stop; once more = the end
@@ -1508,7 +1518,8 @@ def _agent_loop(activity):
         if text:
             task_log(f"NOVA SAYS: {text[:300]}")
         did_something = did_something or bool(calls)
-        if not calls and not nudged and not did_something and PROMISE_RE.search(text or ""):
+        claimed_body = bool(BODY_CLAIM_RE.search(text or "")) and not state.get("react_after")
+        if not calls and not nudged and (claimed_body or (not did_something and PROMISE_RE.search(text or ""))):
             # Small models sometimes *say* "I'm clicking it now" without calling a tool. Make her follow through.
             nudged = True
             think("🙈 I said I'd do it but didn't actually do anything - doing it properly now.")
@@ -2105,6 +2116,101 @@ def _say_final(final, activity):
     return {"reply": final, "activity": activity, "say": final}
 
 
+# ------------------------------------------------------------------ body commands: "dance!" is done by code
+# The small local brain often *said* "I'm dancing!" without calling react, and when told "you're not dancing" it
+# insisted it was (2026-11-18 log). A plain "dance / clap / spin..." is now played directly - faster, too (no brain
+# round trip) - and a move she doesn't have makes her ASK instead of pretending.
+
+BODY_WORDS = {"dance": "dance", "dancing": "dance", "laugh": "laugh", "laughing": "laugh", "clap": "clap",
+              "clapping": "clap", "applaud": "clap", "spin": "spin", "spinning": "spin", "twirl": "spin",
+              "wave": "wave", "waving": "wave", "bow": "bow", "bowing": "bow", "nod": "nod", "yawn": "yawn",
+              "facepalm": "facepalm", "shrug": "confused", "jump": "happy", "jumping": "happy", "cheer": "happy"}
+DANCE_WORDS = r"(dance|dancing|move|moves|step|steps|thumka|jig|twerk|moonwalk|pose|routine|groove|nachna|naach|nach)"
+_NAME = r"(?:hey |hi |ok |okay )?(?:nova|novah|noah|nover|nava|nowa|sophia)"
+_BODY_POLITE = re.compile(rf"^\W*(?:{_NAME}\W+)?(?:(?:no|nope|nah|arey|arre|yaar|oh)\W+)*|(?:\W+{_NAME})?\W*$", re.I)
+BODY_ASK_RE = re.compile(
+    r"^(?:(?:can|could|will|would) you |please |now |just |go |ok |okay |come on |show me |let'?s see you |"
+    r"i want (?:to see )?you to |i'?d like you to |do you know how to )*"
+    r"(?:(?P<verb>do|give me|show me|perform|try) (?:a |an |the |some |your |my |that |one |another |me a )?"
+    r"(?:little |quick |small |cute |nice |happy |big |proper |real |usual |normal |regular |own )?)?"
+    r"(?P<what>[a-z][a-z' -]{1,30}?)"
+    r"(?:\s+(?:for me|for us|again|once more|now|please|one more time|properly|for real|a bit|"
+    r"(?P<times>two|three|four|five|\d) times|twice))*\W*$", re.I)
+BODY_NOT_DONE_RE = re.compile(
+    r"\b(?:you'?re not|you are not|you aren'?t|you'?re still not|you are still not|you never)\s+(?P<a>\w+ing)\b|"
+    r"\byou (?:didn'?t|did not|don'?t|do not|haven'?t)\s+(?P<b>dance|clap|spin|laugh|wave|bow|jump)\b|"
+    r"\b(?:i )?(?:can'?t|cannot|don'?t) see you\s+(?P<c>\w+ing)\b", re.I)
+_TIMES = {"two": 2, "twice": 2, "three": 3, "four": 4, "five": 5}
+
+
+def _known_move(what):
+    """'dance' / 'bhangra' / 'star jump' -> the name react plays, or None."""
+    from nova.avatar import body
+    what = what.lower().strip()
+    if what in BODY_WORDS:
+        return BODY_WORDS[what]
+    slug = re.sub(r"[^a-z0-9]+", "_", what).strip("_")
+    moves = body.load_moves()
+    if slug in moves:
+        return slug
+    for m in moves:                       # "bhangra" / "bhangra dance" -> bhangra_bounce, "jumping jack" -> jumping_jacks
+        stem = m.split("_")[0]
+        if len(stem) >= 5 and (slug.startswith(stem) or m.startswith(slug)):
+            return m
+    return None
+
+
+def body_command(text):
+    """A plain 'dance' / 'clap for me' / 'you're not dancing' -> the answer dict, played after the short reply.
+    A dance she doesn't know ('do a desi thumka') -> she asks what to do. Anything else -> None (the brain)."""
+    if state.get("remote"):
+        return None
+    t = _BODY_POLITE.sub("", _unspoken(text).strip()).strip()
+    if not t or len(t.split()) > 9:
+        return None
+    asked = state.pop("body_ask", None)       # she asked "make one up, or my usual dance?" - this is the answer
+    if asked and time.time() - asked["at"] < 180:
+        if re.search(r"\b(make|invent|create|new one|try|learn|yes|yeah|yep|sure|ok(ay)?|go ahead)\b", t, re.I) \
+                and not re.search(r"\b(usual|normal|regular|old|known|your own)\b", t, re.I):
+            task = state.get("task")
+            if task and task.get("tools") and "new_move" not in task["tools"]:
+                task["tools"] = list(task["tools"]) + ["new_move"]
+            state["messages"][-1]["content"] += (f"\n[note from Nova's system: they want you to invent the move "
+                                                 f"'{asked['what']}' now with new_move, then say one short line]")
+            return None                       # the brain designs the move
+        if re.search(r"\b(usual|normal|regular|old|known|dance|that one|the one you know)\b", t, re.I):
+            t = "dance"
+    name, times, reply = None, None, None
+    miss = BODY_NOT_DONE_RE.search(t)
+    if miss:
+        word = (miss.group("a") or miss.group("b") or miss.group("c") or "").lower()
+        name = BODY_WORDS.get(word)
+        if name:
+            reply = f"Sorry! Here's a real {name} for you." if name == "dance" else "Sorry! Here it is, for real."
+    if not name:
+        m = BODY_ASK_RE.match(t)
+        if not m:
+            return None
+        what = m.group("what").strip()
+        times = _TIMES.get((m.group("times") or "").lower()) or (int(m.group("times")) if (m.group("times") or "").isdigit()
+                                                                  else (2 if re.search(r"\btwice\b", t, re.I) else None))
+        name = _known_move(what)
+        if not name:
+            if not (m.group("verb") and re.fullmatch(rf"(?:[a-z']+ ){{0,3}}{DANCE_WORDS}", what, re.I)):
+                return None                  # not "do a <something> dance" ("play dance songs"): the brain handles it
+            reply = (f"I don't know a {what} yet. Should I make one up, or do my usual dance?")
+            state["body_ask"] = {"what": what, "at": time.time()}
+            task_log(f"BODY ASK: unknown move '{what}'")
+            return {"reply": reply, "activity": [], "say": reply}
+        reply = random.choice(("Sure, watch this!", "Here goes!", "Okay, watch me!"))
+    if not avatar_client.running():
+        reply = "I can't move right now: my 3D body isn't on the screen. Turn it back on from the tray menu."
+        return {"reply": reply, "activity": [], "say": reply}
+    state["react_after"] = {"name": name, "repeat": times}
+    task_log(f"BODY COMMAND: {name}" + (f" x{times}" if times else ""))
+    return {"reply": reply, "activity": [FRIENDLY["react"]], "say": reply}
+
+
 def look_first(text, activity):
     """Small models sometimes 'answer' about the user or the screen without looking. If the user clearly asked
     Nova to look, take the picture first and hand her the result, so she describes what's really there.
@@ -2113,6 +2219,10 @@ def look_first(text, activity):
     watched = watch_command(text)       # 👀 "watch me" / "done": code decides, never the brain
     if watched:
         return watched
+    moved = body_command(text)          # 💃 "dance!" - code plays it, the brain can't pretend it did
+    if moved:
+        activity.extend(moved["activity"])
+        return moved
     text = _unspoken(text)       # only the user's words: the 📱 phone note itself mentions "the screen"
     video_action = next((a for rx, a in VIDEO_ASK if rx.search(text)), None)
     if video_action and tools._video_window():
@@ -2469,10 +2579,20 @@ def after_turn(user_text, out):
         clean_text = _unspoken(user_text)
         corrected = bool(CORRECTION_RE.search(clean_text))
         asked = state.pop("react_after", None)      # the brain's own pick (react tool) wins over the automatic one
-        if corrected:
-            react_later("facepalm", wait_for_speech=False)
-        elif asked:
+        if not asked:      # she still only *said* she's dancing (even after the nudge): make her words true
+            claims = list(BODY_CLAIM_RE.finditer(out.get("reply") or ""))
+            claim = bool(claims)
+            word = next(((c.group("v") or c.group("w")).lower() for c in claims if c.group("v") or c.group("w")), "")
+            name = {"danced": "dance", "clapped": "clap", "spun": "spin", "twirling": "spin"}.get(word) or BODY_WORDS.get(word)
+            if claim and not name:     # "reacting now": the move the user asked for, if it's one she has
+                name = next((BODY_WORDS[w] for w in re.findall(r"[a-z]+", clean_text.lower()) if w in BODY_WORDS), None)
+            if name:
+                task_log(f"BODY CLAIM without react -> playing {name}")
+                asked = {"name": name, "repeat": None}
+        if asked:      # asked to act something out ("no, dance properly!" is a correction AND a request)
             react_later(asked["name"], repeat=asked["repeat"])
+        elif corrected:
+            react_later("facepalm", wait_for_speech=False)
         else:
             react_later(pick_reaction(clean_text, out))
         why = why_review(user_text, out)
@@ -2517,7 +2637,7 @@ def knowledge_edit():
 # English and Hindi/Hinglish (Whisper writes Hindi in English letters - see voice.HINGLISH_HINT).
 # Whisper often mishears it ("Noah got to sleep", "go too sleep"), so the verbs and the "to" are loose. Only short
 # utterances count (wants_sleep), so "I can't go to sleep at night, any tips?" is a normal question.
-SLEEP_RE = re.compile(r"\b((go|got|goes|going|gotta|gonna|gone)( (to|too|two|2|ta))? ?sleep|sleep now|(you can|time to|now) sleep|"
+SLEEP_RE = re.compile(r"\b((go|got|goes|going|gotta|gonna|gone)( (to|too|two|2|ta))? ?sleep|sleep now|(go )?back to sleep|(you can|time to|now) sleep|"
                       r"sleep,? (nova|noah|now)|(nova|noah),? sleep|take a nap|nap time|go to bed|stop listening|"
                       r"good ?night|that'?s all|bye,? (nova|noah)|so ?jao|sunna band|shubh ratri|bas itna hi)\b", re.I)
 SLEEP_MAX_WORDS = 8
@@ -3007,6 +3127,15 @@ PHONE_CALL_WAIT = 2        # a ringing call waits at most this long for her own 
 phone_seen = {}            # notification id -> when: the same toast is not announced twice
 
 
+def ring_cue():
+    """An instant ding when something from the iPhone arrives - the brain and the voice need a few seconds."""
+    try:
+        if sfx.play("happy"):
+            mouth.hold(sfx.length("happy") + 0.3)         # keep the mic from hearing it
+    except Exception:
+        pass
+
+
 def phone_note(n):
     """(kind, sentence) for one iPhone notification: "call", "missed_call", "message" or "other"."""
     s = settings()
@@ -3018,13 +3147,15 @@ def phone_note(n):
 
     def work():
         try:
-            box["text"] = llm.chat(model, msgs, [], fallback=s["model"], num_predict=80)[1]
+            box["text"] = llm.chat(model, msgs, [], fallback=s["model"], num_predict=60)[1]
         except Exception as e:
             task_log(f"PHONE NOTE: brain failed ({type(e).__name__}: {e})")
 
+    t0 = time.time()
     th = threading.Thread(target=work, daemon=True)
     th.start()
     th.join(PHONE_NOTE_SECS)
+    task_log(f"PHONE NOTE: arrived {max(0, t0 - (n.get('time') or t0)):.1f}s before the brain started, brain took {time.time() - t0:.1f}s")
     if th.is_alive():
         task_log(f"PHONE NOTE: brain took longer than {PHONE_NOTE_SECS} s - reading the plain text")
     kind, say = notifications.parse_phone_note(box.get("text"), fallback)
@@ -3039,6 +3170,9 @@ def on_notifications(items):
     if not items:
         return
     now = time.time()
+    if any(notifications.is_phone(n) and n.get("id") not in phone_seen for n in items) and s.get("phone_calls", True) and (
+            not nap["asleep"] or s.get("notif_sleep", False)):
+        ring_cue()          # the moment it arrives: a sound now, her words follow once the brain and the voice are ready
     for k in [k for k, t in phone_seen.items() if now - t > 60]:
         phone_seen.pop(k, None)
     lines, calls, missed, brained = [], [], [], 0
@@ -3087,7 +3221,7 @@ def on_notifications(items):
     announce(line, spoken=line.replace("🔔 ", "", 1))
 
 
-notif_watcher = notifications.Watcher(on_notifications, on_note=lambda s: task_log(s))
+notif_watcher = notifications.Watcher(on_notifications, every=1, on_note=lambda s: task_log(s))   # a ringing call can't wait 4 s
 
 
 # ------------------------------------------------------------------ 📱 phone: talk to Nova through Telegram (phone.py)

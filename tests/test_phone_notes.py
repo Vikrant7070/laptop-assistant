@@ -25,6 +25,9 @@ WHATSAPP = note(4, "Are you coming tonight?", title="Rahul", app_name="Phone Lin
 OTHER_APP = {"id": 9, "app": "WhatsApp", "title": "Mom", "body": "Call me", "time": time.time()}
 
 
+cues = []          # sounds played at the moment a phone notification arrives
+
+
 def reply(kind, say):
     return (json.dumps({"kind": kind, "say": say}), [])
 
@@ -32,6 +35,8 @@ def reply(kind, say):
 @pytest.fixture(autouse=True)
 def fresh(monkeypatch):
     app.phone_seen.clear()
+    cues.clear()
+    monkeypatch.setattr(app.sfx, "play", lambda name: cues.append(name) or True)
     app.events.clear()
     forwarded = []
     monkeypatch.setattr(app, "tell_away", lambda line: forwarded.append(line))
@@ -191,3 +196,28 @@ def test_settings_switches_are_saved(client):
     assert s["phone_calls"] is False and s["phone_notes_cloud"] is True
     st = client.get("/api/status").get_json()
     assert st["phone_calls"] is False and st["phone_notes_cloud"] is True
+
+
+# ---------------------------------------------------------------- speed: a sound at once, the words follow
+
+def test_a_sound_plays_the_moment_a_phone_notification_arrives(brain):
+    brain([reply("call", "Rani is calling.")])
+    app.on_notifications([RINGING])
+    assert cues == ["happy"]
+
+
+def test_no_sound_for_other_apps_duplicates_or_when_calls_are_off(brain):
+    brain([reply("call", "Rani is calling.")])
+    app.on_notifications([OTHER_APP])
+    assert cues == []
+    app.on_notifications([RINGING])
+    app.on_notifications([RINGING])                    # same toast again
+    assert cues == ["happy"]
+    cues.clear()
+    set_settings(phone_calls=False)
+    app.on_notifications([note(7, "Rani 2024 Incoming Call")])
+    assert cues == []
+
+
+def test_the_watcher_polls_every_second():
+    assert app.notif_watcher.every == 1
