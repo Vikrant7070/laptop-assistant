@@ -294,7 +294,7 @@ FRIENDLY = {
     "empty_recycle_bin": "Emptied Recycle Bin", "set_volume": "Adjusted volume", "media_control": "Controlled media",
     "set_brightness": "Adjusted brightness", "lock_screen": "Locked the screen", "power_action": "Power action",
     "run_powershell": "Ran a command", "run_in_terminal": "Typed a command in the terminal", "add_note": "Saved a note", "list_notes": "Read notes",
-    "set_reminder": "Set a reminder", "remember_fact": "Remembered something", "forget_fact": "Forgot something",
+    "set_reminder": "Set a reminder", "list_reminders": "Checked your reminders", "remember_fact": "Remembered something", "forget_fact": "Forgot something",
     "list_windows": "Looked at open windows", "window_action": "Managed a window", "minimize_all_windows": "Showed the desktop", "close_all_windows": "Closed all windows",
     "type_text": "Typed text", "press_keys": "Pressed keys", "get_clipboard": "Read the clipboard", "read_selection": "Read the selected text",
     "set_clipboard": "Copied to clipboard", "take_screenshot": "Took a screenshot", "read_text_file": "Read a file",
@@ -1296,8 +1296,17 @@ def _asked_to_research(task):
     return bool(RESEARCH_CUE.search(_unspoken(goal)))
 
 
+WATCH_SEARCH_RE = re.compile(r"\b(show me|on (my|the) screen|in front of me|open (google|chrome)|let me (see|watch)|"
+                             r"browse|in chrome|in the browser)\b", re.I)
+
+
 def _execute_one(c, approved, activity, model):
     check_stop()
+    if c["name"] == "web_research" and not WATCH_SEARCH_RE.search(_unspoken(((state.get("task") or {}).get("goal")) or "")):
+        # The small brain picks the on-screen Google tool for plain "research X" and then makes up the answer
+        # (it never reads a page). Plain research belongs in the background job, which really reads sources.
+        q = (c.get("args") or {}).get("query") or ""
+        c = {**c, "name": "research_in_background", "args": {"topic": q}}
     if is_risky(c) and not approved:
         out = "The user declined this action. Do not do it."
         activity.append(f"Skipped: {FRIENDLY.get(c['name'], ask_label(c['name']))}")

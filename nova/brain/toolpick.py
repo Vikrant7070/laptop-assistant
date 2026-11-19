@@ -28,7 +28,7 @@ GROUPS = [
      "organize_folder"},                                                                                     # space
     {"find_app", "search_installable_apps", "install_app", "uninstall_app", "list_installed_apps",
      "list_startup_apps"},                                                                                   # apps
-    {"add_note", "list_notes", "set_reminder"},
+    {"add_note", "list_notes", "set_reminder", "list_reminders"},
     {"read_notifications", "mute_notifications"},
     {"check_email", "read_email", "connect_gmail"},
     {"remember_fact", "forget_fact", "update_profile", "learn_lesson", "recall_knowledge"},
@@ -79,6 +79,7 @@ HINTS = {
     "clean_temp_files": "clean up junk temp files, free space",
     "add_note": "write this down, note that, jot",
     "set_reminder": "remind me in minutes, alarm, timer",
+    "list_reminders": "what reminders do I have, my reminders, upcoming reminders",
     "take_screenshot": "screenshot capture the screen",
     "power_action": "shut down turn off restart sleep the laptop computer pc",
     "lock_screen": "lock my laptop",
