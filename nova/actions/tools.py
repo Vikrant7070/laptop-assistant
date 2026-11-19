@@ -1865,6 +1865,16 @@ def set_reminder(text, minutes_from_now):
     return f"I'll remind you at {dt.datetime.fromtimestamp(due).strftime('%I:%M %p')}: {text}"
 
 
+def list_reminders():
+    with _files_lock:
+        rems = [r for r in _load(REMINDERS_FILE, []) if not r.get("done")]
+    if not rems:
+        return "No reminders are waiting."
+    rems.sort(key=lambda r: r.get("due", 0))
+    lines = [f"- {dt.datetime.fromtimestamp(r['due']).strftime('%a %I:%M %p')}: {r.get('text', '')}" for r in rems]
+    return "Waiting reminders:\n" + "\n".join(lines)
+
+
 def due_reminders():
     with _files_lock:
         rems = _load(REMINDERS_FILE, [])
@@ -2650,6 +2660,7 @@ TOOLS = [
           {"x": N, "y": N, "button": {"type": "string", "enum": ["left", "right"]}, "double": B}, ["x", "y"]),
     _tool("add_note", "Save a note.", {"text": S}, ["text"]),
     _tool("list_notes", "Read saved notes."),
+    _tool("list_reminders", "List the reminders that are still waiting (what did I ask you to remind me of)."),
     _tool("set_reminder", "Remind the user after some minutes.", {"text": S, "minutes_from_now": N}, ["text", "minutes_from_now"]),
     _tool("remember_fact", "Remember a lasting fact about the user that fits no profile field.", {"fact": S}, ["fact"]),
     _tool("forget_fact", "Forget everything in your knowledge bank (profile or lessons) containing some text.",
