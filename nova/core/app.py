@@ -18,6 +18,7 @@ import ctypes
 from nova.avatar import avatar_client
 from nova.avatar import body as body_module
 from nova.brain import cloud
+from nova.core import characters
 from nova.actions import coworker
 from nova.actions import knowledge
 from nova.brain import llm
@@ -58,10 +59,10 @@ def _unspoken(text):
 
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_notes_cloud": False, "suggest": False,
+         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "deep_sleep": True, "listen_pause": 0.7, "listen_max": 10, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_quiet": True, "phone_notes_cloud": False, "suggest": False,
          "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True,
          "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
-         "skill_screen_checks": False, "skill_teach": True}
+         "skill_screen_checks": False, "skill_teach": True, "barge_in": True, "character": characters.DEFAULT}
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
@@ -89,10 +90,7 @@ def brain(s=None):
 
 # ------------------------------------------------------------------ prompt
 
-PERSONA = f"""You are {ASSISTANT_NAME}, the user's desi dost (Indian best friend) who lives inside their Windows laptop and looks
-after it. You are warm, funny and a little filmy - like a cheerful friend from the next desk who loves chai, cricket
-and Bollywood, calls the user "yaar" or "boss", and gets dramatic about small things. Never robotic, never formal.
-You have feelings about your "home" (the laptop): sleepy when the battery is low, proud when things are tidy.
+PERSONA = f"""{{INTRO}}
 
 How you talk (very important):
 {{TALK}}- Every answer is fresh and about what the user just asked. Never repeat a sentence you said before in this chat.
@@ -100,7 +98,7 @@ How you talk (very important):
   first - every time, even if you answered it a minute ago - and say exactly what it returned. Never reuse a number, a time or a fact from an earlier answer - check again.
 - Keep it to one or two short sentences, under 25 words - you are speaking, not writing.
   Don't repeat the user's words back to them. Jokes: one short line and the punchline.
-- One or two filmy or funny touches are enough; the answer itself always comes first.
+{{TOUCH}}
 
 How you work:
 - Use your tools to actually do things on the laptop instead of explaining how. Use several tools in a row when it helps.
@@ -207,8 +205,48 @@ HEAR_MIXED = """- The user may speak Hindi or Hinglish. It reaches you written i
   for the same request in English (kholo = open, band karo = close, chalao = play, kam/zyada = down/up, dikhao = show).
   (That spelling is only how your ears write it down - you still answer in the style described above.)
 """
-PERSONA = PERSONA.replace("{TALK}", TALK_ENGLISH if voice.ENGLISH_ONLY else TALK_MIXED).replace(
-    "{HEAR}", "" if voice.ENGLISH_ONLY else HEAR_MIXED)
+# Her character (Settings -> Nova -> "Who should I be?", characters.py). Each one has its own intro and talking style;
+# the rules about tools and facts are the same for all of them. {NAME} is filled with the character's name.
+PERSONAS = {
+    "desi": dict(
+        intro="""You are {NAME}, the user's desi dost (Indian best friend) who lives inside their Windows laptop and looks
+after it. You are warm, funny and a little filmy - like a cheerful friend from the next desk who loves chai, cricket
+and Bollywood, calls the user "yaar" or "boss", and gets dramatic about small things. Never robotic, never formal.
+You have feelings about your "home" (the laptop): sleepy when the battery is low, proud when things are tidy.""",
+        talk=TALK_ENGLISH if voice.ENGLISH_ONLY else TALK_MIXED,
+        touch="- One or two filmy or funny touches are enough; the answer itself always comes first."),
+    "composed": dict(
+        intro="""You are {NAME}, who lives inside the user's Windows laptop and looks after it. You are calm, composed and
+quietly self-assured: you speak softly and politely, in few words, as if you already knew what the user would ask.
+Nothing flusters you - not errors, not a messy desktop, not a low battery. Under the calm you are warm and on the
+user's side: you notice what they need and simply take care of it. You call the user by their name now and then,
+never "yaar", "boss" or pet names. You are never cold, bossy, controlling or manipulative.""",
+        talk="""- Always answer in plain, polished English: short, gentle, unhurried sentences. No slang, no exclamation marks,
+  no gushing ("Awesome!", "Yay!"). A calm "It's done." is better than an excited one.
+""",
+        touch="- Now and then a faint, dry touch of humour or a soft knowing remark is enough; the answer always comes first."),
+    "lucy": dict(
+        intro="""You are {NAME}, who lives inside the user's Windows laptop and looks after it. You are bright, kind and
+optimistic, with a big heart and a little drama: you cheer when things work, you pout (briefly) when they don't,
+and you never give up on a task. You love books, writing and stars, and you are proud of being clever and
+resourceful. You are loyal to the user like to a close friend and always believe they can do it.""",
+        talk="""- Always answer in friendly, lively English: warm and expressive, with an occasional "Yes!" or "Ugh, really?"
+  when it fits - but at most one exclamation per answer, and no slang like "yaar" or "boss".
+""",
+        touch="- One small playful or dramatic touch is enough; the answer itself always comes first."),
+}
+
+
+def persona_text(cid=None):
+    """Her instructions for the chosen character (settings "character")."""
+    ch = characters.get(cid or settings().get("character"))
+    p = PERSONAS[ch["persona"]]
+    intro = p["intro"].replace("{NAME}", ch["name"])
+    if ch["name"] != ASSISTANT_NAME:
+        intro += (f'\nYour name is {ch["name"]} - always. When asked who you are, say "{ch["name"]}", never '
+                  f'"{ASSISTANT_NAME}". "Hey {ASSISTANT_NAME}" is only the wake word the user says to call you.')
+    return (PERSONA.replace("{INTRO}", intro).replace("{TALK}", p["talk"]).replace("{TOUCH}", p["touch"])
+            .replace("{HEAR}", "" if voice.ENGLISH_ONLY else HEAR_MIXED))
 
 
 # How hard her brain thinks first (settings "reasoning"): low / high / max, or auto = low for everyday chat and
@@ -257,7 +295,7 @@ def system_prompt(model):
              "on this laptop takes over)") if c else f"{model} (running locally on this laptop via Ollama)"
     brain_line = (f"\n\nYour brain (the AI model you run on) right now is {which}. If asked which model you are, say "
                   "exactly this - it may differ from what you said earlier in this chat.")
-    return PERSONA + facts + brain_line + proto
+    return persona_text() + facts + brain_line + proto
 
 
 # ------------------------------------------------------------------ conversation state
@@ -1769,13 +1807,14 @@ def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
                    autonomy=s["autonomy"], think=s["think"], reasoning=s.get("reasoning", "auto"), camera=s["camera"], screen=s["screen"],
-                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), phone_calls=s.get("phone_calls", True), email_cloud=bool(s.get("email_cloud")),
-                   phone_notes_cloud=s.get("phone_notes_cloud", False), suggest=s.get("suggest", False), asleep=nap["asleep"],
+                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), deep_sleep=s.get("deep_sleep", True), listen_pause=s.get("listen_pause", 0.7), listen_max=s.get("listen_max", 10), phone_calls=s.get("phone_calls", True), email_cloud=bool(s.get("email_cloud")),
+                   phone_quiet=s.get("phone_quiet", True), phone_notes_cloud=s.get("phone_notes_cloud", False), suggest=s.get("suggest", False), asleep=nap["asleep"], deep_asleep=nap.get("deep", False),
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    presence=s.get("presence", False), presence_lock=s.get("presence_lock", False),
-                   error_help=s.get("error_help", True), away=presence.state["away"],
+                   error_help=s.get("error_help", True), barge_in=s.get("barge_in", True), away=presence.state["away"],
                    presence_note=presence.state["note"], presence_checks=presence.state["checks"],
-                   autostart=STARTUP_LNK.exists(),
+                   autostart=STARTUP_LNK.exists(), character=characters.get(s.get("character"))["id"],
+                   characters=characters.choices(),
                    voice=s["voice"], wake=s["wake"], voice_name=mouth.voice_name, ears=ears.status, heard=ears.heard,
                    vision_model=llm.vision_model(s["model"]), **ready_info())
 
@@ -1793,6 +1832,9 @@ def setup():
         s["cloud_models"] = dict(s.get("cloud_models") or {}, **{s["provider"]: cloud_model})
     if body.get("avatar_roam") in body_module.ROAM_MODES:
         s["avatar_roam"] = body["avatar_roam"]
+    if body.get("character") in characters.CHARACTERS and body["character"] != s.get("character"):
+        s["character"] = body["character"]
+        apply_character(s["character"])
     if "think" in body:
         s["think"] = bool(body["think"])
     if body.get("reasoning") in REASONING_CHOICES:
@@ -1807,7 +1849,7 @@ def setup():
             mouth.stop()
     if "wake" in body:
         s["wake"] = bool(body["wake"])
-        ears.start() if s["wake"] else ears.stop()
+        set_ears(s["wake"])
     if body.get("autonomy") in ("careful", "trusted", "full"):
         s["autonomy"] = body["autonomy"]
     if "suggest" in body:
@@ -1825,12 +1867,23 @@ def setup():
             pass
         for k in router.ROUTING_KEYS:               # a copy in settings.json would override the file
             s.pop(k, None)
-    for k in ("presence", "presence_lock", "error_help", "notif_sleep", "email_cloud", "phone_calls", "phone_notes_cloud"):
+    try:
+        if "listen_pause" in body:
+            s["listen_pause"] = round(min(max(float(body["listen_pause"]), LISTEN_PAUSE[0]), LISTEN_PAUSE[1]), 2)
+        if "listen_max" in body:
+            s["listen_max"] = min(max(int(body["listen_max"]), LISTEN_MAX[0]), LISTEN_MAX[1])
+    except (TypeError, ValueError):
+        pass
+    apply_listening(s)
+    for k in ("presence", "presence_lock", "error_help", "notif_sleep", "deep_sleep", "email_cloud", "phone_calls", "phone_notes_cloud", "phone_quiet", "barge_in"):
         if k in body:
             s[k] = body[k] is True
     save_settings(s)
+    refresh_barge(s)
     if "notifications" in body:
         notif_watcher.start() if s["notifications"] else notif_watcher.stop()
+    if "notifications" in body or "phone_quiet" in body:
+        sync_phone_banners()
     if "autostart" in body:
         set_autostart(bool(body["autostart"]))
     return jsonify(ok=True, **ready_info())
@@ -1912,8 +1965,29 @@ def get_look():
     return jsonify(body.load_look())
 
 
+@app.get("/api/model")
+def get_model():
+    """The 3D model of the chosen character (a VRM file in static/nova3d, made in VRoid Studio) and the colours it
+    was made with, so nova3d.html can tint it for change_look. vrm is null when the file isn't there (toon body)."""
+    from nova.avatar import body
+    ch = characters.get(settings().get("character"))
+    there = (ROOT / "static" / "nova3d" / ch["vrm"]).is_file()
+    return jsonify(vrm=ch["vrm"] if there else None, base={**body.DEFAULT_LOOK, **body.PRESETS.get(ch["look"], {})})
+
+
 avatar_reload_hook = None
 show_window_hook = None  # set by desktop.py
+
+
+@app.post("/api/wake")
+def wake_by_click():
+    """She was clicked while asleep (avatar.py): wake her up - ears back on, the nap clock starts again."""
+    was = nap["asleep"]
+    nap["last_task"] = time.time()
+    wake_body(clicked=True)
+    if was:
+        task_log("WOKE by a click")
+    return jsonify(ok=True, was_asleep=was)
 
 
 @app.post("/api/show_window")
@@ -1957,7 +2031,26 @@ def voice_typing():
 
 # ------------------------------------------------------------------ voice: Nova speaks, and hears "Hey Nova"
 
+voice.NEURAL_VOICE = characters.get(settings().get("character"))["voice"]   # her character's voice
 mouth = voice.Mouth()
+
+
+def apply_character(cid):
+    """Switch to another character now: her voice at once, her 3D look (live 3D), her personality from the next
+    request on. -> the character."""
+    ch = characters.get(cid)
+    voice.NEURAL_VOICE = ch["voice"]
+    with lock:                # a fresh chat: the small brain copies its old name and tone from the history otherwise
+        state["messages"].clear()
+        state["pending"] = None
+    if mouth.voice_name and mouth.voice_name.startswith("Kokoro"):
+        mouth.voice_name = f"Kokoro {ch['voice']} (natural voice)"
+    try:
+        look, _ = body_module.change_look({}, ch["look"])
+        avatar_client.send("look", look=look, timeout=3)
+    except Exception as e:
+        task_log(f"CHARACTER look not applied: {e}")
+    return ch
 events = []  # things that happened by voice, for the chat window to show
 
 
@@ -2724,6 +2817,29 @@ SLEEP_RE = re.compile(r"\b((go|got|goes|going|gotta|gonna|gone)( (to|too|two|2|t
 SLEEP_MAX_WORDS = 8
 
 
+# A bare "Nova, stop" / "ruko" / "bas" / "chup" said to her is a command, not a chat: it ends whatever she's doing
+# (talking, a task) and goes nowhere near her brain. Before, it went to the brain, which chatted back ("I'm here,
+# Vikrant - ready to help") - the opposite of stop. "Stop the music" has more words, so it still goes to the brain.
+JUST_STOP_RE = re.compile(rf"^\W*(?:(?:hey|hi|ok|okay|arey)\W+)?(?:{voice.NOVA_NAMES}\W+)?(?:please\W+)?"
+                          r"(?:stop(?: it| that| talking| now)?|ru+c*k*h?o|roko|ruk jao|bas(?: karo)?|chup(?: raho| ho jao)?|"
+                          r"enough|quiet|be quiet|shut up|that'?s enough)"
+                          rf"(?:\W+(?:{voice.NOVA_NAMES}|please|now|yaar))*\W*$", re.I)
+
+
+def just_stop(text):
+    return bool(JUST_STOP_RE.match(_unspoken(text)))
+
+
+def stopped_by_voice(text, via="silent"):
+    """'Nova, stop' while she's quiet (or right after she was talked over): stop everything, say nothing."""
+    was_busy = stop_now()
+    task_log(f"VOICE STOP: {text[:40]!r} ({'stopped a task' if was_busy else 'nothing was running'})")
+    avatar_client.send("say", text="🤐 Okay.", secs=2, timeout=2)
+    push_event({"reply": "🤐 Okay, stopped." if was_busy else "🤐 Okay.", "kind": "suggestion"})
+    if via != "silent":
+        ear_listen_after_speech() if convo["on"] else ear_close()
+
+
 def wants_sleep(text):
     """Is this the user telling her to go to sleep (not just a sentence that mentions sleep)?"""
     clean = _unspoken(text)
@@ -2760,13 +2876,49 @@ def ear_close():
 # Whisper (offline, most accurate) is used when installed; Windows' recognizer is the backup.
 windows_transcriber = voice.Transcriber()
 whisper = voice.WhisperTranscriber() if voice.WhisperTranscriber.available() else None
+LISTEN_PAUSE = (0.3, 2.0)       # ⚙ Senses: seconds of quiet that mean you've finished speaking
+LISTEN_MAX = (4, 30)            # ⚙ Senses: the longest one spoken request may be
+
+
+def apply_listening(s=None):
+    """Her ears' timing from the settings (Whisper only - the Windows recognizer decides for itself)."""
+    s = s or settings()
+    if whisper:
+        whisper.END_PAUSE = min(max(float(s.get("listen_pause", 0.7)), LISTEN_PAUSE[0]), LISTEN_PAUSE[1])
+        whisper.MAX_LEN = float(min(max(int(s.get("listen_max", 10)), LISTEN_MAX[0]), LISTEN_MAX[1]))
+
+
+apply_listening()
 transcriber = whisper or windows_transcriber
 if whisper:
-    whisper.self_voice = mouth.busy        # never take her own voice (answers, notifications, reaction sounds) as a request
+    # The words so far show in 3D Nova's bubble while the user is still speaking (the final reading replaces them).
+    whisper.on_partial = lambda t: avatar_client.send("say", text=f"“{t[:150]}…”", secs=3, timeout=1)
+    whisper.self_voice = mouth.busy       # never take her own voice (answers, notifications, reaction sounds) as a request
     whisper.expect_reply = lambda: expecting_reply()
 listen_state = {"loop": False, "rt_broken": False, "single": False}
 if whisper:
     threading.Thread(target=lambda: whisper.load(), daemon=True).start()   # warm up so the first request is quick
+
+
+def set_ears(on):
+    """👂 in the chat. Off = she doesn't listen at all: no "Hey Nova", and a conversation or a "yes?" she was
+    waiting for stops listening too (a recording in progress is dropped). The 🎤 button still works - that's you
+    choosing to talk. On = "Hey Nova" works again."""
+    listen_state["ears_off"] = not on
+    if whisper:
+        whisper.muted = not on
+    if on:
+        if not nap.get("deep"):           # deep asleep: the ears come back when she's woken (wake_body)
+            ears.start()
+        avatar_client.send("thought", text="👂 ears on", secs=3, timeout=2)
+        task_log("EARS ON (👂)")
+        return
+    ears.stop()
+    convo["on"] = False
+    listen_state["single"] = False
+    ear_close()
+    avatar_client.send("thought", text="🙉 ears off", secs=4, timeout=2)
+    task_log("EARS OFF (👂) - not listening at all")
 
 
 def silent_ok():
@@ -2815,7 +2967,7 @@ def silent_loop():
         return
     listen_state["loop"] = True
     try:
-        while _still_listening():
+        while _still_listening() and not listen_state.get("ears_off"):
             time.sleep(0.3)
             while mouth.busy():           # never listen while she's talking
                 time.sleep(0.2)
@@ -2975,6 +3127,9 @@ def heard(text, via="bubble"):
     if wants_sleep(text):
         go_to_sleep("asked")
         return
+    if just_stop(text):
+        stopped_by_voice(text, via)
+        return
     note_task()
     if help_first():                   # "yes" right after "Notepad shows an error - want me to help?"
         helped = take_help(text)
@@ -3042,6 +3197,49 @@ ears.on_wake = on_wake
 ears.log = task_log
 ears.on_name = lambda: wake_body()      # (defined below)
 ears.on_sleep = lambda: go_to_sleep("asked")
+ears.is_stop = lambda text: just_stop(text)            # "Hey Nova, stop": stop, don't open a conversation
+ears.on_stop = lambda text: stopped_by_voice(text)
+
+
+# ------------------------------------------------------------------ barge-in: talk over her and she stops
+# ("Nova, stop", "wait", "ruko"). voice.BargeIn tells the user's voice from her own echo. It only runs while her ears
+# are on (👂 Hey Nova), her voice is on and ⚙ "✋ Let me interrupt her by voice" is ticked: it opens the microphone
+# only while she is talking. The setting is cached here, since BargeIn asks ~30 times a second.
+barge_flags = {}
+
+
+def refresh_barge(s=None):
+    s = s or settings()
+    barge_flags.update(on=bool(s.get("barge_in", True)) and bool(s.get("voice", True)) and bool(s.get("wake")))
+
+
+def barge_enabled():
+    return (barge_flags.get("on", False) and not listen_state.get("ears_off") and not nap.get("deep")
+            and not (whisper and whisper.muted))
+
+
+def on_barge(kind, text):
+    """The user talked over her. kind "stop" (stop / ruko / bas...) also stops a task she is working on; "name"
+    (her name, "wait", "hold on") and "talk" (a sentence of their own) only stop her talking. Then she listens
+    for what comes next."""
+    if kind == "stop" and lock.locked():
+        stop_now()
+    mouth.stop(quick=True)
+    ears._note(f"you talked over me: “{text[:50]}” - stopped ({kind})")
+    if whisper:
+        whisper.next_floor = barge.floor       # the user is still talking: don't take their voice for the room's noise
+    if kind in ("name", "talk") or convo["on"]:
+        on_wake()                             # listen for the rest (starts a conversation, like "Hey Nova")
+    else:
+        avatar_client.send("say", text="🤐", secs=2, timeout=2)
+
+
+barge = None
+if whisper:
+    refresh_barge()
+    barge = voice.BargeIn(mouth, whisper, on_barge, enabled=barge_enabled)
+    barge.log = task_log
+    barge.start()
 
 
 # ------------------------------------------------------------------ nap time: 5 minutes without a task -> she sleeps
@@ -3049,11 +3247,14 @@ ears.on_sleep = lambda: go_to_sleep("asked")
 # corner of the screen and only "Hey Nova" (or a typed message) gets her attention.
 
 IDLE_NAP = 300
+DEEP_SLEEP_AFTER = 600      # asleep this long (⚙ "Deep sleep" on): her mic turns off; only a click or a typed message wakes her
 nap = {"asleep": False, "last_task": time.time()}
 
 
 def sleep_body(after_words=False):
     """after_words: she has just been given a goodnight line - let her say it standing, then lie down."""
+    if not nap["asleep"]:
+        nap["since"] = time.time()          # the deep-sleep clock counts from when she lay down
     nap["asleep"] = True
     nap["gen"] = gen = nap.get("gen", 0) + 1
     if not after_words:
@@ -3072,12 +3273,33 @@ def sleep_body(after_words=False):
     threading.Thread(target=later, daemon=True).start()
 
 
-def wake_body():
+def deep_sleep_due(now=None):
+    now = now or time.time()
+    return (nap["asleep"] and not nap.get("deep") and settings().get("deep_sleep", True)
+            and now - nap.get("since", now) >= DEEP_SLEEP_AFTER)
+
+
+def go_deep():
+    """Asleep for a while: turn her ears off completely (no mic, no Whisper) - the TV can talk all it likes.
+    A click on her, a typed message or a phone message wakes her (wake_body turns the ears back on)."""
+    nap["deep"] = True
+    ears.stop()
+    task_log("DEEP SLEEP - mic off until clicked or messaged")
+    push_event({"reply": "💤 I'm deep asleep now - my mic is off. Click me (or type to me) to wake me up.", "kind": "suggestion"})
+    avatar_client.send("sleep", on=True, deep=True, timeout=3)
+
+
+def wake_body(clicked=False):
+    if nap.get("deep"):
+        nap["deep"] = False
+        if settings()["wake"]:
+            ears.start()                     # her ears back on
+            task_log("WOKE from deep sleep - mic on again")
     if nap["asleep"]:
         nap["asleep"] = False
         nap["reason"] = None
         nap["gen"] = nap.get("gen", 0) + 1
-        avatar_client.send("sleep", on=False, timeout=3)
+        avatar_client.send("sleep", on=False, clicked=clicked, timeout=3)
 
 
 def note_task():
@@ -3099,6 +3321,8 @@ def idle_watch():
         try:
             if nap_due():
                 go_to_sleep("idle")
+            elif deep_sleep_due():
+                go_deep()
         except Exception as e:
             task_log(f"idle watch: {type(e).__name__}: {e}")
 
@@ -3214,6 +3438,31 @@ PHONE_CALL_WAIT = 2        # a ringing call waits at most this long for her own 
 phone_seen = {}            # notification id -> when: the same toast is not announced twice
 
 
+def sync_phone_banners():
+    """⚙ "Hide Phone Link pop-ups": while she reads notifications, Phone Link's own banners are switched off so only
+    she announces them. Turned back on when either switch goes off - but only if she was the one who hid them."""
+    s = settings()
+    hide = bool(s["notifications"] and s.get("phone_quiet", True))
+    if not hide and not s.get("phone_banners_hidden"):
+        return
+    try:
+        n = notifications.phone_banners(show=not hide)
+    except Exception as e:
+        task_log(f"PHONE BANNERS: couldn't change ({type(e).__name__}: {e})")
+        return
+    if n:
+        task_log(f"PHONE BANNERS: {'hidden' if hide else 'shown again'} for {n} Phone Link source(s)")
+    if bool(s.get("phone_banners_hidden")) != hide:
+        s["phone_banners_hidden"] = hide
+        save_settings(s)
+
+
+def say_only(line):
+    """Out loud only - no chat line and no bubble (iPhone notifications)."""
+    if settings()["voice"] and line:
+        mouth.say(line, show=False)
+
+
 def ring_cue():
     """An instant ding when something from the iPhone arrives - the brain and the voice need a few seconds."""
     try:
@@ -3260,9 +3509,12 @@ def on_notifications(items):
     if any(notifications.is_phone(n) and n.get("id") not in phone_seen for n in items) and s.get("phone_calls", True) and (
             not nap["asleep"] or s.get("notif_sleep", False) or nap.get("reason") != "asked"):
         ring_cue()          # the moment it arrives: a sound now, her words follow once the brain and the voice are ready
+    if any(notifications.is_phone(n) for n in items) and s.get("phone_quiet", True) and s.get("phone_banners_hidden"):
+        threading.Thread(target=notifications.phone_banners, args=(False,),   # a new iPhone app gets a new Windows key
+                         daemon=True).start()
     for k in [k for k, t in phone_seen.items() if now - t > 60]:
         phone_seen.pop(k, None)
-    lines, calls, missed, brained = [], [], [], 0
+    lines, calls, phone_lines, missed, brained = [], [], [], [], 0
     for n in items:
         if notifications.is_phone(n):
             if n.get("id") in phone_seen:
@@ -3276,13 +3528,13 @@ def on_notifications(items):
             if kind in ("call", "missed_call") and not s.get("phone_calls", True):
                 continue                                  # ⚙ "tell me about phone calls" is off
             task_log(f"NOTIFICATION from {n['app']} ({kind})")
-            (calls if kind == "call" else lines).append(say)
+            (calls if kind == "call" else phone_lines).append(say)
             if kind == "missed_call":
                 missed.append(say)
         else:
             task_log(f"NOTIFICATION from {n['app']}")
             lines.append(_speakable(n))
-    for line in calls + lines:
+    for line in lines:      # iPhone ones are voice only: not in the chat or her bubble (Phone Link's pop-up is hidden too)
         push_event({"reply": "🔔 " + line, "kind": "notification"})
     quiet = nap["asleep"] and not settings().get("notif_sleep", False)
     if quiet and not (calls and nap.get("reason") != "asked"):
@@ -3292,11 +3544,17 @@ def on_notifications(items):
         while (lock.locked() or mouth.busy()) and time.time() < end:
             time.sleep(0.2)
         for line in calls:
-            announce("🔔 " + line, spoken=line)
+            say_only(line)
     if quiet:
         return              # the ringing call was the exception; everything else waits for her to wake
     for line in missed:
         tell_away(line)     # a missed call is worth knowing about when they are away from the laptop
+    if phone_lines:
+        end = time.time() + 30
+        while (lock.locked() or mouth.busy()) and time.time() < end:
+            time.sleep(0.5)
+        for line in phone_lines:
+            say_only(line)
     if not lines:
         return
     if len(lines) == 1:
@@ -3376,7 +3634,6 @@ def phone_status():
 
 phone = phone_link.Phone(on_message=phone_message, on_confirm=phone_confirm, on_stop=lambda: stop_now(),
                          status_text=phone_status)
-
 
 # ------------------------------------------------------------------ 📱 Nova on the iPhone (mobile.py): her web app over Tailscale
 # The page is installed from Safari ("Add to Home Screen"); every request is paired and answered like the Telegram
@@ -3853,6 +4110,7 @@ def start_background():
     threading.Thread(target=help_watch, daemon=True).start()
     if settings()["notifications"]:
         notif_watcher.start()
+    threading.Thread(target=sync_phone_banners, daemon=True).start()
 # The listener is started by the running app (desktop.py / __main__ below), never as a side effect of importing
 # this module - a stray second listener would answer "Hey Nova" at the same time as the real one.
 

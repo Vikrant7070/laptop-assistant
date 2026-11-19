@@ -13,7 +13,9 @@
   button.on,button:hover{border-color:var(--accent)}
   #msg{color:var(--muted)}
 </style>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "@pixiv/three-vrm":"https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@2.1.0/lib/three-vrm.module.js"}}</script>
 </head>
 <body>
 <canvas id="stage" width="520" height="680"></canvas>
@@ -243,20 +245,36 @@ const LIVE = new URLSearchParams(location.search).has("live");
 const renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, premultipliedAlpha: !LIVE});
 renderer.setClearColor(0x000000, 0);
 const scene = new THREE.Scene(); scene.add(nova); fx.forEach(d => scene.add(d));
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7cff, 1.0));
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7cff, 1.0); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(3, 6, 8); scene.add(sun);
 const rim = new THREE.DirectionalLight(0x6ee7f9, 1.2); rim.position.set(-6, 3, -4); scene.add(rim);
 const camera = new THREE.PerspectiveCamera(28, W / H, .1, 100);
 camera.position.set(0, 2.5, 11); camera.lookAt(0, 2.5, 0);
 
 /* ------------------------------------------------------------------ animations: pose(name, t in [0,1)) */
+// Lying down asleep, k = how far down (1 = lying, 0 = standing; the wake-up move gets her up through it).
+// She lies on her side, head to the left on her arm, knees drawn up, turned a little towards you.
+const NAP = {rz: 1.5, ry: -.3, x: 1.95, y: 1.35};
+function napPose(k, breathe = 0) {
+  const e = ease(k);
+  nova.rotation.z = NAP.rz * e; nova.rotation.y = NAP.ry * e;
+  nova.position.x = NAP.x * e; nova.position.y = NAP.y * e + .02 * breathe * e;
+  legs[0].rotation.x = -1.1 * e; legs[1].rotation.x = -.85 * e;
+  arms[0].rotation.set(-2.3 * e, 0, .12 + .5 * e);         // the arm under her head, like a pillow
+  arms[1].rotation.set(-.9 * e, 0, -.12 - .25 * e);        // the other one draped in front
+  head.rotation.z = -.2 * e; head.rotation.x = .1 * e + .015 * breathe * e;
+  body.rotation.x = .12 * e;
+  locks.forEach(l => l.rotation.z = -.5 * e); longHair.rotation.z = -.35 * e;
+  ahoge.rotation.z = .4 - .2 * e;
+  if (e > .5) { eyes.forEach(x => x.material.map = TEX.eye.closed); mouth.material.map = TEX.mouth.smile; }
+}
 const TAU = Math.PI * 2, ease = x => x < .5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2;
 const ANIMS = {idle: 24, walk: 16, talk: 12, think: 12, point: 14, happy: 12, wave: 16, sleepy: 12,
                laugh: 12, dance: 24, spin: 16, clap: 12, surprised: 12, sad: 16, confused: 16, nod: 12, shake: 12,
-               facepalm: 18, bow: 16, love: 16, carry: 16, yawn: 18, look: 20, work: 24};
+               facepalm: 18, bow: 16, love: 16, carry: 16, yawn: 18, look: 20, work: 24, wakeup: 40, nap: 24, liedown: 14};
 function reset() {
   fx.forEach(d => d.visible = false); mouth.scale.set(1, 1, 1); desk.visible = false;
-  nova.rotation.set(0, 0, 0); body.position.set(0, 0, 0); body.rotation.set(0, 0, 0);
+  nova.rotation.set(0, 0, 0); nova.position.set(0, 0, 0); body.position.set(0, 0, 0); body.rotation.set(0, 0, 0);
   head.rotation.set(0, 0, 0); neckTop.rotation.set(0, 0, 0);
   legs.forEach(l => l.rotation.set(0, 0, 0));
   arms[0].rotation.set(0, 0, .12); arms[1].rotation.set(0, 0, -.12);
@@ -401,6 +419,39 @@ function pose(name, t) {
     eyes.forEach(e => e.material.map = k > .25 ? TEX.eye.closed : TEX.eye.half);
     mouth.material.map = k > .25 ? TEX.mouth.o : TEX.mouth.smile; mouth.scale.set(1 + .6 * k, 1 + 1.0 * k, 1);
     if (k > .6) sym(0, SYM.z, 1.2, 4.1, .5, (k - .6) / .4);
+  } else if (name === "nap") {              // asleep: lying on her side on the "floor", curled up, breathing slowly
+    napPose(1, s);
+    sym(0, SYM.z, -.2 + .35 * t, 3.0 + .9 * t, .4 + .3 * t, t < .15 ? t / .15 : 1 - (t - .15) / .85, .2);
+    const t2 = (t + .5) % 1; sym(1, SYM.z, .3 + .3 * t2, 2.8 + .8 * t2, .3 + .2 * t2, t2 < .15 ? t2 / .15 * .8 : .8 * (1 - (t2 - .15) / .85), -.1);
+  } else if (name === "liedown") {          // from standing (after her yawn) down onto her side
+    napPose(t); if (t < .5) eyes.forEach(x => x.material.map = TEX.eye.half);
+  } else if (name === "wakeup") {           // clicked awake: doze -> eyes flutter -> rub eyes -> big stretch -> happy hop
+    const seg = (a, b) => Math.min(1, Math.max(0, (t - a) / (b - a)));
+    const lift = ease(seg(.12, .3)), rub = t > .22 && t < .42 ? Math.sin(Math.PI * seg(.22, .42)) : 0;
+    const str = Math.sin(Math.PI * ease(seg(.4, .66))), hop = t > .66 && t < .86 ? Math.sin(Math.PI * seg(.66, .86)) : 0;
+    const settle = ease(seg(.86, 1));
+    head.rotation.z = .22 * (1 - lift) + .04 * Math.sin(TAU * t * 3) * rub;             // from her sleepy tilt to upright
+    head.rotation.x = .12 * (1 - lift) - .22 * str - .08 * hop;
+    body.position.y = .02 * Math.sin(TAU * t * 2) * (1 - lift) + .06 * str + .45 * hop;
+    body.rotation.x = -.05 * str;
+    arms[0].rotation.set(-2.4 * rub - .55 * str - .6 * hop, 0, .12 + .25 * rub - 2.15 * str - 1.9 * hop + .03 * Math.sin(TAU * t * 8) * rub);
+    arms[1].rotation.set(-.55 * str - .6 * hop, 0, -.12 + 2.15 * str + 1.9 * hop);
+    legs[0].rotation.x = -.35 * hop; legs[1].rotation.x = .2 * hop;
+    locks.forEach(l => l.rotation.x = .3 * hop); longHair.rotation.x = .15 * hop;
+    ahoge.rotation.z = .4 + .5 * Math.sin(TAU * t * 4) * Math.max(lift - settle, hop);   // her hair tuft springs up
+    const flutter = t > .12 && t < .24 && Math.sin(TAU * t * 25) > 0;
+    eyes.forEach(e => e.material.map = t < .12 ? TEX.eye.closed : flutter ? TEX.eye.closed : t < .3 ? TEX.eye.half
+      : str > .25 ? TEX.eye.closed : hop > .05 || t > .86 ? TEX.eye.happy : TEX.eye.open);
+    mouth.material.map = str > .25 ? TEX.mouth.o : hop > .05 || t > .86 ? TEX.mouth.grin : TEX.mouth.smile;
+    if (str > .25) mouth.scale.set(1 + .5 * str, 1 + .9 * str, 1);
+    if (hop > .05 || t > .86) blushes.forEach(b => b.material.opacity = 1);
+    if (t < .2) sym(0, SYM.z, .95 + .1 * t, 4.05 + 1.5 * t, .45, 1 - t / .2);           // the last "z" drifts away
+    else if (t > .62) {                                                                  // "!" then sparkles of joy
+      const k = seg(.62, 1);
+      sym(0, SYM.bang, 1.15, 4.0 + .3 * k, .55 + .25 * Math.sin(Math.PI * Math.min(1, k * 2)), 1 - k * k, -.15);
+      sym(1, SYM.heart, -1.15, 3.6 + .6 * k, .4 + .2 * k, k < .2 ? k / .2 : 1 - (k - .2) / .8, .1);
+    }
+    if (t < .22) napPose(1 - seg(0, .22));    // she was lying down: up onto her feet first
   } else if (name === "work") {             // busy on a task: sitting at her desk, typing on her laptop
     desk.visible = true;
     body.position.y = -.32; body.rotation.x = .07;                       // sitting (her legs are under the desk)
@@ -422,7 +473,8 @@ function pose(name, t) {
   nova.updateMatrixWorld(true);
 }
 function handPixel() {
-  const v = new THREE.Vector3(); arms[0].userData.hand.getWorldPosition(v); v.project(camera);
+  const v = new THREE.Vector3(), vh = vrm && vrm.humanoid.getRawBoneNode("rightHand");
+  (vh || arms[0].userData.hand).getWorldPosition(v); v.project(camera);
   return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * H)];
 }
 function feetPixel() { const v = new THREE.Vector3(0, 0, 0).project(camera); return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * H)]; }
@@ -444,6 +496,7 @@ function applyLook(L) {
   longHair.visible = L.long_hair !== false; glasses.visible = !!L.glasses; catEars.visible = !!L.cat_ears;
   beanie.visible = !!L.beanie; bow.visible = !!L.bow; ahoge.visible = L.ahoge !== false && !L.beanie;
   cap.visible = !L.beanie;
+  lastLook = L; dressVRM(); checkModel();
 }
 
 /* ------------------------------------------------------------------ moves she invents (body.py clean_move) */
@@ -481,6 +534,162 @@ function poseMove(move, t) {
   nova.updateMatrixWorld(true);
 }
 
+/* ------------------------------------------------------------------ her real 3D model (VRM made in VRoid Studio) */
+// The toon rig above still does all the posing: each frame its joints are copied onto the VRM's bones and its face
+// pictures become VRM expressions, so every built-in and invented move plays on the real model too. Which model:
+// /api/model (the chosen character, characters.py). No model file, a load error, or ?toon in the URL: the toon body.
+const NO_VRM = new URLSearchParams(location.search).has("toon");
+let vrm = null, vrmFile = null, vrmBase = null, lastLook = null, vrmFit = null, talkLevel = null, modelBusy = null;
+let nextBlink = 0, blinkAt = -1e9, lastDraw = performance.now();
+const acc = new THREE.Group();                 // headphones, hair clip, glasses... re-hung on the VRM's head bone
+const ACCESSORIES = [...phones, ...earWaves, clip, glasses, catEars, beanie, bow];
+ACCESSORIES.forEach(o => o.traverse(c => c.userData.acc = true));
+const toonParent = new Map(ACCESSORIES.map(o => [o, o.parent]));
+const eu = new THREE.Euler(), axis = (x, y, z) => new THREE.Vector3(x, y, z);
+const SPREAD = .3;     // the toon's arms hang a little inwards (a round body); the slim VRM's would go into her hips
+// The toon's arms hang down at rest; the VRM's point sideways (T-pose): turn them down first, then pose like the toon.
+const ARM_DOWN = [new THREE.Quaternion().setFromAxisAngle(axis(0, 0, 1), Math.PI / 2 - SPREAD),     // her right arm
+                  new THREE.Quaternion().setFromAxisAngle(axis(0, 0, 1), -Math.PI / 2 + SPREAD)];   // her left arm
+
+function showToon(on) {     // the toon's meshes (not the accessories, which both bodies wear)
+  body.traverse(o => { if (o.isMesh && !o.userData.acc && !o.userData.vrm) o.visible = on; });
+}
+function hangAccessories(onVrm) {
+  ACCESSORIES.forEach(o => (onVrm ? acc : toonParent.get(o)).add(o));
+}
+async function loadVRM(file) {
+  const [{GLTFLoader}, {VRMLoaderPlugin, VRMUtils}] = await Promise.all([
+    import("three/addons/loaders/GLTFLoader.js"), import("@pixiv/three-vrm")]);
+  const loader = new GLTFLoader(); loader.register(p => new VRMLoaderPlugin(p));
+  const gltf = await loader.loadAsync(`nova3d/${file}`);
+  const v = gltf.userData.vrm;
+  VRMUtils.removeUnnecessaryVertices(gltf.scene); VRMUtils.removeUnnecessaryJoints(gltf.scene); VRMUtils.rotateVRM0(v);
+  v.scene.traverse(o => { o.userData.vrm = true; if (o.isMesh) o.frustumCulled = false; });
+  v.scene.updateMatrixWorld(true);
+  // Same height on screen as the toon: the top of her hair at y = 3.55 (VRoid puts her feet at 0).
+  const box = new THREE.Box3().setFromObject(v.scene), k = 3.55 / box.max.y;
+  v.scene.scale.setScalar(k); v.scene.updateMatrixWorld(true);
+  const wp = n => v.humanoid.getRawBoneNode(n).getWorldPosition(new THREE.Vector3());
+  const headY = wp("head").y, top = 3.55, faceBox = new THREE.Box3();
+  v.scene.traverse(o => { if (o.isMesh && /face/i.test(o.name)) faceBox.expandByObject(o); });
+  // The toon's head is ~1.85 tall with its middle 0.9 above the neck; size and place the accessories to match hers.
+  const s = .92 * (top - headY) / 1.85, front = faceBox.isEmpty() ? wp("head").z + .35 * s : faceBox.max.z;
+  acc.scale.setScalar(s / k); acc.position.set(0, .9 * s / k, (front - .86 * s - wp("head").z) / k);
+  vrmFit = {upLeg: wp("rightUpperLeg").distanceTo(wp("rightLowerLeg"))};
+  v.scene.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => m.userData.orig = {
+    color: m.color && m.color.clone(), shade: m.shadeColorFactor && m.shadeColorFactor.clone()}); });
+  if (vrm) { body.remove(vrm.scene); VRMUtils.deepDispose(vrm.scene); }
+  vrm = v; body.add(v.scene); v.humanoid.getRawBoneNode("head").add(acc);
+  if (v.lookAt) { v.lookAt.target = null; v.lookAt.autoUpdate = false; }
+  hangAccessories(true); showToon(false); vrmLights(true);
+}
+// The toon's bright lights wash out the VRM's anime shading (MToon): softer ones while she wears the VRM.
+function vrmLights(on) { hemi.intensity = on ? VRM_LIGHT.hemi : 1.0; sun.intensity = on ? VRM_LIGHT.sun : 1.5; rim.intensity = on ? VRM_LIGHT.rim : 1.2; }
+const VRM_LIGHT = {hemi: .35, sun: 1.1, rim: .8};
+window.VRM_LIGHT = VRM_LIGHT; window.vrmLights = vrmLights;
+function unloadVRM() {
+  if (!vrm) return;
+  body.remove(vrm.scene); vrm = null; vrmFile = null; hangAccessories(false); showToon(true); vrmLights(false);
+  if (lastLook) applyLook(lastLook);
+}
+function checkModel() {      // the chosen character's model; reloaded when she switches characters
+  if (NO_VRM || modelBusy) return;
+  modelBusy = (async () => {
+    try {
+      const force = new URLSearchParams(location.search).get("vrm");     // dev: ?vrm=makima.vrm
+      const j = force ? {vrm: force, base: null} : await (await fetch("/api/model")).json();
+      vrmBase = j.base;
+      if (j.vrm && j.vrm !== vrmFile) { vrmFile = j.vrm; await loadVRM(j.vrm); }
+      else if (!j.vrm) unloadVRM();
+      dressVRM();
+    } catch (e) { console.warn("No VRM model, keeping the toon body:", e); vrmFile = null; }
+    modelBusy = null;
+  })();
+}
+// change_look on the VRM: her hair and skin are tinted by how far the look is from her character's own colours
+// (the model's textures already have those). Her clothes are one texture, so outfit colours stay as made in VRoid.
+function dressVRM() {
+  if (!vrm || !lastLook) return;
+  showToon(false);
+  const base = vrmBase || lastLook;      // no base colours known (?vrm= test): no tint
+  const ratio = k => {
+    const a = new THREE.Color(base[k] || "#ffffff"), b = a.clone();
+    try { if (lastLook[k]) a.setStyle(lastLook[k]); } catch (e) {}
+    return new THREE.Color(...["r", "g", "b"].map(c => Math.min(4, a[c] / Math.max(b[c], .02))));
+  };
+  const tint = {HAIR: ratio("hair"), SKIN: ratio("skin")};
+  vrm.scene.traverse(o => {
+    if (!o.isMesh) return;
+    [].concat(o.material).forEach(m => {
+      const t = Object.keys(tint).find(n => m.name.includes(n)), orig = m.userData.orig;
+      if (!t || !orig) return;
+      if (orig.color) m.color.copy(orig.color).multiply(tint[t]);
+      if (orig.shade) m.shadeColorFactor.copy(orig.shade).multiply(tint[t]);
+    });
+  });
+}
+
+// Copy the toon's pose and face onto the VRM, then let it move her hair and clothes (spring bones).
+function driveVRM(dt) {
+  if (!vrm) return;
+  const h = vrm.humanoid, set = (n, x, y, z, post) => {
+    const b = h.getNormalizedBoneNode(n); if (!b) return;
+    b.quaternion.setFromEuler(eu.set(x, y, z)); if (post) b.quaternion.multiply(post);
+  };
+  arms.forEach((a, i) => {          // arms[0] is her right arm
+    const side = i ? "left" : "right", r = a.rotation;
+    set(side + "UpperArm", r.x, r.y, r.z, ARM_DOWN[i]);
+    // a straight toon arm reaching up to her face would miss on the VRM's smaller head: bend the elbow instead
+    const bend = .12 + Math.min(1.9, Math.max(0, (-r.x - .8) * 1.2));
+    set(side + "LowerArm", 0, i ? -bend : bend, 0);
+  });
+  legs.forEach((l, i) => {          // legs[0] is her right leg
+    const side = i ? "left" : "right", r = l.rotation;
+    set(side + "UpperLeg", r.x, r.y, r.z);
+    set(side + "LowerLeg", Math.max(0, -r.x) * (r.x < -1 ? 1 : .6), 0, 0);   // knee bends as the leg comes up
+  });
+  const hr = head.rotation, nr = neckTop.rotation;
+  set("neck", .4 * hr.x + nr.x, .4 * hr.y + nr.y, .4 * hr.z + nr.z);
+  set("head", .6 * hr.x, .6 * hr.y, .6 * hr.z);
+  // sitting at her desk: her long legs need the seat lower than the toon's (shins straight down, feet on the floor)
+  const sit = Math.min(-legs[0].rotation.x, -legs[1].rotation.x);
+  vrm.scene.position.y = sit > 1 ? .32 - vrmFit.upLeg * (1 - Math.cos(sit)) : 0;
+  // lying on her side: she is slimmer than the toon, so lower her onto the floor (her sideways is up while lying)
+  vrm.scene.position.x = -.3 * Math.max(0, nova.rotation.z / NAP.rz);
+
+  const em = vrm.expressionManager;
+  if (em) {
+    const ex = {blink: 0, happy: 0, sad: 0, surprised: 0, relaxed: 0, aa: 0, ih: 0, ou: 0, ee: 0, oh: 0};
+    const nameOf = (set, m) => Object.keys(set).find(k => set[k] === m);
+    const e = nameOf(TEX.eye, eyes[0].material.map), mo = nameOf(TEX.mouth, mouth.material.map), big = mouth.scale.y;
+    let yaw = 0, pitch = 0;
+    if (e === "closed") ex.blink = 1; else if (e === "happy") ex.happy = 1; else if (e === "half") ex.blink = .55;
+    else if (e === "wide") ex.surprised = 1; else if (e === "sadL" || e === "sadR") ex.sad = 1;
+    else if (e === "up") { pitch = 14; yaw = -8; } else if (e === "side") yaw = 22; else if (e === "sideB") yaw = -22;
+    else if (e === "down") pitch = -18;
+    if (talkLevel !== null && talkLevel !== undefined) {   // her real voice: the mouth follows its loudness
+      const now = performance.now() / 1000;
+      ex.aa = Math.min(1, talkLevel * 1.3); ex.oh = .35 * talkLevel * Math.max(0, Math.sin(now * 7));
+    } else if (mo === "open") ex.aa = Math.min(1, .75 * big);
+    else if (mo === "grin") { ex.ih = .45; ex.happy = Math.max(ex.happy, .3); }
+    else if (mo === "o") ex.oh = Math.min(1, .6 * big);
+    else if (mo === "frown") ex.sad = Math.max(ex.sad, .4);
+    // natural blinking on top of the moves' own blinks
+    const now = performance.now();
+    if (now > nextBlink) { blinkAt = now; nextBlink = now + 2200 + Math.random() * 3800; }
+    const bk = (now - blinkAt) / 150;
+    if (bk < 1 && !ex.happy && !ex.surprised) ex.blink = Math.max(ex.blink, Math.sin(Math.PI * bk));
+    for (const [k, w] of Object.entries(ex)) em.setValue(k, w);
+    if (vrm.lookAt) { vrm.lookAt.yaw = yaw; vrm.lookAt.pitch = pitch; }
+  }
+  vrm.update(Math.min(.05, Math.max(0, dt)));     // (pose() already updated the world matrices)
+}
+function draw(dt) {
+  const now = performance.now();
+  driveVRM(dt === undefined ? (now - lastDraw) / 1000 : dt); lastDraw = now;
+  renderer.render(scene, camera);
+}
+
 /* ------------------------------------------------------------------ live renderer for desktop Nova */
 // Each frame: pose her as avatar.py asked last time, render, read the pixels and POST them; the reply says what to
 // show next (animation + phase, an invented move, her look, how fast). If avatar.py isn't there, try again later.
@@ -488,6 +697,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Added on top of whatever she is doing: her real voice (talk = loudness 0..1) opens her mouth and gives her a small
 // bounce on stressed words; music on the laptop (groove = beat phase + strength) makes her bob her head in time.
 function layers(w) {
+  talkLevel = w.talk;
   earWaves.forEach(g => g.visible = !!w.listen);
   if (w.listen) {    // a calm pulse while waiting; faster, bigger, brighter while a voice is coming in
     const now = performance.now() / 1000, hearing = w.listen.hearing, speed = hearing ? 2.2 : .9, strength = hearing ? 1 : .8;
@@ -524,7 +734,7 @@ async function liveLoop() {
       if (!want.pause) {
         if (want.move) poseMove(want.move, want.t); else pose(want.name, want.t);
         layers(want);
-        renderer.render(scene, camera); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); frame = px;
+        draw(); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); frame = px;
       }
     } catch (e) { console.error(e); }
     try {
@@ -555,7 +765,7 @@ function loop(now) {
   pose(current, ((now - start) / 1000 / dur) % 1);
   if (autoSpin) spinY += .02;
   nova.rotation.y += spinY;
-  renderer.render(scene, camera);
+  draw();
 }
 if (LIVE) liveLoop();
 else {
@@ -570,7 +780,7 @@ async function exportFrames() {
   for (const [name, n] of Object.entries(ANIMS)) {
     frames[name] = []; meta.anims[name] = {frames: n, hand: []};
     for (let i = 0; i < n; i++) {
-      pose(name, i / n); renderer.render(scene, camera);
+      pose(name, i / n); draw(1 / 12);
       frames[name].push(canvas.toDataURL("image/png"));
       meta.anims[name].hand.push(handPixel());
     }
@@ -586,7 +796,25 @@ window.exportFrames = exportFrames;
 window.applyLook = applyLook; window.poseMove = poseMove;
 // Dev helper: a picture of one invented-move moment (window.snapshot(move, t) -> PNG data URL), for checking poses.
 window.snapshot = (move, t) => {
-  exporting = true; poseMove(move, t); renderer.render(scene, camera);
+  exporting = true; poseMove(move, t); draw(1 / 12);
+  const url = canvas.toDataURL("image/png"); exporting = false; return url;
+};
+// Dev helper: how long one live frame takes (pose + VRM + render + readPixels) at the desktop size, in ms.
+window.frameCost = (n = 120, w = 208, h = 272) => {
+  exporting = true; renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+  const gl = renderer.getContext(), px = new Uint8Array(w * h * 4), parts = {pose: 0, vrm: 0, render: 0, read: 0};
+  for (let i = 0; i < n; i++) {
+    let a = performance.now(); pose("idle", i / n); layers({talk: .3 + .3 * Math.sin(i)}); parts.pose += performance.now() - a;
+    a = performance.now(); driveVRM(1 / 24); parts.vrm += performance.now() - a;
+    a = performance.now(); renderer.render(scene, camera); parts.render += performance.now() - a;
+    a = performance.now(); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); parts.read += performance.now() - a;
+  }
+  renderer.setPixelRatio(2); renderer.setSize(W, H, false); exporting = false;
+  Object.keys(parts).forEach(k => parts[k] = +(parts[k] / n).toFixed(2));
+  return {...parts, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, programs: renderer.info.programs.length};
+};
+window.snapPose = (name, t) => {     // the same for a built-in animation
+  exporting = true; pose(name, t); for (let i = 0; i < 6; i++) driveVRM(1 / 30); draw(1 / 30);
   const url = canvas.toDataURL("image/png"); exporting = false; return url;
 };
 // Dev helper: a contact sheet of chosen animations at a few moments each, to check poses at a glance.
@@ -600,7 +828,7 @@ window.contactSheet = async (names, phases = [.15, .4, .65, .9]) => {
     const col = n % 2, row = Math.floor(n / 2), x0 = col * phases.length * W / 2, y0 = row * (H / 2 + 20);
     g.fillStyle = "#fff"; g.fillText(names[n], x0 + 6, y0 + 15);
     for (let p = 0; p < phases.length; p++) {
-      pose(names[n], phases[p]); renderer.render(scene, camera);
+      pose(names[n], phases[p]); draw(1 / 12);
       const img = new Image(); img.src = canvas.toDataURL("image/png"); await img.decode();
       g.drawImage(img, x0 + p * W / 2, y0 + 20, W / 2, H / 2);
     }

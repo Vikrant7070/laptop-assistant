@@ -80,7 +80,19 @@ Notes:
 - **Hindi and Hinglish:** you can speak to Nova in English, Hindi or a mix, for example "Hey Nova, Chrome kholo" or "Nova, abhi kitne baje hain?". Hindi is written down in English letters, and she answers Hindi in Hinglish written the same way; her voice turns the common Hindi words back into proper Hindi pronunciation. "Nova, so jao" puts her to sleep, and "haan" / "nahi" work for yes / no. It writes down each thing said near the laptop and throws it away unless it starts with "Hey Nova". Windows' own recognizer is used only if Whisper isn't installed.
 - **Mic indicator:** Windows shows a microphone icon in the taskbar while "Hey Nova" is switched on. It's off by default.
 - **Accuracy:** the built-in recognizer is decent but not perfect, especially with accents. Speak clearly, or use 🎤 for important requests.
-- **Interrupting:** typing or pressing 🎤 stops her mid-sentence.
+- **Interrupting:** typing or pressing 🎤 stops her mid-sentence. With 👂 Hey Nova on you can also **talk over her**: say
+  "Nova", "stop", "wait", "hold on" or "ruko" (or a whole new request) while she speaks, and she stops and listens.
+  ⚙ Senses → *✋ Let me interrupt her by voice* (on by default). How it works: her laptop's microphone hears her own
+  voice from the speakers about as loud as yours, so while she talks she listens for sound her own voice can't
+  explain. When she hears some, she drops to a third of her loudness for about a second (like a person who hears
+  someone start to speak), and Whisper reads that moment. She stops only if it holds one of those words (or several
+  new words) that she wasn't saying herself, so her own voice never stops her. While music or a video plays on the
+  laptop, only her name counts (lyrics say "stop" too). Nothing is recorded to disk.
+  **Limits on laptop speakers:** she notices you best in her pauses or when you're a bit louder than her. Tested
+  2026-11-19 with a stand-in voice through the same speakers: at her loudness she stopped about 1 time in 3, at
+  twice her loudness 2 times in 3, and never on her own voice. If she doesn't stop, say it again, or tap 🎤. With
+  **headphones or earbuds** the microphone doesn't hear her, so interrupting works every time. Now and then she
+  dips for a second on her own voice; that's the check, and she carries on. It needs her natural voice (Kokoro).
 
 ## Camera: letting Nova see you
 1. Install a model that can see:

@@ -4,6 +4,7 @@ Speaking:  Windows speech voices (prefers "Heera - English (India)"), with 3D No
 Listening: Windows' offline speech recognizer waits for "Hey Nova", then writes down what you say next.
            Runs in a small PowerShell helper (listen.ps1); the microphone is only used while it's switched on.
 """
+import collections
 import queue
 import re
 import subprocess
@@ -198,11 +199,13 @@ class NeuralVoice:
             # marks those switches with "(en)" / "(hi)" - which must be removed or they are read out loud.
             ph = re.sub(r"\((?:en|hi)[a-z\-]*\)", " ", k.tokenizer.phonemize(text, "hi"))
         else:
-            ph = k.tokenizer.phonemize(text, "en-us")
+            # British voices (bf_/bm_) need British sounds, or they speak with an odd half-American accent.
+            ph = k.tokenizer.phonemize(text, "en-gb" if NEURAL_VOICE[:1] == "b" else "en-us")
         return k.create(" ".join(ph.split()), voice=NEURAL_VOICE, speed=NEURAL_SPEED, is_phonemes=True)
 
 
 SPEECH_FPS = 30     # loudness samples per second sent to 3D Nova with each sentence
+DUCK_LEVEL = 0.3    # Mouth.duck(): her loudness while she checks whether the user is talking over her (-10 dB)
 
 
 def speech_envelope(samples, rate):
@@ -246,22 +249,37 @@ class Mouth:
         self.bubbles = True        # show each sentence in 3D Nova's speech bubble while it is spoken
         self.bubble_until = 0.0
         self.tells = queue.Queue()
+        # What came out of the speaker and when (for BargeIn, which must tell her own echo from the user's voice):
+        # (time, loudness) every 10 ms, and (start, end, words) per sentence. Only the last ~30 s are kept.
+        self.played = collections.deque(maxlen=3000)
+        self.said_lines = collections.deque(maxlen=12)
+        self._out_end = 0.0               # when the last sample written to the speaker will have been played
+        self.grace = 0.8                  # busy() stays True this long after her last word (the room's echo)
+        self.duck_until, self._gain = 0.0, 1.0   # duck(): softer for a moment
         threading.Thread(target=self._worker, daemon=True).start()
         threading.Thread(target=self._player, daemon=True).start()
         threading.Thread(target=self._teller, daemon=True).start()
 
-    def say(self, text):
+    def say(self, text, show=True):
+        """Queue text to be said. show=False: out loud only, with no bubble (iPhone notifications)."""
         text = _clean_for_speech(text or "")
         if text:
-            self.q.put((text, time.time()))
+            self.grace = 0.8
+            self.q.put((text, time.time(), show))
 
-    def stop(self):
+    def stop(self, quick=False):
+        """quick: the user is talking over her (BargeIn). Her microphone grace period (busy() stays True 0.8 s
+        after she stops, for the room's echo) shrinks to 0.2 s, so the listening that follows catches their words."""
         self.stop_flag = True
         with self.lock:
             self.gen += 1
             self.pending = 0
             self.ready_secs = 0.0
             self.play_until = 0.0
+        if quick:
+            self.speaking = False
+            self.last_end = time.time()
+            self.grace = 0.2
         while not self.q.empty():
             self.q.get_nowait()
         while not self.audio.empty():
@@ -355,7 +373,7 @@ class Mouth:
             except Exception:
                 self.neural = None
         while True:
-            text, said_at = self.q.get()
+            text, said_at, show = self.q.get()
             self.stop_flag = False
             sentences = self._sentences(text)
             with self.lock:
@@ -379,7 +397,7 @@ class Mouth:
                         brain_balance.voice_needs_cpu(False)    # sentence made: the brain gets its full share again
                     with self.lock:
                         self.ready_secs += len(samples) / rate
-                    self.audio.put((gen, samples, rate, sentence, (said_at, t0, time.time())))
+                    self.audio.put((gen, samples, rate, sentence, (said_at, t0, time.time()), show))
                 else:
                     left = []
             if left:
@@ -394,7 +412,8 @@ class Mouth:
                     if self.stop_flag or gen != self.gen:
                         break
                     try:
-                        self._bubble(sentence, len(sentence) / 14 + 0.3, gen)   # (no length known in advance)
+                        if show:
+                            self._bubble(sentence, len(sentence) / 14 + 0.3, gen)   # (no length known in advance)
                         sp.Speak(DEVANAGARI.sub("", sentence), 0)   # (the Windows voice can't read Hindi script)
                     except Exception:
                         break
@@ -430,7 +449,7 @@ class Mouth:
             stream = None
         while True:
             try:
-                gen, samples, rate, words, (said_at, synth_at, ready_at) = self.audio.get(timeout=0.25)
+                gen, samples, rate, words, (said_at, synth_at, ready_at), show = self.audio.get(timeout=0.25)
             except queue.Empty:
                 if self.lips and not self.stop_flag:
                     self._maybe_idle()          # next sentence not ready yet: lips stop during the pause
@@ -457,14 +476,21 @@ class Mouth:
                     stream.start()
                 data = np.asarray(samples, dtype=np.float32).reshape(-1, 1)
                 chunk = int(rate * 0.05)          # small pieces, so stop() cuts her off within ~0.1 s
+                line_start = None
                 for i in range(0, len(data), chunk):
                     if gen != self.gen:
                         break
-                    stream.write(data[i:i + chunk])
+                    piece = self._ducked(data[i:i + chunk])
+                    at = self._note_played(piece[:, 0], rate, stream.latency)
+                    if line_start is None:
+                        line_start = at
+                        self.said_lines.append((at, at + secs, words))
+                    stream.write(piece)
                     if i == 0:                    # the sound reaches the speaker one output latency from now
                         opened = time.time() - t_play
                         time.sleep(min(stream.latency, 0.1))
-                        self._bubble(words, secs, gen)
+                        if show:
+                            self._bubble(words, secs, gen)
                         self._lips(True, gen)
                         n_said = 0 if first_of_reply else n_said + 1
                         self._tell(gen, "speech", words=words, secs=round(secs, 2), n=n_said, fps=SPEECH_FPS,
@@ -487,13 +513,54 @@ class Mouth:
             if self.audio.empty() and self.pending == 0 and self.q.empty():
                 self._maybe_idle()
 
+    def duck(self, secs):
+        """Talk much softer for a moment (BargeIn heard something: is the user saying something?)."""
+        self.duck_until = max(self.duck_until, time.time() + secs)
+
+    def _ducked(self, piece):
+        """The piece at her current loudness. Going softer or back up fades over one piece (no click)."""
+        import numpy as np
+        target = DUCK_LEVEL if time.time() < self.duck_until else 1.0
+        if target == 1.0 and self._gain == 1.0:
+            return piece
+        ramp = np.linspace(self._gain, target, len(piece), dtype=np.float32).reshape(-1, 1)
+        self._gain = target
+        return piece * ramp
+
+    def _note_played(self, piece, rate, latency):
+        """Remember when this piece of sound comes out of the speaker, and how loud it is (10 ms steps).
+        The output stream stays open, so pieces written back to back play back to back: only after a pause
+        (the stream ran dry) is the time worked out again from the clock. Returns when the piece starts."""
+        import numpy as np
+        now = time.time()
+        start = self._out_end if self._out_end > now else now + latency
+        step = max(1, int(rate * 0.01))
+        for j in range(0, len(piece), step):
+            self.played.append((start + j / rate, float(np.sqrt(np.mean(piece[j:j + step] ** 2)))))
+        self._out_end = start + len(piece) / rate
+        return start
+
+    def echo_at(self, t0, t1):
+        """The loudest she played between t0 and t1 (0.0 if she was silent)."""
+        loud = 0.0
+        for t, rms in reversed(list(self.played)):     # (a copy: the player adds to it from its own thread)
+            if t < t0:
+                break
+            if t <= t1 and rms > loud:
+                loud = rms
+        return loud
+
+    def words_between(self, t0, t1):
+        """The words of every sentence she was saying at some point between t0 and t1."""
+        return " ".join(w for s, e, w in list(self.said_lines) if e >= t0 and s <= t1)
+
     def ahead(self):
         """Seconds of speech ready to come out: the rest of this sentence + the ones already made."""
         return max(0.0, self.play_until - time.time()) + self.ready_secs
 
     def busy(self):
         return (self.speaking or self.pending > 0 or not self.q.empty() or not self.audio.empty()
-                or time.time() - self.last_end < 0.8 or time.time() < self.hold_until)
+                or time.time() - self.last_end < self.grace or time.time() < self.hold_until)
 
     def talking(self):
         """Is she saying something right now (or about to)? Unlike busy(), no grace period after the last word."""
@@ -758,6 +825,8 @@ def _add_nvidia_dlls():
 
 WHISPER_HINT = ("Open Chrome, open VS Code, open WhatsApp, YouTube, Spotify. "
                 "What's on my screen? Check my battery. Volume up.")
+# Gives Whisper her name to spell while it listens for "Hey Nova" (without it: "Noah", "Inua", "Noelle").
+WAKE_HINT = "Hey Nova. Nova, what's the time? Hey Nova, open Chrome."
 WHISPER_JUNK = {"", "you", "thank you.", "thanks for watching!", "thank you for watching.", "bye.", ".", "so", "okay."}
 # The same stock words, compared without punctuation or capitals ("Thank you!", "you.", "Bye bye."): what Whisper
 # writes for a cough, a door or a few seconds of hum.
@@ -852,7 +921,7 @@ class VoiceProfile:
         if usual and level < usual * self.QUIET_SHARE:
             return f"much quieter than your voice ({level / usual:.0%} of usual) - someone or something farther away"
         return ""
-NOVA_NAMES = r"(?:nova|novah|noah|nover|nava|nowa|no va|नोवा|नौवा|नोआ)"
+NOVA_NAMES = r"(?:nova|novah|noah|nover|nava|nowa|inua|innova|enova|nuva|noelle|no va|नोवा|नौवा|नोआ)"
 # "Hey Nova ..." anywhere, or a sentence that starts with "Nova ..."
 # Nova's name as the first or second word ("Nova, ...", "Hey Nova ...", "Hei Nova", "Ok Nova", "Arey Nova", "हे नोवा"),
 # or stuck to the greeting ("HeyNova"), or "hey/ok Nova" anywhere in the sentence. Whisper spells the greeting many
@@ -874,7 +943,12 @@ class WhisperTranscriber:
     RATE = 16000
     BLOCK = 0.03          # seconds per audio block
     START_WAIT = 8.0      # how long to wait for you to start talking
-    END_PAUSE = 0.9       # this much quiet after speech = you're done
+    END_PAUSE = 0.7       # this much quiet after speech = you're done (⚙ Senses: "Stop listening after…"; the app sets it)
+    # Quiet also means "much softer than your own voice": a TV or fan in the room stays above the room-noise level
+    # measured before you spoke, so on that alone a recording ran to MAX_LEN (task log 2026-11-18: most requests
+    # ended with "end pause 0.00s" - cut off by the time limit, never by a pause). Below 20% of your voice's
+    # loudness (about -14 dB) counts as you having stopped, once you've said ~0.3 s.
+    VOICE_DROP = 0.2
     # Loudness (RMS of a 30 ms block) that counts as speech. Measured 2026-11-14: a silent room reads ~0.00005 on this
     # laptop's mic array, and normal-volume speech often stays under the old fixed 0.0015 start / 0.001 keep-going
     # levels, so "Hey Nova" had to be said loudly and soft requests were cut off. The levels now follow the room's
@@ -882,12 +956,13 @@ class WhisperTranscriber:
     # reject clicks and bumps afterwards.
     START_MIN = 0.0003    # ~2x the room's loudest background blips (p90 0.00017), 6x its median
     KEEP_MIN = 0.00025
-    MAX_LEN = 20.0
+    MAX_LEN = 10.0        # longest one request may be (⚙ Senses: "Listen at most…")
 
     def __init__(self):
         self.model = None
         self.lock = threading.Lock()
         self.waiting = 0       # someone wants an answer now (listen()); background wake-word listening steps aside
+        self.muted = False     # 👂 off in the chat: no listening at all - a recording in progress is dropped too
         # One Whisper job on the graphics card at a time. Two at once (the quick wake-word look + the full
         # reading) doubled its working memory: 0.9 GB grew to 1.2 GB, the 6 GB card overflowed, and Nova's brain
         # slowed to a crawl.
@@ -899,6 +974,8 @@ class WhisperTranscriber:
         self.using = None      # which model ended up loaded, e.g. "large-v3-turbo on cuda"
         self.language = "en"   # what the last sentence was taken as: "en", or "hi" for Hindi/Hinglish
         self.last_audio, self.seconds = None, 0.0
+        self.on_partial = None  # set by the app: shows the words so far (text) while the user is still speaking
+        self.live, self.live_busy = False, False
         self.timing = {}       # seconds spent on each part of the last recording (pause, vad, gpu_wait, decode)
         self.skip = 0         # how many of WHISPER_CHOICES have been given up on
         # Set by the app to mouth.busy: True while Nova is talking (or just stopped, or a reaction sound plays).
@@ -911,6 +988,7 @@ class WhisperTranscriber:
         self.profile = VoiceProfile()
         # Set by the app: True while she is waiting for a yes/no (bare "No." from noise is ignored otherwise).
         self.expect_reply = None
+        self.next_floor = None  # set by the app after a barge-in: the room's noise for the next recording
 
     @staticmethod
     def available():
@@ -961,16 +1039,14 @@ class WhisperTranscriber:
             if dict(probs).get("en", 0.0) < ENGLISH_SURE:
                 language, hint = "hi", HINGLISH_HINT
         self.language = language
-        # Quick path: _transcribe has already checked with Silero VAD that this is speech (no second pass), greedy
-        # decoding (beam 1) is much faster than beam 3, and nothing here uses segment times. The rare re-reading
-        # as plain English (force) keeps the careful settings.
-        segs, _ = model.transcribe(audio, language=language, beam_size=3 if force else 1, vad_filter=False,
-                                   initial_prompt=hint, condition_on_previous_text=False,
-                                   without_timestamps=True)
+        # Keep these careful settings. On 2026-11-18 beam 1 + no second VAD pass made her mishear her own name
+        # ("Hey, Noah", sure -1.05 < SURE_WAKE) so she stopped reacting; decoding is only ~0.5 s anyway.
+        segs, _ = model.transcribe(audio, language=language, beam_size=3, vad_filter=True,
+                                   initial_prompt=hint, condition_on_previous_text=False)
         # (the reading happens here) compression_ratio > 2.4 = the same words over and over ("open, open, open")
         return [s for s in segs if s.no_speech_prob < 0.6 and s.avg_logprob > -1.2 and s.compression_ratio < 2.4]
 
-    def _record(self, start_wait, max_len, abort=None, peek=None, end_pause=None, hold=None):
+    def _record(self, start_wait, max_len, abort=None, peek=None, end_pause=None, hold=None, peek_every=0.0):
         """Returns float32 mono audio of one utterance, or None if nobody spoke (or abort() said stop).
         This laptop's microphone is very quiet (a silent room reads ~0.0002), so the "someone is speaking" level
         is set relative to the room's own background noise rather than to a fixed loudness."""
@@ -1000,7 +1076,8 @@ class WhisperTranscriber:
                     continue
                 rms = float(np.sqrt(np.mean(block ** 2)))
                 if floor is None:
-                    floor = rms
+                    # (after a barge-in the user is already talking: the room's noise was measured while she spoke)
+                    floor, self.next_floor = (self.next_floor or rms), None
                 if not started:
                     chunks = (chunks + [block])[-12:]               # keep ~0.35 s from before speech starts
                     if rms > max(self.START_MIN, floor * 3.5):
@@ -1018,7 +1095,11 @@ class WhisperTranscriber:
                 if peek and peeks and spoken >= peeks[0]:
                     peeks.pop(0)
                     threading.Thread(target=peek, args=(np.concatenate(chunks),), daemon=True).start()
-                if rms < max(self.KEEP_MIN, floor * 2.5):
+                    if peek_every and not peeks:         # keep looking every so often while the sentence goes on
+                        peeks.append(spoken + peek_every)
+                n_voice = round(voiced / self.BLOCK)
+                mine = (power / n_voice) ** 0.5 * self.VOICE_DROP if voiced >= 0.3 and n_voice else 0.0
+                if rms < max(self.KEEP_MIN, floor * 2.5, mine):
                     quiet += self.BLOCK
                 else:
                     quiet, last_sound, voiced = 0.0, spoken, voiced + self.BLOCK
@@ -1110,11 +1191,11 @@ class WhisperTranscriber:
             except Exception:
                 return ""
 
-    def quick_english(self, audio):
+    def quick_english(self, audio, wait=0.0):
         """A fast, rough reading of a short piece of audio as English (about 0.2 s on the graphics card). Used to
-        spot "Hey Nova" while the sentence is still being spoken."""
+        spot "Hey Nova" while the sentence is still being spoken. wait: seconds to wait for the graphics card."""
         import numpy as np
-        if not self.gpu.acquire(blocking=False):      # the full reading is running: skip this early look
+        if not (self.gpu.acquire(timeout=wait) if wait else self.gpu.acquire(blocking=False)):   # card busy: skip
             return ""
         try:
             peak = float(np.abs(audio).max())
@@ -1129,14 +1210,30 @@ class WhisperTranscriber:
         finally:
             self.gpu.release()
 
-    def hear(self, start_wait, max_len, hint=None, abort=None, peek=None, end_pause=None, hold=None, strict=False):
+    def _live_peek(self, audio):
+        """While the user is still speaking: a quick rough reading of what was said so far goes to on_partial (the
+        bubble), so the words appear in step with the voice. One look at a time; skipped when the card is busy."""
+        if self.live_busy or not self.live:
+            return
+        self.live_busy = True
+        try:
+            text = self.quick_english(audio)
+            if text and self.live and not (self.self_voice and self.self_voice()):
+                self.on_partial(text)
+        except Exception:
+            pass
+        finally:
+            self.live_busy = False
+
+    def hear(self, start_wait, max_len, hint=None, abort=None, peek=None, end_pause=None, hold=None, strict=False,
+             peek_every=0.0):
         """One utterance. Returns (kind, text): 'text', 'silence' (nobody spoke), 'unclear' (sound, no words), 'error'.
         strict: it will be taken as a request without "Hey Nova", so noise must not get through as words."""
         with self.lock:
             try:
                 self.load()
                 self.rejected = ""
-                audio = self._record(start_wait, max_len, abort, peek, end_pause, hold)
+                audio = self._record(start_wait, max_len, abort, peek, end_pause, hold, peek_every)
                 if audio is None:
                     return "silence", "no speech"
                 quiet = self.loudness_doubt() if strict else ""
@@ -1152,10 +1249,15 @@ class WhisperTranscriber:
 
     def listen(self):
         """Wait for one request. Returns (kind, text): kind is 'text', 'silence', 'unclear' or 'error'."""
+        if self.muted:
+            return "silence", "ears off"
         self.waiting += 1
         try:
-            kind, text = self.hear(self.START_WAIT, self.MAX_LEN, WHISPER_HINT, strict=True)
+            self.live = True
+            kind, text = self.hear(self.START_WAIT, self.MAX_LEN, WHISPER_HINT, strict=True, abort=lambda: self.muted,
+                                   peek=self._live_peek if self.on_partial else None, peek_every=0.9)
         finally:
+            self.live = False
             self.waiting -= 1
         self.failures = self.failures + 1 if kind == "error" else 0
         return kind, text
@@ -1206,6 +1308,8 @@ class WhisperEars(_EarsBase):
         self.early = 0.0          # when her name was last spotted mid-sentence (the bubble is already showing)
         self.early_bare = False    # ...and nothing but her name had been said at that point
         self.peeking = False
+        self.is_stop = None        # set by the app: is this "Nova, stop" (stop everything, no conversation)?
+        self.on_stop = None
 
     def _named(self):
         if self.on_name:
@@ -1275,7 +1379,7 @@ class WhisperEars(_EarsBase):
             if self._step_aside():
                 time.sleep(0.15)
                 continue
-            kind, text = self.w.hear(30.0, 12.0, None, abort=self._step_aside, peek=self._peek, end_pause=0.7,
+            kind, text = self.w.hear(30.0, self.w.MAX_LEN + 2, WAKE_HINT, abort=self._step_aside, peek=self._peek, end_pause=None,
                                      hold=lambda: self.peeking or (self.early_bare and time.time() - self.early < 15))
             early = time.time() - self.early < 15       # her name was already spotted in this sentence
             if not self.running:
@@ -1323,6 +1427,9 @@ class WhisperEars(_EarsBase):
             self._named()
         if EARS_SLEEP_RE.search(low):
             self._asked_to_sleep()
+        elif getattr(self, "is_stop", None) and self.on_stop and self.is_stop(text):   # "Hey Nova, stop"
+            self._note(f"heard 'Hey Nova, stop' (mic level {self.w.level:.2f})")
+            threading.Thread(target=self.on_stop, args=(text,), daemon=True).start()
         elif EARS_WAKEUP_RE.search(low):
             self._woke_for_conversation()
         elif len(rest.split()) >= 2:                       # "Hey Nova, what's the time?" in one breath
@@ -1340,6 +1447,194 @@ class WhisperEars(_EarsBase):
                 avatar_client.send("listen", on=True, secs=6, timeout=2)
             if self.on_wake:
                 threading.Thread(target=self.on_wake, daemon=True).start()
+
+
+# Words that mean "stop talking, I'm saying something" when the user says them over her. Her name counts too.
+# (Whisper writes "ruko" as Rucco / Ruco / Roko / Ruconova, so those count too.)
+BARGE_STOP_RE = re.compile(r"\b(?:stop|ru+c*k*h?o(?:nova)?|roko|ruk ?jao|bas|chup|enough|shut up|quiet)\b", re.I)
+BARGE_RE = re.compile(rf"\b(?:{NOVA_NAMES}|wait|hold on|one sec(?:ond)?|pause|excuse me)\b|" + BARGE_STOP_RE.pattern,
+                      re.I)
+
+
+def other_apps_playing(level=0.02):
+    """Is another app (music, a video, a call) making sound right now? Reads the volume meters, records nothing."""
+    import os
+    try:
+        import comtypes
+        from pycaw.pycaw import AudioUtilities, IAudioMeterInformation
+        comtypes.CoInitialize()
+        for s in AudioUtilities.GetAllSessions():
+            if s.ProcessId in (0, os.getpid()):
+                continue
+            try:
+                if s._ctl.QueryInterface(IAudioMeterInformation).GetPeakValue() > level:
+                    return True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return False
+
+
+class BargeIn:
+    """Talk over her and she stops ("Nova, stop", "wait", "ruko"), the way people interrupt each other.
+
+    While she speaks, a second recording runs. The hard part: the microphone hears her own voice from the speakers
+    about as loud as the user's (measured 2026-11-19 on this laptop: her echo 0.006 RMS, the user's voice 0.006),
+    Windows' echo cancelling did nothing here, and removing her voice by its known sound (adaptive filter,
+    spectral masking) took off only 3-10 dB. So, like a person who hears someone start to speak:
+      1. Sound her own voice can't explain. Mouth.played says how loud she was at every moment; her echo is that
+         times a learned gain. NEED blocks within a second more than EXCESS times louder (mostly: the user
+         speaking in her pauses between words) -> step 2. Strict, so it rarely fires on her own voice.
+      2. She falters: DUCK_SECS at a third of her loudness (Mouth.duck), so the user's voice now stands out.
+      3. A quick Whisper reading of that moment holds a barge word (her name, stop, wait, ruko...) that is NOT
+         in what she was saying -> she stops (on_barge). Otherwise she carries on at full voice.
+    Her own words come out of Whisper as her own words, so her echo can't stop her. While another app plays sound
+    (song lyrics say "stop" and "wait"), only her name counts. Needs the natural voice (Kokoro): with the Windows
+    voice her sound isn't known, so this stays off."""
+
+    LAG = -0.045          # her echo reaches the mic this long after Mouth's estimate (measured: -39..-46 ms)
+    BEFORE, AFTER = 0.15, 0.04    # echo and room reverb: what she said up to 0.15 s ago can still be heard
+    EXCESS = 4.5          # her own voice alone stayed under 3.1x its predicted echo in 99% of blocks (max 7.2)
+    GAIN0 = 0.02          # mic loudness / played loudness on this laptop (0.017-0.024 live; relearned as she talks)
+    NEED, WINDOW = 3, 1.0
+    LOOK = 2.0            # seconds of microphone Whisper reads at least (ending with the dip)
+    DUCK_SECS = 1.2
+    DUCK_MAX = 2.5        # a dip lasts longer while the user keeps talking, up to this
+    CHECK_EVERY = 1.0     # after a check, wait this long before the next dip (Whisper shares the graphics card)
+    BLOCK = 0.03
+    RATE = 16000
+
+    def __init__(self, mouth, whisper, on_barge, enabled=lambda: True, others_playing=other_apps_playing):
+        self.mouth, self.w, self.on_barge = mouth, whisper, on_barge
+        self.enabled, self.others_playing = enabled, others_playing
+        self.gain = self.GAIN0
+        self.ratios = collections.deque(maxlen=300)
+        self.floor = 0.0001
+        self.hits = collections.deque()
+        self.checking = False
+        self.last_check = 0.0
+        self.fired_gen = -1       # one barge per reply
+        self.log = None           # set by the app: writes a line to the task log
+        self.note = ""            # the last thing checked, for the status screen
+        self.thread = None
+
+    def start(self):
+        if not (self.thread and self.thread.is_alive()):
+            self.thread = threading.Thread(target=self._loop, daemon=True)
+            self.thread.start()
+
+    def _active(self):
+        m = self.mouth
+        return bool(m.neural) and m.talking() and m.gen != self.fired_gen and self.enabled()
+
+    def _loop(self):
+        while True:
+            try:
+                if self._active():
+                    self._listen_while_she_talks()
+            except Exception as e:      # no microphone, device changed...
+                self.note = f"barge-in mic problem: {e}"[:120]
+                time.sleep(2)
+            time.sleep(0.1)
+
+    def unexplained(self, t, rms, played):
+        """One microphone block. True when there have been NEED blocks of sound her voice can't explain within
+        WINDOW seconds (time to check the words). Also keeps learning her echo's gain and the room's noise."""
+        odd = rms > self.EXCESS * self.gain * played + 4 * self.floor and rms > WhisperTranscriber.START_MIN
+        if played > 0.02 and not odd:
+            self.ratios.append(rms / played)
+            if len(self.ratios) >= 50:
+                s = sorted(self.ratios)
+                self.gain = min(max(s[len(s) // 2], self.GAIN0 / 4), self.GAIN0 * 4)
+        elif played < 0.005 and not odd and rms < self.floor * 3:
+            self.floor = 0.9 * self.floor + 0.1 * rms
+        if odd:
+            self.hits.append(t)
+        while self.hits and self.hits[0] < t - self.WINDOW:
+            self.hits.popleft()
+        return len(self.hits) >= self.NEED
+
+    def _listen_while_she_talks(self):
+        import numpy as np
+        import sounddevice as sd
+        n = int(self.RATE * self.BLOCK)
+        blocks = collections.deque(maxlen=int((self.DUCK_MAX + 1.0) / self.BLOCK))
+        self.hits.clear()
+        quiet_since, check_at, dip_from = None, None, 0.0
+        with sd.InputStream(samplerate=self.RATE, channels=1, dtype="float32", blocksize=n) as st:
+            opened = time.time()
+            while True:
+                block, _ = st.read(n)
+                t = time.time() - st.latency          # (about when this block's sound reached the mic)
+                block = block[:, 0].copy()
+                blocks.append(block)
+                if not self._active():
+                    quiet_since = quiet_since or time.time()
+                    if time.time() - quiet_since > 0.4 or not self.enabled() or self.mouth.gen == self.fired_gen:
+                        return
+                    continue
+                quiet_since = None
+                if time.time() - opened < 0.25:          # (the microphone's own click as it opens)
+                    continue
+                rms = float(np.sqrt(np.mean(block ** 2)))
+                played = self.mouth.echo_at(t - self.LAG - self.BLOCK - self.BEFORE, t - self.LAG + self.AFTER)
+                odd = self.unexplained(t, rms, played)
+                now = time.time()
+                if odd and not self.checking and check_at is None and now - self.last_check >= self.CHECK_EVERY:
+                    dip_from = now
+                    self.mouth.duck(self.DUCK_SECS + 0.15)      # (+ the speaker's buffer, so the whole dip is heard)
+                    check_at = now + 0.15 + self.DUCK_SECS
+                elif odd and check_at is not None and check_at - now < 0.5 and now - dip_from < self.DUCK_MAX:
+                    # Still sound that isn't her (softer now, so it stands out): they're still talking. Stay soft
+                    # a little longer, so Whisper gets the end of what they say.
+                    check_at = now + 0.5
+                    self.mouth.duck(0.65)
+                if check_at is not None and now >= check_at and not self.checking:
+                    check_at, self.checking = None, True
+                    secs = max(self.LOOK, now - dip_from + 0.6)     # the whole dip, and a moment before it
+                    audio = np.concatenate(list(blocks)[-int(secs / self.BLOCK):])
+                    threading.Thread(target=self._check, args=(audio, t, self.mouth.gen, secs), daemon=True).start()
+
+    def _check(self, audio, t, gen, secs=None):
+        try:
+            text = self.w.quick_english(audio, wait=1.0)
+            own = self.mouth.words_between(t - (secs or self.LOOK) - 0.5, t + 0.2)
+            kind = self.barge_kind(text, own, music=bool(self.others_playing and self.others_playing()))
+            self.note = f"{time.strftime('%H:%M:%S')} over her voice: “{text[:60]}” -> {kind or 'not for me'}"
+            if kind and gen == self.mouth.gen and self.mouth.talking():
+                self.fired_gen = gen
+                if self.log:
+                    self.log(f"BARGE-IN ({kind}): heard {text[:60]!r} while she said {own[-60:]!r}")
+                self.on_barge(kind, text)
+        except Exception as e:
+            self.note = f"barge-in check failed: {e}"[:120]
+        finally:
+            self.last_check = time.time()
+            self.checking = False
+
+    TALK_WORDS = 4        # this many new words (none of them hers) in the dip = the user is saying something
+
+    @classmethod
+    def barge_kind(cls, text, own, music=False):
+        """'stop' (stop words), 'name' (her name / wait / hold on), 'talk' (a sentence of the user's own, like
+        "open Chrome instead"), or '' - counting only the words in text that she wasn't saying herself.
+        music: another app is playing, so only her name counts."""
+        mine = set(_words(own))
+        new_words = [w for w in _words(text) if w not in mine]
+        new = " ".join(new_words)
+        if not new:
+            return ""
+        named = re.search(rf"\b{NOVA_NAMES}\b", new, re.I)
+        if music and not named:
+            return ""
+        if BARGE_STOP_RE.search(new):
+            return "stop"
+        if named or BARGE_RE.search(new):
+            return "name"
+        if len(new_words) >= cls.TALK_WORDS and not noise_words(new):
+            return "talk"
+        return ""
 
 
 def kill_strays(script_name):
