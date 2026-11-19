@@ -112,6 +112,105 @@ def is_muted(n, muted):
     return any(same_app(app, m) for m in muted or ())
 
 
+# ---------------------------------------------------------------- the user's iPhone, through Microsoft Phone Link
+# Phone Link turns the iPhone's calls and notifications into ordinary Windows notifications from the app "Phone Link"
+# (seen live 2026-11-18: app "Phone Link", title "Phone", body "<contact name or number> Missed Call"). WHO is calling
+# and how to say it is the brain's job, not a rule here: it gets the notification text and answers in JSON.
+
+PHONE_APP = "Phone Link"
+PHONE_KINDS = ("call", "missed_call", "message", "other")
+PHONE_PROMPT = (
+    "A notification just arrived from the user's iPhone. Reply with JSON only, no other text: "
+    '{"kind": "call" | "missed_call" | "message" | "other", "say": "<one short sentence Nova says out loud>"}. '
+    "kind is call while the phone is ringing, missed_call after a call was missed. For a call, say who is calling if "
+    "the notification shows a saved contact's name; if it shows only a phone number, or nothing, say it is an unknown "
+    "number and do not read the number out. Keep it very short: at most 8 words for a call. For a message say the app and who it is from, then a short gist. "
+    "Never say one-time codes, OTPs or passwords.")
+
+
+# Phone Link's pop-up banners can be hidden so Nova is the only one announcing them. Windows keeps one key per source
+# (one per iPhone app: "...!YourPhoneNotifications_net.whatsapp.WhatsApp", "...!YourPhoneCalling"); ShowBanner = 0 is the
+# same switch as Settings → System → Notifications → Phone Link → "Show notification banners". The notifications
+# still go to the notification centre, which is what the Watcher reads, so she still hears every one.
+NOTIF_KEYS = r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings"
+PHONE_AUMID = "Microsoft.YourPhone_8wekyb3d8bbwe!"
+
+
+def phone_banners(show, _winreg=None):
+    """Show (True) or hide (False) the pop-up banners of every Phone Link source. Returns how many keys changed."""
+    try:
+        winreg = _winreg or __import__("winreg")
+    except ImportError:
+        return 0
+    changed = 0
+    try:
+        root = winreg.OpenKey(winreg.HKEY_CURRENT_USER, NOTIF_KEYS)
+    except OSError:
+        return 0
+    names, i = [], 0
+    while True:
+        try:
+            names.append(winreg.EnumKey(root, i))
+        except OSError:
+            break
+        i += 1
+    winreg.CloseKey(root)
+    for name in names:
+        if not name.startswith(PHONE_AUMID):
+            continue
+        try:
+            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, NOTIF_KEYS + "\\" + name, 0,
+                               winreg.KEY_READ | winreg.KEY_SET_VALUE)
+        except OSError:
+            continue
+        try:
+            try:
+                cur = winreg.QueryValueEx(k, "ShowBanner")[0]
+            except OSError:
+                cur = None                                     # never set: Windows shows banners
+            if show and cur == 0:
+                winreg.DeleteValue(k, "ShowBanner")            # back to Windows' default
+                changed += 1
+            elif not show and cur != 0:
+                winreg.SetValueEx(k, "ShowBanner", 0, winreg.REG_DWORD, 0)
+                changed += 1
+        except OSError:
+            pass
+        finally:
+            winreg.CloseKey(k)
+    return changed
+
+
+def is_phone(n):
+    """Is this one of the iPhone's notifications (relayed by Phone Link)?"""
+    return same_app(n.get("app") if isinstance(n, dict) else n, PHONE_APP)
+
+
+def phone_prompt(n):
+    """The text the brain gets for one phone notification."""
+    return "App: %s" % n.get("app") + chr(10) + "Title: %s" % n.get("title") + chr(10) + "Text: %s" % n.get("body")
+
+
+def parse_phone_note(text, fallback):
+    """The brain's JSON answer as (kind, say). Anything unreadable gives ("other", fallback)."""
+    s = str(text or "").strip()
+    if s.startswith("```"):
+        s = s.strip("`")
+        s = s[4:] if s.lower().startswith("json") else s
+    i, j = s.find("{"), s.rfind("}")
+    try:
+        d = json.loads(s[i:j + 1]) if 0 <= i < j else None
+    except ValueError:
+        d = None
+    if not isinstance(d, dict):
+        return "other", fallback
+    kind = str(d.get("kind") or "").strip().lower()
+    say = " ".join(str(d.get("say") or "").split())
+    if not say:
+        return "other", fallback
+    return (kind if kind in PHONE_KINDS else "other"), say
+
+
 def resolve_app(spoken, known=None):
     """The real app name the user means (from apps seen in notifications), or their words tidied up."""
     import difflib
@@ -240,7 +339,7 @@ class Watcher:
             if self.timer_on:
                 return
             self.timer_on = True
-        threading.Timer(0.4, self._flush).start()
+        threading.Timer(0.15, self._flush).start()
 
     def _flush(self):
         with self.lock:

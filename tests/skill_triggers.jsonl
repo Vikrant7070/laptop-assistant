@@ -1,0 +1,49 @@
+{"skill": "anime-time", "text": "anime time", "kind": "positive"}
+{"skill": "anime-time", "text": "hey nova set up crunchyroll", "kind": "positive"}
+{"skill": "anime-time", "text": "make crunchyroll fullscreen", "kind": "positive"}
+{"skill": null, "text": "Can you check the Crunchyroll latest anime and tell me which one should I watch?", "kind": "near_miss"}
+{"skill": null, "text": "tell me latest anime episode to watch", "kind": "near_miss"}
+{"skill": null, "text": "what new anime came out this week", "kind": "near_miss"}
+{"skill": null, "text": "recommend an anime for tonight", "kind": "near_miss"}
+{"skill": "web-research", "text": "research quantum batteries", "kind": "positive"}
+{"skill": "web-research", "text": "do some research on solar panels", "kind": "positive"}
+{"skill": "web-research", "text": "search the web for the best budget laptops", "kind": "positive"}
+{"skill": null, "text": "Where you find out?", "kind": "near_miss"}
+{"skill": null, "text": "where did you find out about that", "kind": "near_miss"}
+{"skill": null, "text": "how do you know that", "kind": "near_miss"}
+{"skill": null, "text": "what is the research on sleep", "kind": "near_miss"}
+{"skill": null, "text": "look up my battery", "kind": "near_miss"}
+{"skill": null, "text": "a research paper about cats", "kind": "near_miss"}
+{"skill": "movie-time", "text": "movie time", "kind": "positive"}
+{"skill": "movie-time", "text": "it's movie time", "kind": "positive"}
+{"skill": "movie-time", "text": "let's watch a movie", "kind": "positive"}
+{"skill": "work-mode", "text": "work mode", "kind": "positive"}
+{"skill": "work-mode", "text": "time to work", "kind": "positive"}
+{"skill": "focus-mode", "text": "focus mode", "kind": "positive"}
+{"skill": "focus-mode", "text": "zero distractions", "kind": "positive"}
+{"skill": "morning-check", "text": "good morning", "kind": "positive"}
+{"skill": "morning-check", "text": "morning briefing", "kind": "positive"}
+{"skill": "laptop-health", "text": "how is my laptop", "kind": "positive"}
+{"skill": "laptop-health", "text": "health check", "kind": "positive"}
+{"skill": "youtube-search", "text": "search youtube for lofi beats", "kind": "positive"}
+{"skill": "vscode-git-push", "text": "push my code", "kind": "positive"}
+{"skill": "vscode-git-push", "text": "commit and push", "kind": "positive"}
+{"skill": "code-research", "text": "research code for a pdf library", "kind": "positive"}
+{"skill": "code-research", "text": "find a library for parsing dates", "kind": "positive"}
+{"skill": null, "text": "what's the weather", "kind": "chitchat"}
+{"skill": null, "text": "tell me a joke", "kind": "chitchat"}
+{"skill": null, "text": "who is the prime minister of India", "kind": "chitchat"}
+{"skill": null, "text": "what time is it", "kind": "chitchat"}
+{"skill": null, "text": "how much battery is left", "kind": "chitchat"}
+{"skill": null, "text": "remind me to drink water in an hour", "kind": "chitchat"}
+{"skill": null, "text": "turn the volume down", "kind": "chitchat"}
+{"skill": null, "text": "open chrome", "kind": "chitchat"}
+{"skill": null, "text": "play some music", "kind": "chitchat"}
+{"skill": null, "text": "what is going on", "kind": "chitchat"}
+{"skill": null, "text": "I'm tired of working so hard", "kind": "chitchat"}
+{"skill": null, "text": "the movie was great yesterday", "kind": "chitchat"}
+{"skill": null, "text": "can you explain how git push works", "kind": "chitchat"}
+{"skill": null, "text": "how do I push code to github", "kind": "chitchat"}
+{"skill": null, "text": "good night", "kind": "chitchat"}
+{"skill": null, "text": "I need to focus on my homework", "kind": "chitchat"}
+{"skill": null, "text": "what does a health check mean in docker", "kind": "chitchat"}

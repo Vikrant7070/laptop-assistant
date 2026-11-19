@@ -616,7 +616,7 @@ def _open_parked(url, proc, exe, wait_title=None, secs=PAGE_SECS):
         si.dwFlags, si.wShowWindow = 1, 4                     # STARTF_USESHOWWINDOW, SW_SHOWNOACTIVATE
         subprocess.Popen([exe, f"--user-data-dir={PROFILE or DATA / 'research-chrome'}", *CHROME_FLAGS,
                           f"--window-position={x},0", "--window-size=1280,900", "--new-window", url], startupinfo=si)
-        hwnd, end = None, time.time() + 15
+        hwnd, end = None, time.time() + 30
         while time.time() < end and not hwnd:
             new = _windows_of(proc) - before
             hwnd = next(iter(new), None)

@@ -308,6 +308,7 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 <button type="button" data-tab="nova">🎭 Nova</button>
 <button type="button" data-tab="alerts">🔔 Alerts</button>
 <button type="button" data-tab="phone">📱 Phone</button>
+<button type="button" data-tab="forms">📝 Forms</button>
 <button type="button" data-tab="tools">🔌 Connectors</button>
 </div>
 <div class="pane on" data-pane="brain">
@@ -365,8 +366,14 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="suggest"> 💡 Suggest things about what I'm working on (a look at my screen at most every 10 min, only while I'm active; needs 🖥 screen; the picture never leaves this laptop)</label>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="presence"> 👋 Notice when I leave and come back (after a minute without keyboard or mouse she checks the camera for about two seconds; she finds a face, she doesn't recognise who; nothing is saved)</label>
       <label class="mood" style="display:block;margin:4px 0 0 22px"><input type="checkbox" id="presenceLock"> 🔒 …and lock the laptop when I walk away (she warns first - move the mouse to stop her)</label>
+      <p class="mood" style="margin:10px 0 2px">🎙 When I talk to her, she stops listening after <input type="number" id="listenPause" min="0.3" max="2" step="0.1" style="width:60px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> seconds of quiet
+        (shorter = she answers sooner; longer = she waits if you pause mid-sentence) and listens at most <input type="number" id="listenMax" min="4" max="30" step="1" style="width:56px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> seconds per request.</p>
+      <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="bargeIn"> ✋ Let me interrupt her by voice: say “Nova”, “stop”, “wait” or “ruko” while she talks and she stops and listens (needs 👂 Hey Nova and her natural voice; the mic is on only while she speaks, nothing is saved)</label>
 </div>
 <div class="pane" data-pane="nova">
+      <h3 style="margin-top:16px">🎭 Who should I be?</h3>
+      <select id="character" class="sel"></select>
+      <p class="mood" style="margin:2px 0 0">Each character has her own personality, voice and 3D look. Wake her with “Hey Nova” whoever she is. Her voice and look change as soon as you save; her personality from your next message.</p>
       <h3 style="margin-top:16px">🧍 Where should 3D Nova stay?</h3>
       <select id="avatarRoam" class="sel">
         <option value="corner">📍 Bottom-right corner - she only leaves it to point at a button or move a window, then goes back</option>
@@ -378,6 +385,10 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 <div class="pane" data-pane="alerts">
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="notifications"> 🔔 Check my notifications and read new ones out to me</label>
       <label class="mood" style="display:block;margin-top:6px;margin-left:22px"><input type="checkbox" id="notifSleep"> 😴 …even while Nova is asleep (off: she stays quiet while napping; they still show up in the chat)</label>
+      <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="deepSleep"> 💤 Deep sleep: after 10 minutes asleep her mic turns off completely - click her (or type to her) to wake her up</label>
+      <label class="mood" style="display:block;margin-top:6px;margin-left:22px"><input type="checkbox" id="phoneCalls"> 📞 Tell me when my iPhone rings or I miss a call (needs Phone Link; her brain says who it is)</label>
+      <label class="mood" style="display:block;margin-top:6px;margin-left:22px"><input type="checkbox" id="phoneQuiet"> 🔕 Hide Phone Link's pop-ups — she reads them out instead</label>
+      <label class="mood" style="display:block;margin-top:6px;margin-left:22px"><input type="checkbox" id="phoneCloud"> ☁️ Let the cloud brain phrase iPhone notifications too (off: only the local brain ever sees them)</label>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="errorHelp"> 🆘 Offer help when an app shows an error box or stops responding (no screenshots - she only reads the error message, and sends it to her brain only if I say yes)</label>
 </div>
 <div class="pane" data-pane="phone">
@@ -393,6 +404,43 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
         </div>
         <p id="phoneNote" class="mood" style="margin:6px 0 0"></p>
         <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="phoneForward"> Send reminders and finished jobs to my phone while I'm away from the laptop</label>
+      </div>
+      <h3 style="margin-top:16px">📧 Gmail (read-only)</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Nova can look through your mail ("any important emails today?") but can never send, delete or change anything. Sign-in is Google's own page; she never sees your password. Steps to get the two values below are in the README ("Connect Gmail").</p>
+        <input id="gmClient" autocomplete="off" spellcheck="false" placeholder="Google client ID (….apps.googleusercontent.com)">
+        <input id="gmSecret" type="password" autocomplete="off" spellcheck="false" placeholder="Google client secret">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button id="gmSave" class="yes" style="width:auto;padding:8px 14px">Save</button>
+          <button id="gmConnect" style="width:auto;padding:8px 14px;display:none">Connect Gmail</button>
+          <a id="gmDisconnect" href="#" style="font-size:13px;display:none">Disconnect</a>
+        </div>
+        <p id="gmNote" class="mood" style="margin:6px 0 0"></p>
+        <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="emailCloud"> ☁️ Let the cloud brain read my mail too (off: only the local brain on this laptop ever sees it)</label>
+      </div>
+      <h3 style="margin-top:16px">📲 Nova on my iPhone (home-screen app)</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Chat with Nova from your iPhone, anywhere. It is a web page you add to your home screen; Nova stays on this laptop and the phone is only a window. It is reached through <b>Tailscale</b> (a private network just for your own devices) - nothing is opened to the internet. Steps are in <code>docs/iphone-app.md</code>. Anything that changes the laptop asks you Yes / No on the phone first.</p>
+        <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="mobOn"> Switch on the iPhone app</label>
+        <div id="mobBody" style="display:none">
+          <p id="mobUrl" class="mood" style="margin:6px 0 0"></p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button id="mobCode" class="yes" style="width:auto;padding:8px 14px">New pairing code</button>
+            <span id="mobCodeShow" style="font-size:22px;letter-spacing:3px;font-weight:700"></span>
+          </div>
+          <p class="mood" style="margin:6px 0 0">Paired phones:</p>
+          <div id="mobDevices" class="mood"></div>
+        </div>
+        <p id="mobNote" class="mood" style="margin:6px 0 0"></p>
+      </div>
+</div>
+<div class="pane" data-pane="forms">
+      <h3 style="margin-top:16px">📝 My details for forms</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Say <i>"fill in this form"</i> and Nova types these into the boxes for you, then leaves it for you to check - she never presses Submit by herself. They're saved only on this laptop, and her AI brain is only told <i>which</i> boxes she filled, never what's in them (a screenshot she takes afterwards can still show the filled form). <b>Passwords, OTPs, card, bank and ID numbers are never kept here</b> - for logins she opens the box and your browser's password manager fills it; for codes she waits while you type them.</p>
+        <div id="formFields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 10px;margin-top:8px"></div>
+        <button id="formsSave" class="yes" style="width:auto;padding:8px 14px;margin-top:8px">Save my details</button>
+        <span id="formsNote" class="mood" style="margin-left:8px"></span>
       </div>
 </div>
 <div class="pane" data-pane="tools">
@@ -476,10 +524,11 @@ async function pollVoice() {
         const said = add("me", "🎙 " + ev.me);
         if (thoughtBox && said.previousElementSibling === thoughtBox) log.insertBefore(said, thoughtBox);  // what you said, then her thoughts
       }
+      if (ev.me && Object.keys(ev).length === 1) continue;   // just "what you said", sent before she answers
       ev.error ? (closeThoughts(), add("err", ev.error)) : render(ev);   // also: 🔔 notifications, 💡 tips, ✅ finished jobs
     }
     if (j.speaking !== speakingNow) { speakingNow = j.speaking; if (!busy) face(speakingNow ? "talking" : undefined); }
-    $("#handsBtn").title = `Listen for “Hey Nova” - ${j.ears}`;
+    $("#handsBtn").title = handsFree ? `Listening for “Hey Nova” - ${j.ears}. Click to stop listening completely.` : "Not listening at all. Click to listen for “Hey Nova” again.";
     const ear = $("#earLine");
     ear.style.display = handsFree ? "block" : "none";
     ear.textContent = handsFree ? `👂 ${j.ears === "listening" ? "Listening for “Hey Nova”" : j.ears}` +
@@ -673,9 +722,12 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "
 
 /* ---------------- header buttons ---------------- */
 $("#voiceBtn").onclick = async e => { voiceOn = !voiceOn; e.target.classList.toggle("on", voiceOn); await api("/api/setup", {voice: voiceOn}); };
+function earsLabel() { $("#handsBtn").textContent = handsFree ? "👂 Hey Nova" : "🙉 Ears off"; }
 $("#handsBtn").onclick = async e => {
   handsFree = !handsFree; e.target.classList.toggle("on", handsFree); await api("/api/setup", {wake: handsFree});
-  if (handsFree) add("nova", "I'm listening for “Hey Nova” now. Say it, wait for my bubble, then tell me what you need!");
+  earsLabel();
+  add("nova", handsFree ? "I'm listening for “Hey Nova” now. Say it, wait for my bubble, then tell me what you need!"
+    : "🙉 My ears are off - I'm not listening at all now, not even for “Hey Nova”. Click 👂 to turn them back on (the 🎤 button still works when you want to talk).");
 };
 $("#resetBtn").onclick = async () => { await api("/api/reset"); log.innerHTML = ""; thoughtBox = null; hideCloud(); greet(); };
 $("#keyBtn").onclick = async () => openSetup(await loadStatus());
@@ -766,17 +818,19 @@ function openSetup(s) {
       : `<option value="">No models yet - run: ollama pull ${esc(s.default_model)}</option>`;
     $("#toolNote").textContent = s.ready ? (s.tools ? "✓ This model supports tool calling." : "This model has no native tool calling - I'll use a text-based fallback (works, but less reliably).") : "";
     $("#think").checked = s.think; $("#autostart").checked = s.autostart; $("#camera").checked = s.camera; $("#screen").checked = s.screen;
-    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep;
-    $("#errorHelp").checked = s.error_help !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
+    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep; $("#deepSleep").checked = s.deep_sleep !== false; $("#listenPause").value = s.listen_pause ?? 0.7; $("#listenMax").value = s.listen_max ?? 10; $("#phoneCalls").checked = s.phone_calls !== false; $("#phoneQuiet").checked = s.phone_quiet !== false;$("#phoneCloud").checked = !!s.phone_notes_cloud; $("#emailCloud").checked = !!s.email_cloud;
+    $("#errorHelp").checked = s.error_help !== false; $("#bargeIn").checked = s.barge_in !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
     $("#visionNote").innerHTML = s.vision_model ? `Eyes: <b>${esc(s.vision_model)}</b> ✓`
       : `She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`;
     document.querySelectorAll("[name=aut]").forEach(r => r.checked = r.value === s.autonomy);
   }
   fillRouting(s); $("#avatarRoam").value = s.avatar_roam || "corner";
+  $("#character").innerHTML = (s.characters || []).map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join("");
+  $("#character").value = s.character || "nova";
   $("#reasoning").value = s.reasoning || "auto";
   $("#sounds").checked = s.reaction_sounds !== false; $("#powerOk").checked = !!s.power_ok;
   $("#setup").classList.add("show");
-  loadPhone(); loadMcp();
+  loadPhone(); loadGmail(); loadMobile(); loadMcp(); loadForms();
 }
 /* ---------------- 📱 phone + 🔌 connectors (their own Save buttons) ---------------- */
 function showPhone(p) {
@@ -802,6 +856,50 @@ $("#phoneNewCode").onclick = e => { e.preventDefault(); phoneDo({new_code: true}
 $("#phoneUnpair").onclick = e => { e.preventDefault(); phoneDo({unpair: true}); };
 $("#phoneForget").onclick = e => { e.preventDefault(); phoneDo({token: ""}); };
 $("#phoneForward").onchange = () => phoneDo({forward: $("#phoneForward").checked});
+/* ---------------- 📧 Gmail ---------------- */
+let gmTimer = null;
+function showGmail(g) {
+  $("#gmNote").innerHTML = (g.error ? `<span style="color:var(--bad)">${esc(g.error)}</span><br>` : "") +
+    (g.connected ? `✓ Connected${g.email ? " as <b>" + esc(g.email) + "</b>" : ""}. Read-only.`
+     : g.connecting ? "Finish signing in on Google's page in your browser…"
+     : g.configured ? "Saved. Click Connect Gmail." : "Not set up yet.");
+  $("#gmClient").placeholder = g.configured ? "Client saved ✓ (paste a new ID to replace it)" : "Google client ID (….apps.googleusercontent.com)";
+  $("#gmConnect").style.display = g.configured && !g.connected && !g.connecting ? "" : "none";
+  $("#gmDisconnect").style.display = g.connected ? "" : "none";
+  clearTimeout(gmTimer);
+  if (g.connecting) gmTimer = setTimeout(loadGmail, 2000);
+}
+async function loadGmail() { try { showGmail(await (await fetch("/api/gmail")).json()); } catch (e) {} }
+async function gmailDo(body) {
+  try { showGmail(await api("/api/gmail", body)); $("#gmSecret").value = ""; $("#gmClient").value = ""; }
+  catch (e) { $("#gmNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+$("#gmSave").onclick = () => { const i = $("#gmClient").value.trim(), s = $("#gmSecret").value.trim(); if (i && s) gmailDo({client_id: i, client_secret: s}); };
+$("#gmConnect").onclick = () => gmailDo({connect: true});
+$("#gmDisconnect").onclick = e => { e.preventDefault(); gmailDo({disconnect: true}); };
+/* ---------------- 📲 Nova on iPhone ---------------- */
+let mobTimer = null;
+function showMobile(m) {
+  $("#mobOn").checked = !!m.on;
+  $("#mobBody").style.display = m.on ? "" : "none";
+  $("#mobUrl").innerHTML = m.url
+    ? `Open <b>${esc(m.url)}</b> in Safari on your iPhone (signed in to the same Tailscale account), then Share → Add to Home Screen.`
+    : `Tailscale isn't set up on this laptop yet. Install it, then run <code>${esc(m.serve)}</code> once - the address to open on your phone appears here.`;
+  $("#mobCodeShow").textContent = m.code ? m.code.replace(/(...)(...)/, "$1 $2") : "";
+  $("#mobDevices").innerHTML = (m.devices || []).length
+    ? m.devices.map(d => `📱 <b>${esc(d.name)}</b> <a href="#" data-dev="${esc(d.id)}" style="font-size:13px">Remove</a>`).join("<br>")
+    : "None yet.";
+  document.querySelectorAll("#mobDevices a[data-dev]").forEach(a => a.onclick = e => { e.preventDefault(); mobDo({remove: a.dataset.dev}); });
+  clearTimeout(mobTimer);
+  if (m.on && m.code) mobTimer = setTimeout(loadMobile, 4000);       // the code disappears once a phone has used it
+}
+async function loadMobile() { try { showMobile(await (await fetch("/api/mobile")).json()); } catch (e) {} }
+async function mobDo(body) {
+  try { showMobile(await api("/api/mobile", body)); $("#mobNote").textContent = ""; }
+  catch (e) { $("#mobNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+$("#mobOn").onchange = () => mobDo({on: $("#mobOn").checked});
+$("#mobCode").onclick = () => mobDo({new_code: true});
 function showMcp(j) {
   const icon = {connected: "🟢", failed: "🔴", starting: "🟡", disabled: "⚪", stopped: "⚪"};
   $("#mcpStatus").innerHTML = (j.error ? `<span style="color:var(--bad)">${esc(j.error)}</span><br>` : "") +
@@ -809,6 +907,16 @@ function showMcp(j) {
       (s.tools.length ? `: ${s.tools.length} tool${s.tools.length === 1 ? "" : "s"} (${esc(s.tools.slice(0, 6).join(", "))}${s.tools.length > 6 ? "…" : ""})` : "") +
       (s.trusted ? " · trusted" : "") + (s.error ? `<br><span style="color:var(--bad)">${esc(s.error)}</span>` : "")).join("<br>") : "No connectors yet.");
 }
+function showForms(j) {
+  $("#formFields").innerHTML = j.fields.map(f => `<label class="mood" style="display:flex;flex-direction:column;gap:2px">${esc(f.label)}
+    <input data-k="${esc(f.key)}" value="${esc(f.value)}" autocomplete="off" spellcheck="false" ${f.key === "birth_date" ? 'placeholder="e.g. 15/08/1998"' : ""}></label>`).join("");
+}
+async function loadForms() { try { showForms(await (await fetch("/api/forms")).json()); } catch (e) {} }
+$("#formsSave").onclick = async () => {
+  const details = {}; document.querySelectorAll("#formFields input").forEach(i => details[i.dataset.k] = i.value);
+  try { showForms(await api("/api/forms", {details})); $("#formsNote").textContent = "Saved on this laptop ✓"; }
+  catch (e) { $("#formsNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+};
 async function loadMcp() { try { const j = await (await fetch("/api/mcp")).json(); $("#mcpCfg").value = j.config; showMcp(j); } catch (e) {} }
 $("#mcpSave").onclick = async () => {
   $("#mcpStatus").textContent = "Connecting… (a server that npx has to download can take ~30 s the first time)";
@@ -826,11 +934,11 @@ $("#saveModel").onclick = async () => {
       provider: p, cloud_model: p !== "ollama" ? $("#cloudModel").value : undefined,
       autonomy: document.querySelector("[name=aut]:checked")?.value, autostart: $("#autostart").checked,
       camera: $("#camera").checked, screen: $("#screen").checked,
-      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
-      avatar_roam: $("#avatarRoam").value,
+      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, deep_sleep: $("#deepSleep").checked, listen_pause: +$("#listenPause").value || 0.7, listen_max: +$("#listenMax").value || 10, phone_calls: $("#phoneCalls").checked, phone_quiet: $("#phoneQuiet").checked,phone_notes_cloud: $("#phoneCloud").checked, email_cloud: $("#emailCloud").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
+      avatar_roam: $("#avatarRoam").value, character: $("#character").value || undefined,
       routing: {auto_route: $("#autoRoute").checked, coder_model: $("#coderModel").value, deep_model: $("#deepModel").value,
         heavy_model: $("#heavyModel").value, heavy_steps: +$("#heavySteps").value || 6},
-      error_help: $("#errorHelp").checked, presence: $("#presence").checked, presence_lock: $("#presenceLock").checked});
+      error_help: $("#errorHelp").checked, barge_in: $("#bargeIn").checked, presence: $("#presence").checked, presence_lock: $("#presenceLock").checked});
     if (!s.ready) { $("#keyErr").textContent = "That model isn't available."; return; }
     $("#setup").classList.remove("show"); const first = !window.__ready; window.__ready = true; loadStatus(); if (first) greet();
   } catch (e) { $("#keyErr").textContent = e.message; }
@@ -869,7 +977,7 @@ async function loadStatus() {
   const s = await (await fetch("/api/status")).json();
   NAME = s.name; $("#nm").textContent = $("#nm2").textContent = NAME; document.title = NAME;
   voiceOn = s.voice; handsFree = s.wake;
-  $("#voiceBtn").classList.toggle("on", voiceOn); $("#handsBtn").classList.toggle("on", handsFree);
+  $("#voiceBtn").classList.toggle("on", voiceOn); $("#handsBtn").classList.toggle("on", handsFree); earsLabel();
   if (s.voice_name) $("#voiceBtn").title = "Nova's voice: " + s.voice_name;
   $("#keyBtn").title = "Brain: " + (s.brain || "").replace(/^cloud:/, "") + (s.brain !== s.model ? `  (backup: ${s.model})` : "");
   $("#mem").innerHTML = s.memories.length ? s.memories.map(m => `<li>${esc(m)}</li>`).join("") : "<li>Nothing yet - tell me about yourself!</li>";

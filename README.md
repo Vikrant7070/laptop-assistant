@@ -80,7 +80,19 @@ Notes:
 - **Hindi and Hinglish:** you can speak to Nova in English, Hindi or a mix, for example "Hey Nova, Chrome kholo" or "Nova, abhi kitne baje hain?". Hindi is written down in English letters, and she answers Hindi in Hinglish written the same way; her voice turns the common Hindi words back into proper Hindi pronunciation. "Nova, so jao" puts her to sleep, and "haan" / "nahi" work for yes / no. It writes down each thing said near the laptop and throws it away unless it starts with "Hey Nova". Windows' own recognizer is used only if Whisper isn't installed.
 - **Mic indicator:** Windows shows a microphone icon in the taskbar while "Hey Nova" is switched on. It's off by default.
 - **Accuracy:** the built-in recognizer is decent but not perfect, especially with accents. Speak clearly, or use 🎤 for important requests.
-- **Interrupting:** typing or pressing 🎤 stops her mid-sentence.
+- **Interrupting:** typing or pressing 🎤 stops her mid-sentence. With 👂 Hey Nova on you can also **talk over her**: say
+  "Nova", "stop", "wait", "hold on" or "ruko" (or a whole new request) while she speaks, and she stops and listens.
+  ⚙ Senses → *✋ Let me interrupt her by voice* (on by default). How it works: her laptop's microphone hears her own
+  voice from the speakers about as loud as yours, so while she talks she listens for sound her own voice can't
+  explain. When she hears some, she drops to a third of her loudness for about a second (like a person who hears
+  someone start to speak), and Whisper reads that moment. She stops only if it holds one of those words (or several
+  new words) that she wasn't saying herself, so her own voice never stops her. While music or a video plays on the
+  laptop, only her name counts (lyrics say "stop" too). Nothing is recorded to disk.
+  **Limits on laptop speakers:** she notices you best in her pauses or when you're a bit louder than her. Tested
+  2026-11-19 with a stand-in voice through the same speakers: at her loudness she stopped about 1 time in 3, at
+  twice her loudness 2 times in 3, and never on her own voice. If she doesn't stop, say it again, or tap 🎤. With
+  **headphones or earbuds** the microphone doesn't hear her, so interrupting works every time. Now and then she
+  dips for a second on her own voice; that's the check, and she carries on. It needs her natural voice (Kokoro).
 
 ## Camera: letting Nova see you
 1. Install a model that can see:
@@ -114,6 +126,30 @@ Message Nova from your phone, like "what's my battery?", "is the research done?"
 - **While you're away** (5 minutes without keyboard or mouse, or 👋 presence says you left), reminders and finished background jobs are also sent to your phone. You can switch this off in ⚙.
 - Commands: `/status` (laptop health), `/stop` (stop what she's doing), `/help`.
 - **Privacy:** these messages go through Telegram's servers. Screenshots and camera photos are never sent.
+
+## Gmail: she can read your mail (read-only)
+
+Ask "any important emails today?", "summarise the email from my college" or "did Amazon send the delivery update?".
+Nova can search and read mail. She **cannot** send, delete or change anything (the only permission asked for is
+`gmail.readonly`; writing an email is still the separate `draft_email` job that you send yourself).
+
+One-time setup, about 5 minutes:
+
+1. Go to <https://console.cloud.google.com>, create a project called "Nova" and open **APIs & Services → Library**.
+   Search for **Gmail API** and click **Enable**.
+2. **OAuth consent screen**: user type **External**, app name "Nova", add your own address as a test user.
+   Then press **Publish app** (it stays unverified, which is fine for yourself). If you leave it in "Testing",
+   Google ends the sign-in after **7 days** and you have to connect again.
+3. **Credentials → Create credentials → OAuth client ID → Desktop app.** Copy the **client ID** and **client secret**.
+4. In Nova: ⚙ → Phone → **Gmail**, paste both, click **Save**, then **Connect Gmail**. Google's own sign-in opens in
+   your browser. Because the app is unverified, Google shows a warning: click **Advanced → Go to Nova (unsafe)** and
+   allow *"View your email messages and settings"*. Nova never sees your Google password.
+
+Privacy: the secret and the sign-in token are stored locked with Windows (only this Windows account can open them) in
+`data/gmail.json`, which is never committed. Mail is read **only by the local brain** - if a cloud brain is chosen,
+requests about email run on the local one instead - unless you tick "Let the cloud brain read my mail too". One-time
+codes and passwords inside mail are replaced with "(hidden)" before the brain or her voice get them. To stop it, click
+**Disconnect** (Google is told to drop the access), or remove Nova at <https://myaccount.google.com/permissions>.
 
 ## Connectors (MCP servers)
 Nova can use tools from [Model Context Protocol](https://modelcontextprotocol.io) servers, such as GitHub, calendars, databases or file servers. Paste the server's `"mcpServers"` JSON (the same format Claude Desktop uses) into **⚙ Model → 🔌 Connectors** and click **Save & connect**. It's saved in `data/mcp.json`.
@@ -149,6 +185,16 @@ Nova's everyday brain is small and fast (`qwen3-vl:4b-instruct`). A bigger model
 - **Complex** requests first get a full plan from `deepseek-r1:8b` (it writes the plan; it does not use tools). The everyday brain follows the plan, or `qwen3:8b` does when the plan has more than 6 steps.
 - The everyday brain can also ask for a switch itself with the `escalate` tool. The next request starts on the everyday brain again.
 - Choose the models in the ⚙ Model dialog. All settings and the trigger words are in `config/model_routing.json` (kept in git, applied on the next request). Set `"auto_route": false` to switch it off. Cloud brains are never switched.
+
+## Skills: things you teach her (`skills/*.md`)
+A skill is a small text file of steps that **code** runs, one by one - not instructions the small model has to remember. After each step the code checks it really worked (a window opened, the page shows the text, the screen is fullscreen), and the "done" at the end is worded from what happened, never by the model. Format and rules: the docstring at the top of `nova/actions/skills.py`; the design and the research behind it: `docs/skills-v2-plan.md`.
+- She starts a skill only on words that really ask for it. A request that merely sounds like one gets a "Run my '…' skill?" question first, and if you say no, that sentence never starts it again. Each skill can list `not_for` phrases.
+- Teach her: "when I say movie time, do X, Y, Z" (`save_skill`), or finish a task and say "remember that" (`save_task_as_skill`: a draft made from the steps she really did; it becomes a real skill after it works twice).
+- Show her: say **"watch me"** (or press **Ctrl+Alt+W**), do the task yourself, say **"done"**, then tell her its name. She records what you clicked (by name, not screen position), the page each browser shows, what you left in each box, and which app is in front - never passwords, codes or keystrokes (a sign-in becomes one "sign in if needed" step). Nothing is recorded unless you say "watch me"; the recording stays in memory and only the cleaned-up steps are kept (`nova/actions/recorder.py`).
+- If you take over while a skill runs (or a step fails), she stops and asks "Want to show me how it should go?" - say yes, do that step yourself, say "done", and she changes just that step (with your OK) and carries on. Switch it off with `skill_teach: false` in `data/settings.json`.
+- Correct her: "no, also mute it" changes just that step (`edit_skill`). Every old version is kept in `skills/.history/` ("undo that skill change"), results are counted in `skills/.stats/`, and a skill that keeps failing is retired.
+- Check how well the matching works on your own laptop: close Nova and run `python -m nova.skill_eval` (add any wrong start to `tests/skill_triggers.jsonl`).
+- `skill_screen_checks` (a switch in `data/settings.json`, off by default) adds a screenshot check to steps that have no other check; it costs a few seconds per step.
 
 ## How much she asks first (⚙ Model)
 - **Careful** (default): she asks before anything that changes things, including every click.
