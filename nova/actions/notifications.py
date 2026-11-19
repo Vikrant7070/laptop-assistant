@@ -128,6 +128,59 @@ PHONE_PROMPT = (
     "Never say one-time codes, OTPs or passwords.")
 
 
+# Phone Link's pop-up banners can be hidden so Nova is the only one announcing them. Windows keeps one key per source
+# (one per iPhone app: "...!YourPhoneNotifications_net.whatsapp.WhatsApp", "...!YourPhoneCalling"); ShowBanner = 0 is the
+# same switch as Settings → System → Notifications → Phone Link → "Show notification banners". The notifications
+# still go to the notification centre, which is what the Watcher reads, so she still hears every one.
+NOTIF_KEYS = r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings"
+PHONE_AUMID = "Microsoft.YourPhone_8wekyb3d8bbwe!"
+
+
+def phone_banners(show, _winreg=None):
+    """Show (True) or hide (False) the pop-up banners of every Phone Link source. Returns how many keys changed."""
+    try:
+        winreg = _winreg or __import__("winreg")
+    except ImportError:
+        return 0
+    changed = 0
+    try:
+        root = winreg.OpenKey(winreg.HKEY_CURRENT_USER, NOTIF_KEYS)
+    except OSError:
+        return 0
+    names, i = [], 0
+    while True:
+        try:
+            names.append(winreg.EnumKey(root, i))
+        except OSError:
+            break
+        i += 1
+    winreg.CloseKey(root)
+    for name in names:
+        if not name.startswith(PHONE_AUMID):
+            continue
+        try:
+            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, NOTIF_KEYS + "\\" + name, 0,
+                               winreg.KEY_READ | winreg.KEY_SET_VALUE)
+        except OSError:
+            continue
+        try:
+            try:
+                cur = winreg.QueryValueEx(k, "ShowBanner")[0]
+            except OSError:
+                cur = None                                     # never set: Windows shows banners
+            if show and cur == 0:
+                winreg.DeleteValue(k, "ShowBanner")            # back to Windows' default
+                changed += 1
+            elif not show and cur != 0:
+                winreg.SetValueEx(k, "ShowBanner", 0, winreg.REG_DWORD, 0)
+                changed += 1
+        except OSError:
+            pass
+        finally:
+            winreg.CloseKey(k)
+    return changed
+
+
 def is_phone(n):
     """Is this one of the iPhone's notifications (relayed by Phone Link)?"""
     return same_app(n.get("app") if isinstance(n, dict) else n, PHONE_APP)

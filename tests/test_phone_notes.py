@@ -69,7 +69,7 @@ def test_call_from_a_saved_contact_is_said_by_the_brain(brain):
     fake, _ = brain([reply("call", "Rani is calling you on your phone.")])
     app.on_notifications([RINGING])
     assert app.mouth.said == ["Rani is calling you on your phone."]
-    assert app.events[-1] == {"reply": "🔔 Rani is calling you on your phone.", "kind": "notification"}
+    assert app.mouth.hidden == app.mouth.said and app.events == []     # only said out loud: not in the chat or bubble
     sent = json.dumps(fake.seen[0])
     assert "Rani 2024 Incoming Call" in sent and "unknown number" in sent     # the brain got the text and the rule
 
@@ -209,7 +209,9 @@ def test_muting_phone_link_silences_it(brain):
 def test_a_burst_mixes_phone_and_other_apps(brain):
     brain([reply("message", "Rahul on WhatsApp: are you coming tonight?")])
     app.on_notifications([WHATSAPP, OTHER_APP])
-    assert app.mouth.said == ["2 new notifications. Rahul on WhatsApp: are you coming tonight? … WhatsApp: Mom - Call me"]
+    assert app.mouth.said == ["Rahul on WhatsApp: are you coming tonight?", "WhatsApp: Mom - Call me"]
+    assert app.mouth.hidden == ["Rahul on WhatsApp: are you coming tonight?"]     # the iPhone one: voice only
+    assert [e["reply"] for e in app.events] == ["🔔 WhatsApp: Mom - Call me"]
 
 
 def test_settings_switches_are_saved(client):
