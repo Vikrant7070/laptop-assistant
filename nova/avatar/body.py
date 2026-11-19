@@ -19,6 +19,8 @@ Angles are in degrees from her own point of view, so a brain can write them with
 import json
 import re
 
+from nova.core import characters
+
 from nova.shared import DATA
 
 ROAM_MODES = ("corner", "edge", "free")
@@ -86,16 +88,11 @@ PRESETS = {
                  "shoes": "#2a2a3a", "glow": "#e43f5a", "accent": "#e43f5a", "glasses": True},
     "forest": {"hair": "#3e7a3e", "hair_tips": "#d9f99d", "eyes": "#2f855a", "hoodie": "#7c5a3a", "pants": "#3b2f25",
                "glow": "#a3e635", "accent": "#facc15", "hat": "#4d7c0f", "beanie": True},
-    # Character looks (characters.py): Makima-style office look and Lucy-style celestial look.
-    "office": {"hair": "#d9776a", "hair_tips": "#b5574d", "eyes": "#e8b730", "hoodie": "#f4f4f2", "pants": "#22242b",
-               "shoes": "#151515", "glow": "#e8b730", "accent": "#1a1a1a", "headphones": False, "hair_clip": False,
-               "ahoge": False},
-    "celestial": {"hair": "#f7d774", "hair_tips": "#fff3b0", "eyes": "#8a5a2b", "hoodie": "#f8fafc", "pants": "#2563eb",
-                  "shoes": "#3b2a1a", "glow": "#93c5fd", "accent": "#f5c542", "hat": "#2563eb", "bow": True,
-                  "headphones": False, "ahoge": False},
     "sunny": {"hair": "#f59e0b", "hair_tips": "#fde68a", "eyes": "#d97706", "hoodie": "#38bdf8", "pants": "#1e3a8a",
               "glow": "#fde047", "accent": "#fb923c", "cat_ears": True},
 }
+# Each character's own look (characters/<id>/character.json "look"), e.g. Makima's "office", Lucy's "celestial".
+PRESETS.update(characters.look_presets())
 COLOUR_RE = re.compile(r"^(#[0-9a-f]{3}|#[0-9a-f]{6}|[a-z]{3,20})$")
 
 

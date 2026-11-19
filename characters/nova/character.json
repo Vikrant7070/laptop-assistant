@@ -1,0 +1,17 @@
+{
+  "name": "Nova",
+  "label": "✨ Nova - cheerful desi dost (the original)",
+  "voice": "hf_alpha",
+  "wake": {
+    "names": ["nova", "novah", "noah", "nover", "nava", "nowa", "inua", "innova", "enova", "nuva", "noelle", "no va",
+              "नोवा", "नौवा", "नोआ"],
+    "hint": "Hey Nova. Nova, what's the time? Hey Nova, open Chrome."
+  },
+  "look_preset": "default",
+  "look": {},
+  "model": {
+    "file": "model.vrm",
+    "fit": {"top": 4.25, "spread": 0.3, "accessories": 0.92, "reach": 0.65,
+            "work": {"upper": 0.2, "inward": 0.35, "bend": 0.0, "seat": -0.1, "desk": 1.3}}
+  }
+}

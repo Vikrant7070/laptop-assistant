@@ -267,7 +267,7 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
       <div class="title">Chat with <span id="nm2">Nova</span></div>
       <div class="tools">
         <button id="voiceBtn" class="on" title="Speak replies aloud">🔊 Voice</button>
-        <button id="handsBtn" title="Listen for “Hey Nova”">👂 Hey Nova</button>
+        <button id="handsBtn" title="Listen for “Hey Nova”">👂 <span class="wakeName">Hey Nova</span></button>
         <button id="resetBtn" title="Start a fresh conversation">↺ New chat</button>
         <button id="kbBtn" title="What Nova knows about you, and what she has learned" onclick="location.href='/knowledge'">🧠 Knowledge</button>
         <button id="keyBtn" title="Choose model">⚙ Model</button>
@@ -368,12 +368,12 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
       <label class="mood" style="display:block;margin:4px 0 0 22px"><input type="checkbox" id="presenceLock"> 🔒 …and lock the laptop when I walk away (she warns first - move the mouse to stop her)</label>
       <p class="mood" style="margin:10px 0 2px">🎙 When I talk to her, she stops listening after <input type="number" id="listenPause" min="0.3" max="2" step="0.1" style="width:60px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> seconds of quiet
         (shorter = she answers sooner; longer = she waits if you pause mid-sentence) and listens at most <input type="number" id="listenMax" min="4" max="30" step="1" style="width:56px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> seconds per request.</p>
-      <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="bargeIn"> ✋ Let me interrupt her by voice: say “Nova”, “stop”, “wait” or “ruko” while she talks and she stops and listens (needs 👂 Hey Nova and her natural voice; the mic is on only while she speaks, nothing is saved)</label>
+      <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="bargeIn"> ✋ Let me interrupt her by voice: say her name, “stop”, “wait” or “ruko” while she talks and she stops and listens (needs 👂 ears on and her natural voice; the mic is on only while she speaks, nothing is saved)</label>
 </div>
 <div class="pane" data-pane="nova">
       <h3 style="margin-top:16px">🎭 Who should I be?</h3>
       <select id="character" class="sel"></select>
-      <p class="mood" style="margin:2px 0 0">Each character has her own personality, voice and 3D look. Wake her with “Hey Nova” whoever she is. Her voice and look change as soon as you save; her personality from your next message.</p>
+      <p class="mood" style="margin:2px 0 0">Each character has her own personality, voice, 3D look and name: wake her with “Hey” and her name (“Hey Lucy”, “Hey Makima”). Everything changes as soon as you save; her personality from your next message. Characters live in the <code>characters</code> folder.</p>
       <h3 style="margin-top:16px">🧍 Where should 3D Nova stay?</h3>
       <select id="avatarRoam" class="sel">
         <option value="corner">📍 Bottom-right corner - she only leaves it to point at a button or move a window, then goes back</option>
@@ -459,6 +459,7 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 </div>
 
 <script>
+let WAKE = "Hey Nova";      // the chosen character's wake phrase ("Hey Lucy"), from /api/events
 const $ = s => document.querySelector(s);
 const log = $("#log"), orb = $("#orb"), input = $("#input");
 let voiceOn = true, handsFree = false, busy = false, NAME = "Nova";
@@ -528,10 +529,11 @@ async function pollVoice() {
       ev.error ? (closeThoughts(), add("err", ev.error)) : render(ev);   // also: 🔔 notifications, 💡 tips, ✅ finished jobs
     }
     if (j.speaking !== speakingNow) { speakingNow = j.speaking; if (!busy) face(speakingNow ? "talking" : undefined); }
-    $("#handsBtn").title = handsFree ? `Listening for “Hey Nova” - ${j.ears}. Click to stop listening completely.` : "Not listening at all. Click to listen for “Hey Nova” again.";
+    if (j.wake_phrase && j.wake_phrase !== WAKE) { WAKE = j.wake_phrase; earsLabel(); }
+    $("#handsBtn").title = handsFree ? `Listening for “${WAKE}” - ${j.ears}. Click to stop listening completely.` : `Not listening at all. Click to listen for “${WAKE}” again.`;
     const ear = $("#earLine");
     ear.style.display = handsFree ? "block" : "none";
-    ear.textContent = handsFree ? `👂 ${j.ears === "listening" ? "Listening for “Hey Nova”" : j.ears}` +
+    ear.textContent = handsFree ? `👂 ${j.ears === "listening" ? `Listening for “${WAKE}”` : j.ears}` +
       (j.heard.length ? ` · last: ${j.heard[0].slice(9)}` : "") : "";
   } catch {}
 }
@@ -722,12 +724,12 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "
 
 /* ---------------- header buttons ---------------- */
 $("#voiceBtn").onclick = async e => { voiceOn = !voiceOn; e.target.classList.toggle("on", voiceOn); await api("/api/setup", {voice: voiceOn}); };
-function earsLabel() { $("#handsBtn").textContent = handsFree ? "👂 Hey Nova" : "🙉 Ears off"; }
+function earsLabel() { $("#handsBtn").textContent = handsFree ? `👂 ${WAKE}` : "🙉 Ears off"; }
 $("#handsBtn").onclick = async e => {
   handsFree = !handsFree; e.target.classList.toggle("on", handsFree); await api("/api/setup", {wake: handsFree});
   earsLabel();
-  add("nova", handsFree ? "I'm listening for “Hey Nova” now. Say it, wait for my bubble, then tell me what you need!"
-    : "🙉 My ears are off - I'm not listening at all now, not even for “Hey Nova”. Click 👂 to turn them back on (the 🎤 button still works when you want to talk).");
+  add("nova", handsFree ? `I'm listening for “${WAKE}” now. Say it, wait for my bubble, then tell me what you need!`
+    : `🙉 My ears are off - I'm not listening at all now, not even for “${WAKE}”. Click 👂 to turn them back on (the 🎤 button still works when you want to talk).`);
 };
 $("#resetBtn").onclick = async () => { await api("/api/reset"); log.innerHTML = ""; thoughtBox = null; hideCloud(); greet(); };
 $("#keyBtn").onclick = async () => openSetup(await loadStatus());

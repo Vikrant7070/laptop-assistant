@@ -1,0 +1,20 @@
+{
+  "name": "Makima",
+  "label": "🖤 Makima - calm, composed, quietly in charge",
+  "voice": "af_nicole",
+  "note": "A fan character for this laptop only - her 3D model must never be shared or uploaded.",
+  "wake": {
+    "names": ["makima", "makeema", "makema", "makimma", "macima", "mackima", "ma kima", "makimah", "mikima",
+              "मकिमा", "माकिमा"],
+    "hint": "Hey Makima. Makima, what's the time? Hey Makima, open Chrome."
+  },
+  "look_preset": "office",
+  "look": {"hair": "#d64b3c", "hair_tips": "#a8382c", "eyes": "#e8b730", "hoodie": "#f4f4f2", "pants": "#3a4044",
+           "shoes": "#6e4024", "glow": "#e8b730", "accent": "#1a1a1a", "headphones": false, "hair_clip": false,
+           "ahoge": false},
+  "model": {
+    "file": "model.vrm",
+    "fit": {"top": 4.25, "spread": 0.3, "accessories": 0.92, "reach": 0.65,
+            "work": {"upper": 0.35, "inward": 0.35, "bend": 0.0, "seat": 0.0, "desk": 1.4}}
+  }
+}

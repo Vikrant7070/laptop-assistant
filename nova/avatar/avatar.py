@@ -56,7 +56,7 @@ from nova.shared import DATA, REACTIONS, ROOT, host_allowed, work_area  # noqa: 
 
 FRAMES = ROOT / "static" / "nova3d"
 PORT = 5056
-SCALE = 0.8          # character size on screen
+SCALE = 1.0          # character size on screen (the slim VRM models need more room than the round toon)
 SPEED = 420          # walking speed, pixels per second
 TICK_MS = 33
 LIVE_STALE = 0.5     # seconds without a new live frame before the saved sprites take over again
@@ -213,6 +213,8 @@ class Nova:
         self.look_v = 1                  # bumped on every look change, so the renderer knows to re-dress her
         self.live_on = live_setting()
         self.live = None                 # (latest live frame as a PIL image, when it arrived)
+        self.live_head = None            # the top of her head in that frame (x, y), sent by the renderer
+        self.head_s = None               # the same, smoothed: where the speech bubble's tail points
         self.want = {"name": "idle", "t": 0}
         self.gestures = {}               # speech gestures in play (body.gesture_move), by name
         self.speech = None               # the sentence she is saying: {"start", "secs", "env", "fps"}
@@ -630,6 +632,11 @@ class Nova:
                 if w == nova.sp.w and h == nova.sp.h and len(data) == w * h * 4:
                     # WebGL reads rows bottom-up: the -1 stride turns the picture the right way up
                     nova.live = (Image.frombytes("RGBA", (w, h), data, "raw", "RGBA", 0, -1), time.time())
+                    try:
+                        hx, hy = float(q.get("hx", -1)), float(q.get("hy", -1))
+                        nova.live_head = (hx, hy) if 0 <= hx <= w and -h <= hy <= h else None
+                    except ValueError:
+                        nova.live_head = None
                 # 24 fps looks smooth and costs ~20% less than 30 (each frame is ~230 KB through the browser);
                 # napping she barely moves; paused (hidden, or live 3D off) the renderer only checks in now and then.
                 pause = not (nova.visible and nova.live_on)
@@ -823,7 +830,7 @@ class Nova:
             img = self.ear_waves(img, now)
         if self.bubble or self.thought:       # speaking beats thinking: the cloud waits under the speech bubble
             text, thought = (self.bubble[0], False) if self.bubble else (self.thought[0], True)
-            canvas, xoff, yoff = self.compose_bubble(img, text, thought, self.pos[0] - fx)
+            canvas, xoff, yoff = self.compose_bubble(img, text, thought, self.pos[0] - fx, self.bubble_anchor(img, live))
             data, w, h = premultiplied_bgra(canvas), canvas.width, canvas.height
         elif live or name.startswith("move:"):     # not one of the cached sprite pictures
             data, w, h, xoff, yoff = premultiplied_bgra(img), sw, sh, 0, 0
@@ -848,47 +855,68 @@ class Nova:
                 g.arc((cx - r, cy - r, cx + r, cy + r), a0, a1, fill=(110, 231, 249, alpha), width=max(2, round(w / 90)))
         return img
 
-    def compose_bubble(self, frame, text, thought=False, sx=None):
+    def bubble_anchor(self, img, live):
+        """Where the bubble's tail points (x, y in her frame): just above her head. The live renderer says where her
+        head is; for saved sprites it is the top of the picture. Smoothed, so the bubble glides with her instead of
+        jumping with every bob of her head."""
+        target = self.live_head if live and self.live_head else None
+        if target is None:
+            box = img.getchannel("A").getbbox()
+            target = (img.width / 2, box[1]) if box else (img.width / 2, 0)
+        if self.head_s is None or abs(target[0] - self.head_s[0]) + abs(target[1] - self.head_s[1]) > 120:
+            self.head_s = target                         # a big jump (a new pose, lying down): go straight there
+        else:
+            k = 0.25
+            self.head_s = (self.head_s[0] + (target[0] - self.head_s[0]) * k, self.head_s[1] + (target[1] - self.head_s[1]) * k)
+        return self.head_s
+
+    def compose_bubble(self, frame, text, thought=False, sx=None, head=None):
         """Her frame with a bubble above it: a speech bubble with a pointed tail, or (thought=True) a thought cloud -
         rounder, tinted, with little circles rising from her head instead of a tail.
         sx = where her frame's left edge is on the screen: the bubble slides sideways to stay fully on the screen
-        (she lives at the right edge), while its tail keeps pointing at her."""
+        (she lives at the right edge), while its tail keeps pointing at her.
+        head = (x, y) in her frame where the tail's tip goes (above her head); None = the middle of the frame's top."""
         text = textwrap.fill(text, 30)
         d = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
         l, t, r, b = d.multiline_textbbox((0, 0), text, font=self.font, spacing=4)
         pad = 14 if thought else 12
         bw, bh = r - l + pad * 2, b - t + pad * 2
         tail = 22 if thought else 14
-        ch = frame.height + bh + tail
-        fw = frame.width
+        fw, fh = frame.width, frame.height
+        hx, hy = head if head else (fw / 2, 0)
+        hy = max(0, hy - 4)                                              # a little gap above her hair
+        fy0 = max(0, int(bh + tail - hy))                                # her frame's top in the canvas
+        by0 = int(fy0 + hy - tail - bh)                                  # the bubble's top in the canvas
+        ch = max(fy0 + fh, by0 + bh + tail)
         if sx is None:
             sx = 0
             left, right = -10 ** 6, 10 ** 6
         else:
             left, _, right, _ = work_area()
-        bub_left = sx + (fw - bw) / 2                                    # centred over her ...
+        bub_left = sx + hx - bw / 2                                      # centred over her head ...
         bub_left = max(min(bub_left, right - 6 - bw), left + 6)          # ... unless that runs off the screen
         canvas_left = min(sx, bub_left)
         cw = int(max(sx + fw, bub_left + bw) - canvas_left) + 1
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
         xoff = int(sx - canvas_left)
-        canvas.alpha_composite(frame, (xoff, bh + tail))
+        canvas.alpha_composite(frame, (xoff, fy0))
         g = ImageDraw.Draw(canvas)
         bx = int(bub_left - canvas_left)
-        mx = int(min(max(xoff + fw / 2, bx + 24), bx + bw - 24))         # the tail stays over her, inside the bubble
+        mx = int(min(max(xoff + hx, bx + 24), bx + bw - 24))             # the tail stays over her, inside the bubble
         line = (124, 92, 255, 255)
         if thought:
             fill = (236, 250, 254, 240)
-            g.rounded_rectangle((bx, 0, bx + bw - 1, bh - 1), radius=min(bh // 2, 24), fill=fill, outline=(34, 190, 220, 255), width=2)
-            for cx, cy, rad in ((mx + 4, bh + 6, 6), (mx + 12, bh + 17, 4)):     # the trail of little thought circles
+            g.rounded_rectangle((bx, by0, bx + bw - 1, by0 + bh - 1), radius=min(bh // 2, 24), fill=fill, outline=(34, 190, 220, 255), width=2)
+            for cx, cy, rad in ((mx + 4, by0 + bh + 6, 6), (mx + 12, by0 + bh + 17, 4)):     # the trail of little thought circles
                 g.ellipse((cx - rad, cy - rad, cx + rad, cy + rad), fill=fill, outline=(34, 190, 220, 255), width=2)
-            g.multiline_text((bx + pad - l, pad - t), text, font=self.font, fill=(20, 60, 80, 255), spacing=4)
+            g.multiline_text((bx + pad - l, by0 + pad - t), text, font=self.font, fill=(20, 60, 80, 255), spacing=4)
         else:
-            g.rounded_rectangle((bx, 0, bx + bw - 1, bh - 1), radius=14, fill=(250, 248, 255, 245), outline=line, width=2)
-            g.polygon([(mx - 9, bh - 2), (mx + 9, bh - 2), (mx + 2, bh + tail)], fill=(250, 248, 255, 245))
-            g.line([(mx - 9, bh - 1), (mx + 2, bh + tail), (mx + 9, bh - 1)], fill=line, width=2)
-            g.multiline_text((bx + pad - l, pad - t), text, font=self.font, fill=(30, 24, 60, 255), spacing=4)
-        return canvas, xoff, bh + tail
+            y1 = by0 + bh
+            g.rounded_rectangle((bx, by0, bx + bw - 1, y1 - 1), radius=14, fill=(250, 248, 255, 245), outline=line, width=2)
+            g.polygon([(mx - 9, y1 - 2), (mx + 9, y1 - 2), (mx + 2, y1 + tail)], fill=(250, 248, 255, 245))
+            g.line([(mx - 9, y1 - 1), (mx + 2, y1 + tail), (mx + 9, y1 - 1)], fill=line, width=2)
+            g.multiline_text((bx + pad - l, by0 + pad - t), text, font=self.font, fill=(30, 24, 60, 255), spacing=4)
+        return canvas, xoff, fy0
 
     def blit(self, data, w, h, x, y):
         if (w, h) not in self.dibs:
