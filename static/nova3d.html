@@ -234,7 +234,7 @@ const mugHandle = mesh(new THREE.TorusGeometry(.065, .022, 8, 16), M.hat, .1); m
 const fx = [0, 1].map(() => { const d = decal(SYM.q, 1.3, 1.3); d.visible = false; d.renderOrder = 5; return d; });
 function sym(i, tex, x, y, size = 1, alpha = 1, tilt = 0) {
   const d = fx[i]; d.visible = true; d.material.map = tex; d.material.opacity = alpha;
-  d.position.set(x, y, 1.6); d.scale.setScalar(size); d.rotation.z = tilt;
+  d.position.set(x, y + (vrm ? VRM_TOP - 3.55 : 0), 1.6); d.scale.setScalar(size); d.rotation.z = tilt;   // above the taller VRM's head too
 }
 
 /* ------------------------------------------------------------------ scene */
@@ -282,8 +282,9 @@ function reset() {
   eyes.forEach(e => e.material.map = TEX.eye.open); mouth.material.map = TEX.mouth.smile;
   blushes.forEach(b => b.material.opacity = .7);
 }
+let posing = "";       // the animation being shown (some need a different fit on the VRM)
 function pose(name, t) {
-  reset();
+  reset(); posing = name;
   const s = Math.sin(TAU * t), c = Math.cos(TAU * t);
   if (name === "idle") {
     body.position.y = .025 * s; head.rotation.z = .05 * s; head.rotation.x = .02 * c;
@@ -516,7 +517,7 @@ function track(keys, j, t) {       // a joint's value at t: smooth between the p
 }
 function latest(keys, f, t) { let v; for (const k of keys) if (f in k && k.at <= t + 1e-6) v = k[f]; return v; }
 function poseMove(move, t) {
-  reset();
+  reset(); posing = "move";
   const k = move.keys, v = j => track(k, j, t) * RAD;
   arms[0].rotation.set(-v("right_arm_forward"), 0, .12 - v("right_arm_out"));
   arms[1].rotation.set(-v("left_arm_forward"), 0, -.12 + v("left_arm_out"));
@@ -539,17 +540,39 @@ function poseMove(move, t) {
 // pictures become VRM expressions, so every built-in and invented move plays on the real model too. Which model:
 // /api/model (the chosen character, characters.py). No model file, a load error, or ?toon in the URL: the toon body.
 const NO_VRM = new URLSearchParams(location.search).has("toon");
+// Her real proportions are slimmer than the round toon, so she is drawn taller (top of her hair at this height; the
+// toon's is 3.55) to stay easy to see in the small desktop window.
+let VRM_TOP = 4.25;     // (each character's own: characters/<id>/character.json model.fit.top)
 let vrm = null, vrmFile = null, vrmBase = null, lastLook = null, vrmFit = null, talkLevel = null, modelBusy = null;
 let nextBlink = 0, blinkAt = -1e9, lastDraw = performance.now();
 const acc = new THREE.Group();                 // headphones, hair clip, glasses... re-hung on the VRM's head bone
 const ACCESSORIES = [...phones, ...earWaves, clip, glasses, catEars, beanie, bow];
 ACCESSORIES.forEach(o => o.traverse(c => c.userData.acc = true));
 const toonParent = new Map(ACCESSORIES.map(o => [o, o.parent]));
-const eu = new THREE.Euler(), axis = (x, y, z) => new THREE.Vector3(x, y, z);
-const SPREAD = .3;     // the toon's arms hang a little inwards (a round body); the slim VRM's would go into her hips
+const qTarget = new THREE.Quaternion(), eu = new THREE.Euler(), axis = (x, y, z) => new THREE.Vector3(x, y, z);
+let SPREAD = .3;
+// Sitting at her desk on the VRM (the toon's numbers would put her hands in front of her face): arm angles in
+// radians, seat height and desk size in scene units.
+const WORK = {upper: .65, inward: .35, bend: .3, seat: -.35, desk: 1.3};   // defaults; each model's fit.work wins
+let ACC_SIZE = .92;      // headphones, glasses... size on her head (fit.accessories)
+let REACH = .65;         // how much a hand-to-face arm is lowered towards her chin (fit.reach)
+window.WORK = WORK;     // the toon's arms hang a little inwards (a round body); the slim VRM's would go into her hips
 // The toon's arms hang down at rest; the VRM's point sideways (T-pose): turn them down first, then pose like the toon.
-const ARM_DOWN = [new THREE.Quaternion().setFromAxisAngle(axis(0, 0, 1), Math.PI / 2 - SPREAD),     // her right arm
-                  new THREE.Quaternion().setFromAxisAngle(axis(0, 0, 1), -Math.PI / 2 + SPREAD)];   // her left arm
+const ARM_DOWN = [new THREE.Quaternion(), new THREE.Quaternion()];     // her right arm, her left arm
+function setSpread(sp) {
+  SPREAD = sp;
+  ARM_DOWN[0].setFromAxisAngle(axis(0, 0, 1), Math.PI / 2 - sp); ARM_DOWN[1].setFromAxisAngle(axis(0, 0, 1), -Math.PI / 2 + sp);
+}
+setSpread(SPREAD);
+// Her body's own numbers (characters/<id>/character.json "model": "fit"): every model has other proportions.
+function applyFit(f = {}) {
+  if (f.top) VRM_TOP = f.top;
+  if (f.spread !== undefined) setSpread(f.spread);
+  if (f.accessories) ACC_SIZE = f.accessories;
+  if (f.reach !== undefined) REACH = f.reach;
+  window.FIT = {top: VRM_TOP, spread: SPREAD, accessories: ACC_SIZE, reach: REACH, work: {...WORK}};   // dev: see it
+  Object.assign(WORK, f.work || {});
+}
 
 function showToon(on) {     // the toon's meshes (not the accessories, which both bodies wear)
   body.traverse(o => { if (o.isMesh && !o.userData.acc && !o.userData.vrm) o.visible = on; });
@@ -561,21 +584,21 @@ async function loadVRM(file) {
   const [{GLTFLoader}, {VRMLoaderPlugin, VRMUtils}] = await Promise.all([
     import("three/addons/loaders/GLTFLoader.js"), import("@pixiv/three-vrm")]);
   const loader = new GLTFLoader(); loader.register(p => new VRMLoaderPlugin(p));
-  const gltf = await loader.loadAsync(`nova3d/${file}`);
+  const gltf = await loader.loadAsync(file);     // /characters/<id>/model.vrm
   const v = gltf.userData.vrm;
   VRMUtils.removeUnnecessaryVertices(gltf.scene); VRMUtils.removeUnnecessaryJoints(gltf.scene); VRMUtils.rotateVRM0(v);
   v.scene.traverse(o => { o.userData.vrm = true; if (o.isMesh) o.frustumCulled = false; });
   v.scene.updateMatrixWorld(true);
   // Same height on screen as the toon: the top of her hair at y = 3.55 (VRoid puts her feet at 0).
-  const box = new THREE.Box3().setFromObject(v.scene), k = 3.55 / box.max.y;
+  const box = new THREE.Box3().setFromObject(v.scene), k = VRM_TOP / box.max.y;
   v.scene.scale.setScalar(k); v.scene.updateMatrixWorld(true);
   const wp = n => v.humanoid.getRawBoneNode(n).getWorldPosition(new THREE.Vector3());
-  const headY = wp("head").y, top = 3.55, faceBox = new THREE.Box3();
+  const headY = wp("head").y, top = VRM_TOP, faceBox = new THREE.Box3();
   v.scene.traverse(o => { if (o.isMesh && /face/i.test(o.name)) faceBox.expandByObject(o); });
   // The toon's head is ~1.85 tall with its middle 0.9 above the neck; size and place the accessories to match hers.
-  const s = .92 * (top - headY) / 1.85, front = faceBox.isEmpty() ? wp("head").z + .35 * s : faceBox.max.z;
+  const s = ACC_SIZE * (top - headY) / 1.85, front = faceBox.isEmpty() ? wp("head").z + .35 * s : faceBox.max.z;
   acc.scale.setScalar(s / k); acc.position.set(0, .9 * s / k, (front - .86 * s - wp("head").z) / k);
-  vrmFit = {upLeg: wp("rightUpperLeg").distanceTo(wp("rightLowerLeg"))};
+  vrmFit = {k, headH: top - headY, upLeg: wp("rightUpperLeg").distanceTo(wp("rightLowerLeg"))};
   v.scene.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => m.userData.orig = {
     color: m.color && m.color.clone(), shade: m.shadeColorFactor && m.shadeColorFactor.clone()}); });
   if (vrm) { body.remove(vrm.scene); VRMUtils.deepDispose(vrm.scene); }
@@ -585,10 +608,11 @@ async function loadVRM(file) {
 }
 // The toon's bright lights wash out the VRM's anime shading (MToon): softer ones while she wears the VRM.
 function vrmLights(on) { hemi.intensity = on ? VRM_LIGHT.hemi : 1.0; sun.intensity = on ? VRM_LIGHT.sun : 1.5; rim.intensity = on ? VRM_LIGHT.rim : 1.2; }
-const VRM_LIGHT = {hemi: .35, sun: 1.1, rim: .8};
+const VRM_LIGHT = {hemi: .55, sun: 1.3, rim: 1.1};
 window.VRM_LIGHT = VRM_LIGHT; window.vrmLights = vrmLights;
 function unloadVRM() {
   if (!vrm) return;
+  desk.scale.setScalar(1);
   body.remove(vrm.scene); vrm = null; vrmFile = null; hangAccessories(false); showToon(true); vrmLights(false);
   if (lastLook) applyLook(lastLook);
 }
@@ -596,10 +620,11 @@ function checkModel() {      // the chosen character's model; reloaded when she 
   if (NO_VRM || modelBusy) return;
   modelBusy = (async () => {
     try {
-      const force = new URLSearchParams(location.search).get("vrm");     // dev: ?vrm=makima.vrm
-      const j = force ? {vrm: force, base: null} : await (await fetch("/api/model")).json();
+      // dev: ?character=makima shows another character's model (with her own fit) without switching to her
+      const force = new URLSearchParams(location.search).get("character");
+      const j = await (await fetch("/api/model" + (force ? `?character=${encodeURIComponent(force)}` : ""))).json();
       vrmBase = j.base;
-      if (j.vrm && j.vrm !== vrmFile) { vrmFile = j.vrm; await loadVRM(j.vrm); }
+      if (j.vrm && j.vrm !== vrmFile) { vrmFile = j.vrm; applyFit(j.fit); await loadVRM(j.vrm); }
       else if (!j.vrm) unloadVRM();
       dressVRM();
     } catch (e) { console.warn("No VRM model, keeping the toon body:", e); vrmFile = null; }
@@ -632,15 +657,21 @@ function dressVRM() {
 // Copy the toon's pose and face onto the VRM, then let it move her hair and clothes (spring bones).
 function driveVRM(dt) {
   if (!vrm) return;
+  // Each bone glides to its new angle (~80 ms) instead of snapping: pose changes and the toon's small jitters look
+  // smooth. Exports and snapshots (exporting) take the exact pose.
+  const glide = exporting ? 1 : 1 - Math.exp(-Math.max(0, dt) / .08);
   const h = vrm.humanoid, set = (n, x, y, z, post) => {
     const b = h.getNormalizedBoneNode(n); if (!b) return;
-    b.quaternion.setFromEuler(eu.set(x, y, z)); if (post) b.quaternion.multiply(post);
+    qTarget.setFromEuler(eu.set(x, y, z)); if (post) qTarget.multiply(post);
+    b.quaternion.slerp(qTarget, glide);
   };
   arms.forEach((a, i) => {          // arms[0] is her right arm
     const side = i ? "left" : "right", r = a.rotation;
-    set(side + "UpperArm", r.x, r.y, r.z, ARM_DOWN[i]);
-    // a straight toon arm reaching up to her face would miss on the VRM's smaller head: bend the elbow instead
-    const bend = .12 + Math.min(1.9, Math.max(0, (-r.x - .8) * 1.2));
+    // a straight toon arm reaching up to her face would miss on the VRM's smaller head: bend the elbow instead, and
+    // lower the upper arm a little so the hand lands at her chin, not over her eyes (fit.reach scales that)
+    const reach = Math.max(0, -r.x - .8), bend = .12 + Math.min(1.9, reach * 1.2);
+    const lower = Math.min(1.2, reach * REACH * (posing === "facepalm" ? .5 : 1));   // facepalm: forehead, not chin
+    set(side + "UpperArm", r.x + lower, r.y, r.z, ARM_DOWN[i]);
     set(side + "LowerArm", 0, i ? -bend : bend, 0);
   });
   legs.forEach((l, i) => {          // legs[0] is her right leg
@@ -648,14 +679,28 @@ function driveVRM(dt) {
     set(side + "UpperLeg", r.x, r.y, r.z);
     set(side + "LowerLeg", Math.max(0, -r.x) * (r.x < -1 ? 1 : .6), 0, 0);   // knee bends as the leg comes up
   });
+  if (desk.visible) {     // typing at her laptop: upper arms down and forward, forearms level on the keys
+    arms.forEach((a, i) => {
+      const side = i ? "left" : "right", s = i ? -1 : 1, tap = a.rotation.x + 1.38;   // the toon's finger taps
+      set(side + "UpperArm", -WORK.upper, 0, s * WORK.inward, ARM_DOWN[i]);
+      set(side + "LowerArm", 0, s * (WORK.bend - 1.5 * tap), 0);
+    });
+  }
   const hr = head.rotation, nr = neckTop.rotation;
   set("neck", .4 * hr.x + nr.x, .4 * hr.y + nr.y, .4 * hr.z + nr.z);
   set("head", .6 * hr.x, .6 * hr.y, .6 * hr.z);
   // sitting at her desk: her long legs need the seat lower than the toon's (shins straight down, feet on the floor)
   const sit = Math.min(-legs[0].rotation.x, -legs[1].rotation.x);
-  vrm.scene.position.y = sit > 1 ? .32 - vrmFit.upLeg * (1 - Math.cos(sit)) : 0;
+  const seatY = sit > 1 ? .32 - vrmFit.upLeg * (1 - Math.cos(sit)) + WORK.seat : 0;
   // lying on her side: she is slimmer than the toon, so lower her onto the floor (her sideways is up while lying)
-  vrm.scene.position.x = -.3 * Math.max(0, nova.rotation.z / NAP.rz);
+  const lie = Math.max(0, nova.rotation.z / NAP.rz);
+  const lieX = -.3 * lie, p = vrm.scene.position, jump = Math.abs(seatY - p.y) + Math.abs(lieX - p.x);
+  p.y += (seatY - p.y) * glide; p.x += (lieX - p.x) * glide;
+  // a snapshot or export jumping straight between poses (seat -> standing): her hair springs would fling upwards
+  if (exporting && jump > .2 && vrm.springBoneManager) vrm.springBoneManager.reset();
+  // lying down she is as long as she is tall: back to the toon's size so she still fits across the frame
+  vrm.scene.scale.setScalar(vrmFit.k * (1 - lie * (1 - 3.55 / VRM_TOP)));
+  desk.scale.setScalar(WORK.desk);
 
   const em = vrm.expressionManager;
   if (em) {
@@ -721,6 +766,14 @@ function layers(w) {
     locks.forEach(l => l.rotation.z += .08 * a * sway);
   }
 }
+// The top of her head in frame pixels (x, y), so avatar.py can put the speech bubble's tail just above it.
+function headPixel(w, h) {
+  const v = new THREE.Vector3();
+  if (vrm) { vrm.humanoid.getRawBoneNode("head").getWorldPosition(v); v.y += vrmFit.headH * vrm.scene.scale.x / vrmFit.k; }
+  else { head.getWorldPosition(v); v.y += .95; }
+  v.project(camera);
+  return [Math.round((v.x + 1) / 2 * w), Math.round((1 - v.y) / 2 * h)];
+}
 async function liveLoop() {
   document.body.innerHTML = ""; document.body.appendChild(canvas);
   const gl = renderer.getContext();
@@ -738,7 +791,8 @@ async function liveLoop() {
       }
     } catch (e) { console.error(e); }
     try {
-      const r = await fetch(`http://127.0.0.1:5056/frame?w=${w}&h=${h}&lv=${lookV}`, {method: "POST", body: frame});
+      const [hx, hy] = frame ? headPixel(w, h) : [-1, -1];     // where her head is, for the speech bubble
+      const r = await fetch(`http://127.0.0.1:5056/frame?w=${w}&h=${h}&lv=${lookV}&hx=${hx}&hy=${hy}`, {method: "POST", body: frame});
       want = await r.json();
     } catch (e) { await sleep(1500); continue; }
     await sleep(Math.max(1, 1000 / (want.fps || 30) - (performance.now() - a)));
@@ -793,7 +847,7 @@ async function exportFrames() {
 }
 document.getElementById("export").onclick = exportFrames;
 window.exportFrames = exportFrames;
-window.applyLook = applyLook; window.poseMove = poseMove;
+window.applyLook = applyLook; window.poseMove = poseMove; window.applyFit = applyFit;   // applyFit: dev, try fit numbers live
 // Dev helper: a picture of one invented-move moment (window.snapshot(move, t) -> PNG data URL), for checking poses.
 window.snapshot = (move, t) => {
   exporting = true; poseMove(move, t); draw(1 / 12);
@@ -812,6 +866,11 @@ window.frameCost = (n = 120, w = 208, h = 272) => {
   renderer.setPixelRatio(2); renderer.setSize(W, H, false); exporting = false;
   Object.keys(parts).forEach(k => parts[k] = +(parts[k] / n).toFixed(2));
   return {...parts, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, programs: renderer.info.programs.length};
+};
+// Dev helper: where her VRM bones are (scene units) in a pose, for fitting props like the desk.
+window.vrmBones = (name = "work", t = .2, bones = ["hips", "rightUpperArm", "rightHand", "head", "rightLowerLeg", "rightFoot"]) => {
+  if (!vrm) return null; pose(name, t); for (let i = 0; i < 6; i++) driveVRM(1 / 30); nova.updateMatrixWorld(true);
+  return Object.fromEntries(bones.map(b => { const p = vrm.humanoid.getRawBoneNode(b).getWorldPosition(new THREE.Vector3()); return [b, [p.x, p.y, p.z].map(v => +v.toFixed(2))]; }));
 };
 window.snapPose = (name, t) => {     // the same for a built-in animation
   exporting = true; pose(name, t); for (let i = 0; i < 6; i++) driveVRM(1 / 30); draw(1 / 30);

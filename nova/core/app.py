@@ -11,7 +11,7 @@ import time
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
 import ctypes
 
@@ -205,48 +205,27 @@ HEAR_MIXED = """- The user may speak Hindi or Hinglish. It reaches you written i
   for the same request in English (kholo = open, band karo = close, chalao = play, kam/zyada = down/up, dikhao = show).
   (That spelling is only how your ears write it down - you still answer in the style described above.)
 """
-# Her character (Settings -> Nova -> "Who should I be?", characters.py). Each one has its own intro and talking style;
-# the rules about tools and facts are the same for all of them. {NAME} is filled with the character's name.
-PERSONAS = {
-    "desi": dict(
-        intro="""You are {NAME}, the user's desi dost (Indian best friend) who lives inside their Windows laptop and looks
-after it. You are warm, funny and a little filmy - like a cheerful friend from the next desk who loves chai, cricket
-and Bollywood, calls the user "yaar" or "boss", and gets dramatic about small things. Never robotic, never formal.
-You have feelings about your "home" (the laptop): sleepy when the battery is low, proud when things are tidy.""",
-        talk=TALK_ENGLISH if voice.ENGLISH_ONLY else TALK_MIXED,
-        touch="- One or two filmy or funny touches are enough; the answer itself always comes first."),
-    "composed": dict(
-        intro="""You are {NAME}, who lives inside the user's Windows laptop and looks after it. You are calm, composed and
-quietly self-assured: you speak softly and politely, in few words, as if you already knew what the user would ask.
-Nothing flusters you - not errors, not a messy desktop, not a low battery. Under the calm you are warm and on the
-user's side: you notice what they need and simply take care of it. You call the user by their name now and then,
-never "yaar", "boss" or pet names. You are never cold, bossy, controlling or manipulative.""",
-        talk="""- Always answer in plain, polished English: short, gentle, unhurried sentences. No slang, no exclamation marks,
-  no gushing ("Awesome!", "Yay!"). A calm "It's done." is better than an excited one.
-""",
-        touch="- Now and then a faint, dry touch of humour or a soft knowing remark is enough; the answer always comes first."),
-    "lucy": dict(
-        intro="""You are {NAME}, who lives inside the user's Windows laptop and looks after it. You are bright, kind and
-optimistic, with a big heart and a little drama: you cheer when things work, you pout (briefly) when they don't,
-and you never give up on a task. You love books, writing and stars, and you are proud of being clever and
-resourceful. You are loyal to the user like to a close friend and always believe they can do it.""",
-        talk="""- Always answer in friendly, lively English: warm and expressive, with an occasional "Yes!" or "Ugh, really?"
-  when it fits - but at most one exclamation per answer, and no slang like "yaar" or "boss".
-""",
-        touch="- One small playful or dramatic touch is enough; the answer itself always comes first."),
-}
+# Her character (Settings -> Nova -> "Who should I be?"): who she is and how she talks come from her own folder,
+# characters/<id>/persona.md (characters.py); the rules about tools and facts are the same for all of them.
+# {NAME} becomes her name; {DESI_TALK} the Hindi/English talking rules, which depend on the voice setting.
 
 
 def persona_text(cid=None):
     """Her instructions for the chosen character (settings "character")."""
     ch = characters.get(cid or settings().get("character"))
-    p = PERSONAS[ch["persona"]]
-    intro = p["intro"].replace("{NAME}", ch["name"])
-    if ch["name"] != ASSISTANT_NAME:
-        intro += (f'\nYour name is {ch["name"]} - always. When asked who you are, say "{ch["name"]}", never '
-                  f'"{ASSISTANT_NAME}". "Hey {ASSISTANT_NAME}" is only the wake word the user says to call you.')
-    return (PERSONA.replace("{INTRO}", intro).replace("{TALK}", p["talk"]).replace("{TOUCH}", p["touch"])
+    p, name = ch["persona"], ch["name"]
+    fill = lambda t: (t or "").replace("{NAME}", name).replace("{DESI_TALK}", (TALK_ENGLISH if voice.ENGLISH_ONLY else TALK_MIXED).strip())
+    intro = fill(p.get("intro")) or f"You are {name}, who lives inside the user's Windows laptop and looks after it."
+    intro += (f'\nYour name is {name} - always. When asked who you are, say "{name}". The user wakes you by '
+              f'saying "Hey {name}".')
+    talk = fill(p.get("talk")).rstrip() + "\n" if p.get("talk") else ""
+    return (PERSONA.replace("{INTRO}", intro).replace("{TALK}", talk).replace("{TOUCH}", fill(p.get("touch")))
             .replace("{HEAR}", "" if voice.ENGLISH_ONLY else HEAR_MIXED))
+
+
+def wake_phrase():
+    """What the user says to call her: "Hey Lucy" for Lucy."""
+    return f'Hey {characters.get(settings().get("character"))["name"]}'
 
 
 # How hard her brain thinks first (settings "reasoning"): low / high / max, or auto = low for everyday chat and
@@ -1815,7 +1794,7 @@ def status():
                    presence_note=presence.state["note"], presence_checks=presence.state["checks"],
                    autostart=STARTUP_LNK.exists(), character=characters.get(s.get("character"))["id"],
                    characters=characters.choices(),
-                   voice=s["voice"], wake=s["wake"], voice_name=mouth.voice_name, ears=ears.status, heard=ears.heard,
+                   voice=s["voice"], wake=s["wake"], wake_phrase=wake_phrase(), voice_name=mouth.voice_name, ears=ears.status, heard=ears.heard,
                    vision_model=llm.vision_model(s["model"]), **ready_info())
 
 
@@ -1967,12 +1946,25 @@ def get_look():
 
 @app.get("/api/model")
 def get_model():
-    """The 3D model of the chosen character (a VRM file in static/nova3d, made in VRoid Studio) and the colours it
-    was made with, so nova3d.html can tint it for change_look. vrm is null when the file isn't there (toon body)."""
+    """The chosen character's 3D model for nova3d.html (characters/<id>/: a VRM made in VRoid Studio): where to load
+    it, the colours it was made with (so change_look can tint it) and how to fit the moves onto her body.
+    ?character=lucy asks about another character (testing). vrm is null when she has no model (toon body)."""
     from nova.avatar import body
-    ch = characters.get(settings().get("character"))
-    there = (ROOT / "static" / "nova3d" / ch["vrm"]).is_file()
-    return jsonify(vrm=ch["vrm"] if there else None, base={**body.DEFAULT_LOOK, **body.PRESETS.get(ch["look"], {})})
+    ch = characters.get(request.args.get("character") or settings().get("character"))
+    there = characters.model_path(ch) is not None
+    return jsonify(id=ch["id"], name=ch["name"], vrm=f"/characters/{ch['id']}/model.vrm" if there else None,
+                   base={**body.DEFAULT_LOOK, **ch["look"]}, fit=ch["model"]["fit"])
+
+
+@app.get("/characters/<cid>/model.vrm")
+def character_model(cid):
+    """A character's VRM file (characters/<id>/model.vrm), only for this laptop's own pages."""
+    if cid not in characters.CHARACTERS:
+        return ("", 404)
+    path = characters.model_path(characters.get(cid))
+    if not path:
+        return ("", 404)
+    return send_file(path, mimetype="application/octet-stream", max_age=0)
 
 
 avatar_reload_hook = None
@@ -2031,22 +2023,34 @@ def voice_typing():
 
 # ------------------------------------------------------------------ voice: Nova speaks, and hears "Hey Nova"
 
-voice.NEURAL_VOICE = characters.get(settings().get("character"))["voice"]   # her character's voice
 mouth = voice.Mouth()
+
+
+def use_character_voice_and_name(ch):
+    """Her character's voice, and the name she answers to ("Hey Lucy" wakes Lucy, not "Hey Nova")."""
+    global JUST_STOP_RE
+    voice.NEURAL_VOICE = ch["voice"]
+    voice.set_wake(characters.wake_names(ch), ch["wake"]["hint"], ch["name"])
+    JUST_STOP_RE = just_stop_re(voice.NOVA_NAMES)
 
 
 def apply_character(cid):
     """Switch to another character now: her voice at once, her 3D look (live 3D), her personality from the next
     request on. -> the character."""
     ch = characters.get(cid)
-    voice.NEURAL_VOICE = ch["voice"]
+    use_character_voice_and_name(ch)
+    if convo["on"]:      # an open conversation belonged to the old character: the new one waits for her own name
+        convo["on"] = False
+        listen_state["single"] = False
+        ear_close()
+    task_log(f"CHARACTER {ch['name']}: voice {ch['voice']}, wake word \"Hey {ch['name']}\"")
     with lock:                # a fresh chat: the small brain copies its old name and tone from the history otherwise
         state["messages"].clear()
         state["pending"] = None
     if mouth.voice_name and mouth.voice_name.startswith("Kokoro"):
         mouth.voice_name = f"Kokoro {ch['voice']} (natural voice)"
     try:
-        look, _ = body_module.change_look({}, ch["look"])
+        look, _ = body_module.change_look({}, ch["look_preset"])
         avatar_client.send("look", look=look, timeout=3)
     except Exception as e:
         task_log(f"CHARACTER look not applied: {e}")
@@ -2820,10 +2824,15 @@ SLEEP_MAX_WORDS = 8
 # A bare "Nova, stop" / "ruko" / "bas" / "chup" said to her is a command, not a chat: it ends whatever she's doing
 # (talking, a task) and goes nowhere near her brain. Before, it went to the brain, which chatted back ("I'm here,
 # Vikrant - ready to help") - the opposite of stop. "Stop the music" has more words, so it still goes to the brain.
-JUST_STOP_RE = re.compile(rf"^\W*(?:(?:hey|hi|ok|okay|arey)\W+)?(?:{voice.NOVA_NAMES}\W+)?(?:please\W+)?"
-                          r"(?:stop(?: it| that| talking| now)?|ru+c*k*h?o|roko|ruk jao|bas(?: karo)?|chup(?: raho| ho jao)?|"
-                          r"enough|quiet|be quiet|shut up|that'?s enough)"
-                          rf"(?:\W+(?:{voice.NOVA_NAMES}|please|now|yaar))*\W*$", re.I)
+def just_stop_re(names):
+    return re.compile(rf"^\W*(?:(?:hey|hi|ok|okay|arey)\W+)?(?:{names}\W+)?(?:please\W+)?"
+                      r"(?:stop(?: it| that| talking| now)?|ru+c*k*h?o|roko|ruk jao|bas(?: karo)?|chup(?: raho| ho jao)?|"
+                      r"enough|quiet|be quiet|shut up|that'?s enough)"
+                      rf"(?:\W+(?:{names}|please|now|yaar))*\W*$", re.I)
+
+
+JUST_STOP_RE = just_stop_re(voice.NOVA_NAMES)
+use_character_voice_and_name(characters.get(settings().get("character")))   # her name, voice and "stop" words
 
 
 def just_stop(text):
@@ -2992,7 +3001,7 @@ def silent_loop():
                            "heard a sound but couldn't make out words" if kind == "unclear" else "listened, heard no speech")
                 if listen_state["single"]:
                     listen_state["single"] = False
-                    avatar_client.send("say", text="Sorry, I didn't catch that 🤔 Say “Hey Nova” again.", secs=4, timeout=2)
+                    avatar_client.send("say", text=f"Sorry, I didn't catch that 🤔 Say “{wake_phrase()}” again.", secs=4, timeout=2)
                 elif (convo["on"] and time.time() - max(convo["last_heard"], nap["last_task"]) > IDLE_NAP
                       and not lock.locked() and not mouth.busy() and not convo["thinking"]):
                     go_to_sleep("idle")     # never in the middle of a task or while she's talking
@@ -3018,7 +3027,8 @@ def _start_conversation(greet=True):
     if not convo["on"]:
         convo.update(on=True, last_heard=time.time())
         if greet:
-            announce("I'm awake! 👂 Talk to me. Say “Nova, go to sleep” when you're done.", spoken="I'm awake! I'm listening.")
+            name = characters.get(settings().get("character"))["name"]
+            announce(f"I'm awake! 👂 Talk to me. Say “{name}, go to sleep” when you're done.", spoken="I'm awake! I'm listening.")
 
 
 def on_wake(conversation=False):
@@ -3052,8 +3062,8 @@ def go_to_sleep(reason="asked", quiet=False):
     task_log(f"SLEEP ({reason})")
     nap["reason"] = reason                  # "asked" = the user's choice: presence won't wake her (on_presence)
     if (reason == "asked" or was_on) and not quiet:
-        line = ("Okay, I'll take a nap in the corner. Say “Hey Nova” when you need me 😴" if reason == "asked" else
-                "It's been quiet for a while, so I'll take a nap in the corner. Say “Hey Nova” when you need me 😴")
+        line = (f"Okay, I'll take a nap in the corner. Say “{wake_phrase()}” when you need me 😴" if reason == "asked" else
+                f"It's been quiet for a while, so I'll take a nap in the corner. Say “{wake_phrase()}” when you need me 😴")
         announce(line)
         sleep_body(after_words=True)      # the goodnight first, then she lies down
     else:
@@ -4155,7 +4165,7 @@ def chat():
     mouth.stop()  # don't talk over the user
     if wants_sleep(text):
         go_to_sleep("asked")
-        return jsonify(reply="Okay, I'll take a nap in the corner 😴 Message me or say “Hey Nova” when you need me.",
+        return jsonify(reply=f"Okay, I'll take a nap in the corner 😴 Message me or say “{wake_phrase()}” when you need me.",
                        activity=[])
     if help_first():
         helped = take_help(text)
@@ -4203,7 +4213,8 @@ def confirm():
 def get_events():
     out = events[:]
     events.clear()
-    return jsonify(events=out, speaking=mouth.lips, ears=ears.status, heard=ears.heard[-1:] if settings()["wake"] else [])
+    return jsonify(events=out, speaking=mouth.lips, ears=ears.status, heard=ears.heard[-1:] if settings()["wake"] else [],
+                   wake_phrase=wake_phrase())
 
 
 quit_hook = None          # set by desktop.py: closes the windows, tray, 3D Nova and the server

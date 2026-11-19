@@ -1,0 +1,19 @@
+{
+  "name": "Lucy",
+  "label": "🗝 Lucy - bright, kind, a little dramatic",
+  "voice": "af_bella",
+  "note": "A fan character for this laptop only - her 3D model must never be shared or uploaded.",
+  "wake": {
+    "names": ["lucy", "lucie", "luci", "lucey", "lusi", "lusy", "loosey", "loosie", "lucee", "lu si", "लूसी", "लुसी"],
+    "hint": "Hey Lucy. Lucy, what's the time? Hey Lucy, open Chrome."
+  },
+  "look_preset": "celestial",
+  "look": {"hair": "#f7d774", "hair_tips": "#fff3b0", "eyes": "#8a5a2b", "hoodie": "#5c8bd6", "pants": "#2e2c33",
+           "shoes": "#3b2a1a", "glow": "#93c5fd", "accent": "#f5c542", "hat": "#2563eb", "bow": true,
+           "headphones": false, "ahoge": false},
+  "model": {
+    "file": "model.vrm",
+    "fit": {"top": 4.25, "spread": 0.3, "accessories": 0.92, "reach": 0.9,
+            "work": {"upper": 0.35, "inward": 0.35, "bend": 0.0, "seat": 0.0, "desk": 1.4}}
+  }
+}
