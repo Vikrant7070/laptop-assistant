@@ -37,12 +37,15 @@ class FakeMouth:
 
     def __init__(self):
         self.said = []
+        self.hidden = []       # said with show=False: out loud only, no bubble
         self.on_start = None
 
-    def say(self, text):
+    def say(self, text, show=True):
         self.said.append(text)
+        if not show:
+            self.hidden.append(text)
 
-    def stop(self):
+    def stop(self, quick=False):
         pass
 
     def hold(self, secs):
@@ -65,6 +68,12 @@ from nova.brain import cloud  # noqa: E402
 from nova.brain import router  # noqa: E402
 from nova.core import app  # noqa: E402
 from nova.actions import skills  # noqa: E402
+from nova.actions import checks  # noqa: E402
+from nova.actions import recorder  # noqa: E402
+
+recorder.ENABLED = False          # never install real mouse/keyboard hooks in tests (tests patch recorder's functions)
+
+checks.real_evaluate = checks.evaluate     # the autouse fixture below replaces evaluate; tests of the checks use this
 
 
 def _point_data_at(folder):
@@ -97,6 +106,11 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "_screen_allowed", lambda: False)
     monkeypatch.setattr(app, "react_later", lambda *a, **k: None)
     monkeypatch.setattr(app, "review_turn", lambda why: None)
+    # skill step checks look at the real desktop: a test says what they find (or patches checks.evaluate itself)
+    monkeypatch.setattr(checks, "evaluate", lambda *a, **k: (True, "ok (test)"))
+    # Phone Link's banner switch lives in the real registry: tests only record what would have been asked
+    app.banner_calls = []
+    monkeypatch.setattr(app.notifications, "phone_banners", lambda show, **k: (app.banner_calls.append(show), 1)[1])
     # background co-worker jobs, naps and offers start fresh, and never open real windows
     from nova.actions import coworker
     coworker.jobs.clear()
@@ -110,6 +124,7 @@ def isolated(tmp_path, monkeypatch):
     app.convo.update(on=False, last_heard=0.0, thinking=False)
     app.listen_state.update(loop=False, single=False)
     app.mouth.said.clear()
+    app.mouth.hidden.clear()
     app.llm.reset_cloud()
     yield tmp_path / "data"
 

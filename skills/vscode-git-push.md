@@ -1,17 +1,23 @@
 ---
 name: vscode-git-push
-description: Commit and push code to GitHub the way a person does - in VS Code's Source Control panel, not PowerShell
-when: push code, push my code, push to github, commit and push, commit my changes, sync changes, upload code to github, git push
-kind: recipe
+format: 2
+description: Commits and pushes code to GitHub the way a person does - in VS Code's Source Control panel, not PowerShell. Use when the user asks to push, commit or sync their code.
+examples: push code, push my code, push to github, commit and push, commit my changes, sync changes, upload code to github, git push
+risk: consequential
+invoke: explicit_only
+status: active
 ---
-Do this in VS Code, step by step, looking after each step. Do NOT use run_powershell for git here.
-1. Call open_app with name "vscode". Call window_action focus "Visual Studio Code". If the title doesn't show the project the user means, ask which folder.
-2. Call press_keys "ctrl+shift+g" to open Source Control (focus VS Code first - keys go to the window in front).
-3. Call list_clickable on "Visual Studio Code" with contains "Changes" and tell the user which files changed. Nothing changed: say there's nothing to push and stop.
-4. Ask the user for the commit message, or suggest a short one from the changed files and ask "Shall I commit and push with this?". Wait for a yes - pushing publishes the code.
-5. Call list_clickable with contains "Message" to find the commit box, click_element it, then type_text the message into "Visual Studio Code".
-6. Call press_keys "ctrl+enter" to commit. If VS Code asks to stage all changes, click_element "Yes".
-7. Push: click_element "Sync Changes" (or "Publish Branch"). If no such button, press_keys "ctrl+shift+p", type_text "Git: Push", press_keys "enter".
-8. Call look_at_screen on "Visual Studio Code" asking whether the push worked or shows an error or a sign-in box.
-9. Sign-in box: tell the user to sign in themselves - never type passwords or tokens. Error: read it out and ask what to do; never change the git remote, credentials or SSH keys on your own.
-10. Tell the user in one sentence what was pushed.
+s1. open_app name="Visual Studio Code"
+    expect: window_open "Visual Studio Code"
+    on_fail: retry 1, then stop "VS Code didn't open"
+s2. window_action action=focus, title_or_app="Visual Studio Code"
+    expect: front_window "Visual Studio Code"
+    on_fail: retry 1, then stop "I couldn't bring VS Code to the front"
+s3. press_keys keys=ctrl+shift+g
+s4. brain "Find out which files changed: list the clickable items in the Source Control panel containing 'Changes'. Tell the user which files changed. If nothing changed, answer starting with STOP: there is nothing to push." tools: list_clickable
+s5. brain "Suggest a short commit message (under 60 characters) from the changed files. Answer with only the message." slot: message
+s6. confirm "Commit and push to GitHub with the message '{message}'?"
+s7. brain "In VS Code's Source Control panel click the commit message box, type this commit message: {message} - then press ctrl+enter to commit. If VS Code asks to stage all changes, click Yes." tools: list_clickable, click_element, type_text, press_keys
+s8. brain "Push: click 'Sync Changes' (or 'Publish Branch'). If there is no such button, press ctrl+shift+p, type 'Git: Push' and press enter." tools: click_element, list_clickable, press_keys, type_text
+s9. brain "Look at VS Code and say whether the push worked, failed or shows a sign-in box. Never type a password or token: if there is a sign-in box, tell the user to sign in themselves." tools: look_at_screen
+s10. report "Tell the user in one sentence what was pushed, or what went wrong."

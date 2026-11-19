@@ -87,7 +87,8 @@ def test_save_list_and_delete():
     msg = skills.save("Movie Time", "Get ready for a movie", "minimize_all_windows\nopen_website url_or_search=netflix.com",
                       when="movie time")
     assert "Saved the routine skill 'movie-time' with 2 steps" in msg
-    assert "Updated" in skills.save("movie-time", "Movie", "- minimize_all_windows")
+    assert "already have a skill" in skills.save("movie-time", "Movie", "- minimize_all_windows")   # no silent overwrite
+    assert "Updated" in skills.save("movie-time", "Movie", "- minimize_all_windows", replace=True)
     assert "movie-time (routine)" in skills.describe()
     assert "Deleted" in skills.delete("movie-time")
     assert skills.get("movie-time") is None
@@ -110,13 +111,14 @@ def test_skill_tools_registered():
 def test_routine_runs_every_step_without_the_brain(brain):
     set_autonomy("trusted")
     write("movie-time", ROUTINE)
-    fake, ran = brain([("", [("run_skill", {"name": "movie-time"})]), ("Enjoy the movie!", [])])
+    fake, ran = brain([("", [("run_skill", {"name": "movie-time"})]), ("This must never be asked for", [])])
     out, _ = app.answer("movie time")
     assert [n for n, _ in ran] == ["minimize_all_windows", "open_website", "set_volume"]
     assert ran[2][1] == {"action": "up", "steps": 10}
-    assert len(fake.seen) == 2                          # one brain call to start it, one to answer
-    result = fake.seen[1][-1]["content"]
-    assert "Ran the skill 'movie-time'" in result and "Enjoy the movie!" in result
+    assert len(fake.seen) == 1                          # one brain call to start it; the skill words its own ending
+    assert out["reply"] == "Enjoy the movie!"
+    history = json.dumps(app.state["messages"])
+    assert "Ran the skill 'movie-time'" in history
 
 
 def test_matching_skill_is_in_the_prompt(brain):

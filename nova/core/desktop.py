@@ -24,6 +24,7 @@ from nova.shared import ROOT, work_area
 PORT = 5055
 URL = f"http://127.0.0.1:{PORT}"
 HOTKEY = "ctrl+alt+n"
+WATCH_HOTKEY = "ctrl+alt+w"   # start / stop "watch me" (Nova learns a skill from what you do)
 
 
 def already_running():
@@ -179,6 +180,11 @@ def main():
         server.ears.start()
     server.start_background()       # nap clock, suggestions about the screen, notifications
     keyboard.add_hotkey(HOTKEY, show)
+
+    def toggle_watching():          # Ctrl+Alt+W: same as saying "watch me" / "done" (recorder.py)
+        threading.Thread(target=server.answer, args=("done" if server.recorder.recording() else "watch me",),
+                         daemon=True).start()
+    keyboard.add_hotkey(WATCH_HOTKEY, toggle_watching)
 
     tray = pystray.Icon("Nova", icon_image(), "Nova - Ctrl+Alt+N", menu=pystray.Menu(
         pystray.MenuItem("Open Nova", show, default=True),

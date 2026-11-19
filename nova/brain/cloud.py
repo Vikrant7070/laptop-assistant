@@ -436,7 +436,7 @@ def _anthropic_chat(name, key, messages, tools, level="low", show=False):
     except Exception as e:
         raise CloudError(_anthropic_error(e)) from e
     if r.stop_reason == "refusal":
-        return "Sorry yaar, I can't help with that one.", [], ""
+        return "Sorry, I can't help with that one.", [], ""
     text = "".join(b.text for b in r.content if b.type == "text")
     calls = [{"id": b.id, "name": b.name, "args": b.input if isinstance(b.input, dict) else {}}
              for b in r.content if b.type == "tool_use"]

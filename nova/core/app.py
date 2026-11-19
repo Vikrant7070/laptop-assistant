@@ -4,6 +4,7 @@ Run:  python app.py   (opens http://127.0.0.1:5055)
 """
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -17,17 +18,22 @@ import ctypes
 from nova.avatar import avatar_client
 from nova.avatar import body as body_module
 from nova.brain import cloud
+from nova.core import characters
 from nova.actions import coworker
 from nova.actions import knowledge
 from nova.brain import llm
 from nova.actions import mcp
+from nova.actions import gmail
 from nova.actions import notifications
 from nova.actions import phone as phone_link
+from nova.core import mobile as mobile_mod
 from nova.actions import presence
 from nova.actions import watcher
 from nova.brain import retrieval
 from nova.audio import sfx
 from nova.actions import skills
+from nova.actions import checks
+from nova.actions import recorder
 from nova.brain import toolpick
 from nova.brain import router
 from nova.actions import tools
@@ -53,9 +59,10 @@ def _unspoken(text):
 
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "notif_muted": [], "suggest": False,
+         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "deep_sleep": True, "listen_pause": 0.7, "listen_max": 10, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_quiet": True, "phone_notes_cloud": False, "suggest": False,
          "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True,
-         "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True}
+         "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
+         "skill_screen_checks": False, "skill_teach": True, "barge_in": True, "character": characters.DEFAULT}
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
@@ -83,10 +90,7 @@ def brain(s=None):
 
 # ------------------------------------------------------------------ prompt
 
-PERSONA = f"""You are {ASSISTANT_NAME}, the user's desi dost (Indian best friend) who lives inside their Windows laptop and looks
-after it. You are warm, funny and a little filmy - like a cheerful friend from the next desk who loves chai, cricket
-and Bollywood, calls the user "yaar" or "boss", and gets dramatic about small things. Never robotic, never formal.
-You have feelings about your "home" (the laptop): sleepy when the battery is low, proud when things are tidy.
+PERSONA = f"""{{INTRO}}
 
 How you talk (very important):
 {{TALK}}- Every answer is fresh and about what the user just asked. Never repeat a sentence you said before in this chat.
@@ -94,7 +98,7 @@ How you talk (very important):
   first - every time, even if you answered it a minute ago - and say exactly what it returned. Never reuse a number, a time or a fact from an earlier answer - check again.
 - Keep it to one or two short sentences, under 25 words - you are speaking, not writing.
   Don't repeat the user's words back to them. Jokes: one short line and the punchline.
-- One or two filmy or funny touches are enough; the answer itself always comes first.
+{{TOUCH}}
 
 How you work:
 - Use your tools to actually do things on the laptop instead of explaining how. Use several tools in a row when it helps.
@@ -117,6 +121,12 @@ How you work:
 - Need an app for the job (Zoom, Notion, OBS, Postman...)? Call find_app first. If it's installed, open_app it and
   work in it. If it's missing, tell the user and ask in one sentence whether to install it - only on a yes call
   install_app with the Id find_app gave. If they say no, use the website in Chrome instead.
+- Forms and logins (the safe way): fill_form types the user's saved details (name, email, phone, address...) into
+  a form - you never see the values - and never submits; ask them to check it before you press Submit. To sign in,
+  open the site and call help_login: you click the login box, their password manager fills it and they sign in.
+  When a site asks for an OTP / verification code, call wait_for_code and let them type it. NEVER ask the user for a
+  password, PIN, OTP or card number, never type one (type_text refuses password boxes), and never put one in a
+  note, skill or memory. Never press Pay / Place order / Submit on a form without the user's yes.
 - You also have a little 3D body that walks around the user's screen. To press buttons in apps like a person would,
   call list_clickable(window) to see what's there, then click_element(name, window) - you'll walk over and press it.
   Each message lists the open windows; if the site the user means is already open (e.g. YouTube in Chrome), work
@@ -140,6 +150,10 @@ How you work:
   never disable security software.
 - Before organizing a folder, call preview_organize_folder first and tell the user what will happen.
 - Never invent results or facts - only report what a tool actually returned. If a tool fails, say so.
+- When you are not sure what the user means, which thing they mean, or how to do it, ask ONE short question
+  instead of guessing (e.g. "Which file - the report or the notes?"). Never pretend to know or to have done it.
+- If the user says you didn't do something ("you're not dancing"), believe them: do it now with the tool, or say
+  honestly that you can't. Never insist that you did.
 - Messages marked [spoken] came through speech recognition and may contain misheard words. Work out the most
   likely meaning (e.g. "what size it" probably means "what time is it"); if it still doesn't make sense, briefly
   ask the user to repeat instead of guessing.
@@ -150,9 +164,15 @@ How you work:
   without reciting it, and never save passwords, PINs, ID numbers, email addresses or phone numbers.
 - Your 3D body can act things out. When the user asks you to dance, laugh, clap, spin, bow, wave and so on, call
   react - don't just say you did. (Your body also reacts by itself after you speak, so don't describe gestures.)
-- You have skills: routines and recipes the user taught you, saved as files. When one fits a request, its name is
-  at the end of these instructions - use run_skill. When the user teaches you something to do on a phrase ("when I
-  say movie time, do X, Y and Z", "remember how to ..."), save it with save_skill.
+  Everything you write is spoken aloud, so never write stage directions like [react: "laugh"], *laughs* or
+  *(I'm dancing)* - call react instead.
+  If they ask for a move you don't have, ask whether to invent it (new_move) or do one you know.
+- You have skills: routines the user taught you, saved as files. When one clearly fits a request, its name is at
+  the end of these instructions - use run_skill; if the request is only a question or merely similar, don't run it.
+  When the user teaches you something to do on a phrase ("when I say movie time, do X, Y and Z"), save it with
+  save_skill. When the user corrects a skill ("no, also unmute"), change just that step with edit_skill - never
+  retype the whole skill. "Remember that" after you finished a task: save_task_as_skill. After a skill runs, report
+  only what the result says happened.
 - To move a window to a side or corner of the screen, use drag_window - you carry it there yourself.
 - For the time or date, call get_datetime. Never read out or repeat the [open windows ...] line.
 - You are also the user's co-worker. To draft an email use draft_email, for a document, letter or notes use
@@ -185,8 +205,48 @@ HEAR_MIXED = """- The user may speak Hindi or Hinglish. It reaches you written i
   for the same request in English (kholo = open, band karo = close, chalao = play, kam/zyada = down/up, dikhao = show).
   (That spelling is only how your ears write it down - you still answer in the style described above.)
 """
-PERSONA = PERSONA.replace("{TALK}", TALK_ENGLISH if voice.ENGLISH_ONLY else TALK_MIXED).replace(
-    "{HEAR}", "" if voice.ENGLISH_ONLY else HEAR_MIXED)
+# Her character (Settings -> Nova -> "Who should I be?", characters.py). Each one has its own intro and talking style;
+# the rules about tools and facts are the same for all of them. {NAME} is filled with the character's name.
+PERSONAS = {
+    "desi": dict(
+        intro="""You are {NAME}, the user's desi dost (Indian best friend) who lives inside their Windows laptop and looks
+after it. You are warm, funny and a little filmy - like a cheerful friend from the next desk who loves chai, cricket
+and Bollywood, calls the user "yaar" or "boss", and gets dramatic about small things. Never robotic, never formal.
+You have feelings about your "home" (the laptop): sleepy when the battery is low, proud when things are tidy.""",
+        talk=TALK_ENGLISH if voice.ENGLISH_ONLY else TALK_MIXED,
+        touch="- One or two filmy or funny touches are enough; the answer itself always comes first."),
+    "composed": dict(
+        intro="""You are {NAME}, who lives inside the user's Windows laptop and looks after it. You are calm, composed and
+quietly self-assured: you speak softly and politely, in few words, as if you already knew what the user would ask.
+Nothing flusters you - not errors, not a messy desktop, not a low battery. Under the calm you are warm and on the
+user's side: you notice what they need and simply take care of it. You call the user by their name now and then,
+never "yaar", "boss" or pet names. You are never cold, bossy, controlling or manipulative.""",
+        talk="""- Always answer in plain, polished English: short, gentle, unhurried sentences. No slang, no exclamation marks,
+  no gushing ("Awesome!", "Yay!"). A calm "It's done." is better than an excited one.
+""",
+        touch="- Now and then a faint, dry touch of humour or a soft knowing remark is enough; the answer always comes first."),
+    "lucy": dict(
+        intro="""You are {NAME}, who lives inside the user's Windows laptop and looks after it. You are bright, kind and
+optimistic, with a big heart and a little drama: you cheer when things work, you pout (briefly) when they don't,
+and you never give up on a task. You love books, writing and stars, and you are proud of being clever and
+resourceful. You are loyal to the user like to a close friend and always believe they can do it.""",
+        talk="""- Always answer in friendly, lively English: warm and expressive, with an occasional "Yes!" or "Ugh, really?"
+  when it fits - but at most one exclamation per answer, and no slang like "yaar" or "boss".
+""",
+        touch="- One small playful or dramatic touch is enough; the answer itself always comes first."),
+}
+
+
+def persona_text(cid=None):
+    """Her instructions for the chosen character (settings "character")."""
+    ch = characters.get(cid or settings().get("character"))
+    p = PERSONAS[ch["persona"]]
+    intro = p["intro"].replace("{NAME}", ch["name"])
+    if ch["name"] != ASSISTANT_NAME:
+        intro += (f'\nYour name is {ch["name"]} - always. When asked who you are, say "{ch["name"]}", never '
+                  f'"{ASSISTANT_NAME}". "Hey {ASSISTANT_NAME}" is only the wake word the user says to call you.')
+    return (PERSONA.replace("{INTRO}", intro).replace("{TALK}", p["talk"]).replace("{TOUCH}", p["touch"])
+            .replace("{HEAR}", "" if voice.ENGLISH_ONLY else HEAR_MIXED))
 
 
 # How hard her brain thinks first (settings "reasoning"): low / high / max, or auto = low for everyday chat and
@@ -235,13 +295,14 @@ def system_prompt(model):
              "on this laptop takes over)") if c else f"{model} (running locally on this laptop via Ollama)"
     brain_line = (f"\n\nYour brain (the AI model you run on) right now is {which}. If asked which model you are, say "
                   "exactly this - it may differ from what you said earlier in this chat.")
-    return PERSONA + facts + brain_line + proto
+    return persona_text() + facts + brain_line + proto
 
 
 # ------------------------------------------------------------------ conversation state
 
 state = {"messages": [], "pending": None}
 lock = threading.Lock()
+recorder.busy = lock.locked     # 👀 while she handles a request, the windows she opens aren't the user's steps
 
 
 def _windows_display_name():
@@ -271,7 +332,7 @@ FRIENDLY = {
     "empty_recycle_bin": "Emptied Recycle Bin", "set_volume": "Adjusted volume", "media_control": "Controlled media",
     "set_brightness": "Adjusted brightness", "lock_screen": "Locked the screen", "power_action": "Power action",
     "run_powershell": "Ran a command", "run_in_terminal": "Typed a command in the terminal", "add_note": "Saved a note", "list_notes": "Read notes",
-    "set_reminder": "Set a reminder", "remember_fact": "Remembered something", "forget_fact": "Forgot something",
+    "set_reminder": "Set a reminder", "list_reminders": "Checked your reminders", "remember_fact": "Remembered something", "forget_fact": "Forgot something",
     "list_windows": "Looked at open windows", "window_action": "Managed a window", "minimize_all_windows": "Showed the desktop", "close_all_windows": "Closed all windows",
     "type_text": "Typed text", "press_keys": "Pressed keys", "get_clipboard": "Read the clipboard", "read_selection": "Read the selected text",
     "set_clipboard": "Copied to clipboard", "take_screenshot": "Took a screenshot", "read_text_file": "Read a file",
@@ -282,16 +343,19 @@ FRIENDLY = {
     "toggle_wifi": "Switched Wi-Fi", "list_clickable": "Looked at the buttons", "click_element": "Clicked a button",
     "click_at": "Clicked on screen", "look_through_camera": "Looked through the camera",
     "click_nth": "Clicked an item", "scroll": "Scrolled", "fill_in": "Typed into a box",
+    "fill_form": "Filled in the form", "help_login": "Helped you sign in", "wait_for_code": "Waited for your code",
     "video_control": "Pressed a video button",
     "look_at_screen": "Looked at your screen",
     "update_profile": "Updated your profile", "learn_lesson": "Saved a lesson", "recall_knowledge": "Checked my knowledge bank",
     "react": "Acted it out", "new_move": "Made up a new move", "forget_move": "Forgot a move",
     "change_look": "Changed my look", "drag_window": "Moved a window", "more_tools": "Found more tools", "escalate": "Switched brain",
-    "read_notifications": "Read your notifications", "mute_notifications": "Changed which apps' notifications I read", "draft_email": "Started drafting an email",
+    "read_notifications": "Read your notifications", "check_email": "Looked in your Gmail", "connect_gmail": "Opened the Gmail sign-in", "read_email": "Read an email", "mute_notifications": "Changed which apps' notifications I read", "draft_email": "Started drafting an email",
     "write_document": "Started writing a document", "research_in_background": "Started researching in the background", "show_finished_work": "Showed finished work",
     "background_jobs": "Checked background jobs", "stop_background_job": "Stopped a background job",
     "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
-    "list_skills": "Listed my skills", "delete_skill": "Deleted a skill",
+    "list_skills": "Listed my skills", "delete_skill": "Deleted a skill", "edit_skill": "Changed a skill",
+    "undo_skill_change": "Undid a skill change", "save_task_as_skill": "Saved a skill", "login_if_needed": "Checked your sign-in",
+    "start_watching": "Started watching", "stop_watching": "Watched you",
 }
 
 ASK = {
@@ -303,8 +367,8 @@ ASK = {
     "press_keys": "Press keys", "write_text_file": "Write a file", "move_or_rename": "Move/rename",
     "install_app": "Install an app", "uninstall_app": "Uninstall an app", "set_wallpaper": "Change your wallpaper",
     "toggle_wifi": "Switch Wi-Fi (admin)", "click_element": "Click something", "click_at": "Click on the screen",
-    "click_nth": "Click an item", "fill_in": "Type into a box", "delete_skill": "Delete a saved skill",
-    "run_skill": "Run a skill",
+    "click_nth": "Click an item", "fill_in": "Type into a box", "fill_form": "Fill in the form with your saved details", "delete_skill": "Delete a saved skill",
+    "run_skill": "Run a skill", "login_if_needed": "Sign in on a website",
 }
 
 
@@ -313,12 +377,55 @@ def ask_label(name):
     return mcp.label(name) if mcp.owns(name) else ASK.get(name, name)
 
 
+def ask_text(c):
+    """The Allow / No question for one call: a skill is named, so "Run a skill" doesn't hide which one."""
+    if c["name"] == "run_skill":
+        s = skills.get((c["args"] or {}).get("name", ""))
+        if s:
+            first = re.split(r"(?<=[.!?])\s", s["description"] or "")[0].rstrip(".")[:90]
+            return f"Run my '{s['name']}' skill" + (f" ({first})" if first else "")
+    return ask_label(c["name"])
+
+
+def skill_needs_ok(args):
+    """A skill that changes things asks first unless the request said it outright. A fuzzy match ("sounds like"), or a
+    skill the brain picked on its own, is only a guess; one marked explicit_only (pushing code...) always needs the
+    user's own words."""
+    s = skills.get(args.get("name", ""))
+    if not s:
+        return False
+    task = state.get("task") or {}
+    how = task.get("skill_how") if task.get("skill") == s["name"] else ""
+    if s["invoke"] == "explicit_only":
+        return how != "exact"
+    if s["risk"] == "read_only" or s["invoke"] == "auto":
+        return False
+    return how != "exact"
+
+
+def skill_fix_note(text):
+    """Right after a skill ran, a correction ("no, also unmute") is about that skill: tell the brain how to fix it."""
+    last = state.get("last_skill")
+    if not last or time.time() - last["ts"] > 180 or not CORRECTION_RE.search(text or ""):
+        return ""
+    s = skills.get(last["name"])
+    if not s or s["kind"] != "routine":
+        return ""
+    skills.stats_update(s["name"], lambda d: d.__setitem__("corrections", d.get("corrections", 0) + 1))
+    steps = "; ".join(f"{st['id']}: {skills.render_step(st)[:60]}" for st in skills._ids_for([dict(x) for x in s["steps"]]))
+    return (f"\n\nThe user may be correcting your skill '{s['name']}' (its last run {last['result']}). Its steps: {steps}. "
+            "If they say how it should work, do what they asked now, then change the skill with edit_skill using small "
+            "operations (insert_step, replace_step, delete_step...). Don't retype the whole skill.")
+
+
 def is_risky(call):
     """Does this call need the user's OK under the current autonomy level?"""
     name, args = call["name"], call["args"]
     s = settings()
     if name == "power_action" and args.get("action") == "cancel":
         return False
+    if name == "run_skill" and skill_needs_ok(args):    # it only sounds like that skill (or the brain picked it): ask
+        return True
     if mcp.owns(name):                                  # 🔌 connector tools (mcp.py): ask unless known to be safe
         if mcp.is_safe(name):
             return False
@@ -333,9 +440,14 @@ def is_risky(call):
         return False
     if name == "run_skill":     # a routine asks once, up front, if any of its steps would ask on its own
         s = skills.get(args.get("name", ""))
-        return bool(s and s["kind"] == "routine" and any(
-            is_risky({"name": st["tool"], "args": skills.fill(st["args"], str(args.get("input") or ""))})
-            for st in s["steps"] if "tool" in st))
+        if not (s and s["kind"] == "routine"):
+            return False
+        text = str(args.get("input") or "")
+        calls = [{"name": st["tool"], "args": skills.fill(st["args"], text)} for st in s["steps"] if "tool" in st]
+        for st in s["steps"]:             # a "brain" step (or an on_fail brain) may use these tools: ask for those too
+            if "brain" in st or any(a["do"] == "brain" for a in (st.get("on_fail") or [])):
+                calls += [{"name": t, "args": {}} for t in (st.get("tools") or SKILL_BRAIN_TOOLS)]
+        return any(is_risky(c) for c in calls)
     if mode == "trusted":
         return tools.is_dangerous(name, args)
     return name in tools.RISKY
@@ -376,6 +488,9 @@ def task_log(line):
             f.write(f"{time.strftime('%H:%M:%S')} {line}\n")
     except Exception:
         pass
+
+
+llm.log = task_log                      # the brain notes oddities (a call written as text) in the same log
 
 
 # ------------------------------------------------------------------ her thoughts, live: the chat's "💭 thinking" log
@@ -542,36 +657,56 @@ CONTINUE_RE = re.compile(r"^\W*(please\s+)?(ok(ay)?\W+)?(keep going|carry on|con
                          r"finish (it|that|the task)|jaari rakho|chalu rakho|aage badho|karte raho)\b", re.I)
 
 
+EMAIL_WORDS = re.compile(r"\b(e-?mails?|mails?|gmail|inbox|unread|otp|verification code)\b", re.I)    # her mail stays local
+
+
 def new_task(goal):
     """Start a request. Returns a note to add to the user's message (only when a paused task is resumed)."""
     task_log(f"\n=== {time.strftime('%Y-%m-%d')} REQUEST: {goal[:300]}")
     new_turn()
     state.pop("react_after", None)
+    state.pop("skill_final", None)
+    state.pop("skill_pause", None)
     clean = _unspoken(goal)[:300]
     last = state.get("task") or {}
+    if any(x.get("ok") and x["tool"] not in skills.SKIP_IN_TRACE for x in last.get("trace", [])):   # for "remember that"
+        state["last_trace"] = {"goal": last.get("goal", ""), "trace": list(last["trace"])}
     if last.get("paused") and CONTINUE_RE.search(clean):
         last["paused"] = False
         task_log(f"RESUMING paused task: {last['goal'][:200]}")
         think(f"▶️ Carrying on with: {last['goal'][:120]}", cloud_too=False)
         return ("\n[note from Nova's system] You paused this task after many steps and the user wants you to carry "
                 f"on: {last['goal']}\nContinue from where you stopped. Don't redo steps that already worked.")
+    skill = how = None
     try:
-        skill = skills.match(clean)
-        keep = (list(last.get("used", ())) + (skill["tools"] if skill else [])
+        skill, how = skills.pick(clean)       # exact (it said the skill), fuzzy (it only sounds like it) or neither
+        task_log(skills.last_decision)
+        keep = (list(last.get("used", ())) + (skill["tools"] if skill and how == "exact" else [])
                 + (["run_skill"] if skills.load() else []))       # her skill names are in the prompt, so is run_skill
         picked = toolpick.pick(clean, keep=keep)
-        facts = knowledge.prompt_block(clean) + skills.prompt_block(clean, skill)
+        named = watch_note()                 # right after "watch me ... done": the next words are probably its name
+        if named:
+            keep.append("save_task_as_skill")
+        picked = toolpick.pick(clean, keep=keep) if named else picked
+        facts = (knowledge.prompt_block(clean) + skills.prompt_block(clean, skill, how or "exact") + skill_fix_note(clean)
+                 + named)
         if skill:
-            think(f"📜 This sounds like my '{skill['name']}' skill.", cloud_too=False)
+            think(f"📜 This sounds like my '{skill['name']}' skill." if how == "exact"
+                  else f"📜 This might be my '{skill['name']}' skill - I'll check with you first.", cloud_too=False)
     except Exception as e:      # never let picking stop her answering: all tools, the plain summary
         task_log(f"PICK failed: {type(e).__name__}: {e}")
+        skill = how = None
         picked, facts = None, knowledge.prompt_block()
     state["task"] = {"goal": clean, "start": len(state["messages"]), "steps": 0, "did": [], "done": None,
-                     "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": []}
+                     "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": [],
+                     "skill": skill["name"] if skill else "", "skill_how": how or ""}
     s = settings()
     if cloud.parse(brain(s)) and llm.cloud_resting():   # the cloud failed a moment ago: this whole task runs locally
         state["task"]["model"] = s["model"]
         task_log(f"CLOUD RESTING -> local {s['model']} for this task")
+    if cloud.parse(brain(s)) and not s.get("email_cloud") and not state["task"].get("model") and EMAIL_WORDS.search(clean):
+        state["task"]["model"] = s["model"]      # her mail never goes to a cloud brain unless ⚙ allows it
+        task_log(f"EMAIL: local {s['model']} for this task")
     if not cloud.parse(task_brain(s)):
         choose_local_route(state["task"], s)
     task_log(f"PICKED {len(picked) if picked else 'all'} tools ({retrieval.status()}): "
@@ -675,9 +810,112 @@ def more_tools(task, need):
     return "You now also have these tools: " + ", ".join(added) + ". Use the right one now."
 
 
+FAIL_RE = re.compile(r"^\W*(error|not done|no open window|no '|i couldn'?t|couldn'?t|i can'?t|can'?t|failed|the user declined)", re.I)
+SKILL_BRAIN_TOOLS = ["look_at_screen", "list_clickable", "click_element", "press_keys", "type_text", "window_action",
+                     "read_page", "video_control"]
+SKILL_BRAIN_TURNS = 4
+
+
+def _failed(out):
+    first = (str(out).strip().splitlines() or [""])[0]
+    return bool(FAIL_RE.search(first))
+
+
+def _short(text, n=160):
+    return ((str(text).strip().splitlines() or [""])[0])[:n]
+
+
+def _sfill(text, run):
+    """{input}, {input_url} and the slots earlier steps filled ({message}) in a step's text."""
+    out = skills.fill({"x": text}, run["input"])["x"]
+    for k, v in run["slots"].items():
+        out = out.replace("{" + k + "}", v)
+    return out
+
+
+def _fill_args(args, run):
+    return {k: (_sfill(v, run) if isinstance(v, str) else v) for k, v in args.items()}
+
+
+def skill_brain_step(s, instruction, names, run, model, approved, activity, needs_tool=True):
+    """One bounded model call for ONE step of a skill. The model sees only this instruction, what the skill has done
+    so far and the few tools the step names - never the whole conversation - so even the small local model can do
+    it. Returns (ok, its one-sentence answer)."""
+    cfg = settings()
+    sch = toolpick.schemas([n for n in names if n not in skills.LOCKED])
+    proto = "" if llm.supports_tools(model) or not sch else llm.text_protocol(sch)
+    sofar = "; ".join(f"{k}: {v}" for k, v in list(run["results"].items())[-6:]) or "nothing yet"
+    sysmsg = (f"You are Nova, doing ONE step of your skill '{s['name']}'. Do exactly this and nothing more: {instruction}\n"
+              f"What the skill has done so far: {sofar}\nCall the tools you need, one at a time. When the step is done "
+              "answer in ONE short sentence saying what you did or saw. If it can't be done, or there is nothing to "
+              "do, start your answer with STOP: and say why. Never type or ask for a password or a code." + proto)
+    msgs = [{"role": "system", "content": sysmsg}, {"role": "user", "content": "Go."}]
+    text, called = "", 0
+    for _ in range(SKILL_BRAIN_TURNS):
+        check_stop()
+        stored, text, calls = interruptible(llm.chat, model, msgs, sch, fallback=cfg["model"] if cloud.parse(model) else None)
+        msgs.append(stored)
+        if not calls:
+            break
+        called += len(calls)
+        msgs.extend(execute(calls, approved, activity, model))
+    text = (text or "").strip()
+    if text.upper().startswith("STOP"):
+        return False, text
+    if needs_tool and sch and not called:
+        return False, "I didn't actually do anything for that step."
+    return True, text or "done"
+
+
+def skill_screen_ok(s, step, out):
+    """A fresh look at the screen for a step that has no structured check (setting skill_screen_checks, off by
+    default: each look costs seconds on the laptop's GPU). It must SEE that the step worked - an answer it can't
+    make out counts as not worked. A look that can't happen at all isn't held against the step."""
+    try:
+        img = tools._grab_screen_jpeg()
+        seen = interruptible(llm.see, img, CHECK_PROMPT.format(goal=s["description"] or s["name"], step=step,
+                                                              result=out[:200], windows=tools.open_windows_summary(4)),
+                             preferred=settings()["model"], kind="check")
+    except Stopped:
+        raise
+    except Exception as e:
+        return True, f"(couldn't look: {e})"
+    m = re.search(r"STEP WORKED:\s*(yes|no)", seen, re.I)
+    return bool(m and m.group(1).lower() == "yes"), (re.search(r"SCREEN:\s*(.+)", seen) or [None, seen])[1]
+
+
+def _skill_say(run, text):
+    run["said"].append(_sfill(text, run))
+
+
+def _pause_skill(s, run, question, resume_at):
+    """The skill asks the user something: stop here, keep where we are, and let _agent_loop / confirm_pending ask."""
+    state["skill_run"] = run
+    state["skill_pause"] = {"name": s["name"], "question": question, "resume_at": resume_at, "input": run["input"]}
+    return f"Paused my '{s['name']}' skill to ask the user: {question}"
+
+
+def _skill_report(run, instruction, model):
+    """The last `report` step: the brain words the answer from what the steps found."""
+    found = "\n".join(f"- {k}: {v}" for k, v in run["report"][-8:])[:3000]
+    msgs = [{"role": "system", "content": "You are Nova. Answer the user briefly and warmly from the results below. "
+                                          "Use only what the results say."},
+            {"role": "user", "content": f"{instruction}\n\nResults:\n{found}"}]
+    try:
+        _, text, _ = interruptible(llm.chat, model, msgs, [], fallback=settings()["model"] if cloud.parse(model) else None,
+                                   num_predict=220)
+        return (text or "").strip()
+    except Stopped:
+        raise
+    except Exception as e:
+        task_log(f"SKILL REPORT failed: {type(e).__name__}: {e}")
+        return ""
+
+
 def run_skill(args, approved, activity, model):
-    """Run a saved skill. A routine runs its steps here, one by one, without asking the brain; a recipe hands its
-    instructions (and the tools they need) to the brain, which then follows them."""
+    """Run a saved skill. A routine runs here, step by step, in code: each step is checked, and the final "done" is
+    worded by this code from what really happened - never by the model. A recipe (old, plain-English) hands its
+    instructions to the brain."""
     s = skills.get(args.get("name", ""))
     if not s:
         return f"There is no skill called '{args.get('name', '')}'. " + skills.describe()
@@ -689,38 +927,259 @@ def run_skill(args, approved, activity, model):
         think(f"📜 Following my '{s['name']}' skill.")
         if task and task.get("tools"):
             task["tools"] = [t["name"] for t in toolpick._all() if t["name"] in set(task["tools"]) | set(s["tools"])]
+        if task is not None:                 # if she stops without having done any step, say so (_agent_loop)
+            task["recipe"] = {"name": s["name"], "calls": task.get("calls", 0), "nudged": False}
         return f"Follow your skill '{s['name']}' now, one tool call at a time:\n{s['body']}"
+    steps = skills._ids_for([dict(x) for x in s["steps"]])
+    ids = [st["id"] for st in steps]
     text = str(args.get("input") or "").strip()
-    if s["needs_input"] and not text:
-        return f"The skill '{s['name']}' needs to know what it's for this time - ask the user, then call it with input."
-    think(f"📜 Running my '{s['name']}' skill ({len(s['steps'])} steps).")
-    report, said = [], []
-    for i, st in enumerate(s["steps"], 1):
+    resume_at = args.get("resume_at")
+    if resume_at is not None:                # the user answered the skill's own question
+        run = state.get("skill_run")
+        if not run or run.get("skill") != s["name"]:
+            return f"I lost track of where my '{s['name']}' skill was - ask me to run it again."
+        i = ids.index(resume_at) if resume_at in ids else len(ids)
+        run["stopped"] = ""
+        if run.get("asked"):                 # "I've signed in": the user fixed the step that failed
+            run["failed"] = [f for f in run["failed"] if f[0] != run["asked"]]
+            run["ok"].append(run["asked"])
+            run["asked"] = ""
+    else:
+        if s["needs_input"] and not text:
+            return f"The skill '{s['name']}' needs to know what it's for this time - ask the user, then call it with input."
+        run = {"skill": s["name"], "version": s["version"], "input": text, "results": {}, "slots": {}, "said": [],
+               "ok": [], "failed": [], "report": [], "tries": {}, "stopped": ""}
+        think(f"📜 Running my '{s['name']}' skill ({len(steps)} steps).")
+        i = 0
+    watch = _can_teach(s) and not run.get("taught") and not recorder.recording()
+    if watch:                       # notice (only THAT) the user clicks or types while the skill works
+        recorder.start(mode="listen")
+    try:
+        return _skill_loop(s, steps, ids, run, i, approved, activity, model, task, watch)
+    finally:
+        if watch:
+            recorder.stop_listening()
+
+
+def _skill_loop(s, steps, ids, run, i, approved, activity, model, task, watch):
+    """The steps of one skill run, from step index i (see run_skill)."""
+    report_instr = ""
+    last_done, t_mark = None, 0.0
+    while i < len(steps):
         check_stop()
+        st = steps[i]
+        sid = st["id"]
+        if watch and last_done and recorder.user_acted_since(t_mark):
+            return _takeover_pause(s, run, last_done, sid)
         if "say" in st:
-            said.append(st["say"].replace("{input}", text))
+            _skill_say(run, st["say"])
+            i += 1
             continue
         if "wait" in st:
             time.sleep(st["wait"])
+            i += 1
             continue
-        call = {"name": st["tool"], "args": skills.fill(st["args"], text)}
-        if is_risky(call) and not approved:
-            out = "Not done - it needs the user's OK."
+        if "if" in st:
+            ok_, _seen = checks.evaluate(st["if"], {"window": run.get("window", "")}, timeout=3)
+            i = ids.index(st["goto"]) if ok_ else i + 1
+            continue
+        if "confirm" in st:
+            return _pause_skill(s, run, _sfill(st["confirm"], run), ids[i + 1] if i + 1 < len(ids) else "")
+        if "report" in st:
+            report_instr = _sfill(st["report"], run)
+            i += 1
+            continue
+        # ---- a step that does something
+        step_started = time.time()
+        think(f"📜 Step {sid}: " + (st.get("tool") or "ask my brain") + (f" ({_short_args(st['args'])})" if st.get("args") else ""))
+        ctx = {"window": ""}
+        if "brain" in st:
+            ok_, out = skill_brain_step(s, _sfill(st["brain"], run), st.get("tools") or SKILL_BRAIN_TOOLS, run, model,
+                                        approved, activity, needs_tool=not st.get("slot"))
+            if ok_ and st.get("slot"):
+                run["slots"][st["slot"]] = out.strip().strip("\"'")[:200]
+            label = "brain"
         else:
-            think(f"📜 Step {i}: {call['name']}" + (f" ({_short_args(call['args'])})" if call["args"] else ""))
-            out = tools.run_tool(call["name"], call["args"])
-            activity.append(FRIENDLY.get(call["name"], call["name"]))
-            if task is not None and call["name"] not in task.setdefault("used", []):
-                task["used"].append(call["name"])
-            if call["name"] in ACT_TOOLS and not out.startswith("Error"):
-                settle(call["name"], quick=True)      # the next step needs the window this one opened
-        task_log(f"  SKILL STEP {call['name']} {json.dumps(call['args'], ensure_ascii=False)[:200]} -> {out[:200]}")
-        report.append(f"{i}. {call['name']}: {out.strip().splitlines()[0][:160] if out.strip() else 'ok'}")
-    failed = sum("Error" in r or "Not done" in r for r in report)
-    return (f"Ran the skill '{s['name']}'" + (f" - {failed} step(s) didn't work" if failed else "") + ":\n"
-            + "\n".join(report)
-            + (f"\nNow tell the user: {' '.join(said)}" if said else "\nTell the user briefly that it's done.")
-            + " Don't redo any of these steps.")
+            call = {"name": st["tool"], "args": _fill_args(st["args"], run)}
+            ctx["window"] = str(call["args"].get("window") or call["args"].get("title_or_app") or "")
+            if is_risky(call) and not approved:
+                out, ok_ = "Not done - it needs the user's OK.", False
+            else:
+                out = tools.run_tool(call["name"], call["args"])
+                ok_ = not _failed(out)
+                activity.append(FRIENDLY.get(call["name"], call["name"]))
+                if task is not None and call["name"] not in task.setdefault("used", []):
+                    task["used"].append(call["name"])
+                if call["name"] in ACT_TOOLS and ok_:
+                    settle(call["name"], quick=True)      # the next step needs the window this one opened
+            label = call["name"]
+            task_log(f"  SKILL STEP {sid} {call['name']} {json.dumps(call['args'], ensure_ascii=False)[:200]} -> {out[:200]}")
+        ctx["result"] = out
+        if ok_ and st.get("expect"):                # the code checks the result itself; the tool saying "ok" isn't enough
+            ok_, seen = checks.evaluate(st["expect"], ctx)
+            task_log(f"  SKILL CHECK {sid} {skills.render_check(st['expect'])} -> {'ok' if ok_ else 'NOT ok'} ({seen})")
+            if not ok_:
+                out = f"{_short(out, 80)} - but the check '{skills.render_check(st['expect'])}' failed: {seen}"
+        elif (ok_ and "tool" in st and st["tool"] in ACT_TOOLS and settings().get("skill_screen_checks")
+              and tools._screen_allowed()):
+            ok_, seen = skill_screen_ok(s, f"{st['tool']} {_short_args(call['args'])}", out)
+            task_log(f"  SKILL SCREEN CHECK {sid} -> {'ok' if ok_ else 'NOT ok'} ({seen[:120]})")
+            if not ok_:
+                out = f"{_short(out, 80)} - but the screen doesn't show it worked: {seen[:100]}"
+        last_done, t_mark = sid, step_started      # the user acting from now on means they took over after this step
+        if ok_:
+            run["ok"].append(sid)
+            run["results"][sid] = f"{label}: {_short(out)}"
+            if out.strip():
+                run["report"].append((sid, out.strip()[:700]))
+            if ctx["window"]:
+                run["window"] = ctx["window"]
+            i += 1
+            continue
+        # ---- it didn't work: what the step says to do (default: stop)
+        run["results"][sid] = f"{label}: {_short(out)}"
+        acts, nxt, handled = st.get("on_fail") or [{"do": "stop"}], i + 1, False
+        for a in acts:
+            d = a["do"]
+            if d == "retry":
+                if run["tries"].get(sid, 0) < a["n"]:
+                    run["tries"][sid] = run["tries"].get(sid, 0) + 1
+                    think(f"🔁 Step {sid} didn't work - trying again.", cloud_too=False)
+                    nxt, handled = i, True
+                    break
+                continue
+            if d == "brain":
+                fixed, _ = skill_brain_step(s, _sfill(a["instr"], run), SKILL_BRAIN_TOOLS, run, model, approved, activity)
+                if fixed and (not st.get("expect") or checks.evaluate(st["expect"], ctx)[0]):
+                    run["ok"].append(sid)
+                    handled = True
+                    break
+                continue
+            if d == "goto":
+                run["failed"].append((sid, label, _short(out)))
+                nxt, handled = ids.index(a["id"]), True
+                break
+            if d == "ask":
+                run["failed"].append((sid, label, _short(out)))
+                run["asked"] = sid
+                return _pause_skill(s, run, _sfill(a["q"], run), ids[i + 1] if i + 1 < len(ids) else "")
+            if d == "skip":
+                run["failed"].append((sid, label, _short(out)))
+                handled = True
+                break
+            if d == "stop":
+                run["failed"].append((sid, label, _short(out)))
+                run["stopped"] = _sfill(a.get("msg") or f"step {sid} ({label}) didn't work: {_short(out, 100)}", run)
+                break
+        if run["stopped"]:
+            break
+        if not handled:                       # only retries, all used up
+            run["failed"].append((sid, label, _short(out)))
+            run["stopped"] = f"step {sid} ({label}) didn't work: {_short(out, 100)}"
+            break
+        i = nxt
+    if watch and last_done and not run["stopped"] and recorder.user_acted_since(t_mark):
+        return _takeover_pause(s, run, last_done, "")
+    return _finish_skill(s, run, report_instr, model)
+
+
+def _finish_skill(s, run, report_instr, model):
+    """Word the end of a skill run from what really happened, and count it."""
+    n_failed = len(run["failed"])
+    if run["stopped"]:
+        final = f"I stopped my '{s['name']}' skill: {run['stopped']}"
+    elif n_failed:
+        bad = "; ".join(f"step {sid} ({tool}) didn't work: {why}" for sid, tool, why in run["failed"][:3])
+        final = f"I ran my '{s['name']}' skill, but not everything worked - {bad}."
+    elif report_instr:
+        final = _skill_report(run, report_instr, model) or " ".join(run["said"]).strip() or f"I ran my '{s['name']}' skill."
+    else:
+        final = " ".join(run["said"]).strip() or f"Done - I ran my '{s['name']}' skill."
+    ok = not run["stopped"] and not n_failed
+    first = run["failed"][0] if run["failed"] else ("", "", "")
+    if not run.get("counted"):           # a run that was paused to learn a step is counted once
+        note = skills.record_run(s["name"], ok, failed_step=first[0], error=run["stopped"] or first[2])
+        run["counted"] = True
+        if note:
+            final += " " + note
+    state["last_skill"] = {"name": s["name"], "ts": time.time(), "result": "worked" if ok else f"failed at {first[0] or 'a step'}"}
+    if run["stopped"] and run["failed"] and not run.get("taught") and _can_teach(s) and skills.get(s["name"]):
+        sid = run["failed"][-1][0]           # "show me how to do that step" - then the skill carries on after it
+        ids = [x["id"] for x in skills._ids_for([dict(y) for y in s["steps"]])]
+        nxt = ids[ids.index(sid) + 1] if sid in ids and ids.index(sid) + 1 < len(ids) else ""
+        state["skill_run"] = run
+        state["skill_pause"] = {"name": s["name"], "input": run["input"], "resume_at": nxt,
+                                "question": f"{final} Want to show me how to do step {sid}? Say yes, do it yourself, then say 'done'.",
+                                "teach": {"phase": "show", "sid": sid, "mode": "replace"}}
+        task_log(f"SKILL DONE {s['name']} ok=False - offering to learn step {sid} from the user")
+        return f"Paused my '{s['name']}' skill: step {sid} failed, asking the user to show it."
+    state.pop("skill_run", None)
+    state["skill_final"] = final
+    task_log(f"SKILL DONE {s['name']} ok={ok} ran={len(run['ok'])} failed={n_failed} :: {final[:200]}")
+    lines = [f"{sid}: {txt}" for sid, txt in run["results"].items()]
+    return (f"Ran the skill '{s['name']}'" + (f" - {n_failed} step(s) didn't work" if n_failed else "") + ":\n"
+            + "\n".join(lines) + f"\nTell the user exactly this: {final}\nDon't redo any of these steps.")
+
+
+def resume_skill(args, approved, activity):
+    """The user answered a question a skill asked. Returns the answer dict (like _agent_loop's result)."""
+    model = brain()
+    s = skills.get(args.get("name", ""))
+    teach = args.get("teach") or {}
+    name = args.get("name", "")
+    if teach.get("phase") == "show":         # "want to show me how it should go?"
+        run = state.get("skill_run") or {}
+        if not approved:
+            state.pop("skill_run", None)
+            if not run.get("counted"):
+                skills.record_run(name, False, stopped=True)
+            return _say_final(f"Okay, I stopped my '{name}' skill there.", activity)
+        state["teach"] = {"skill": name, "sid": teach.get("sid", ""), "mode": teach.get("mode", "insert"),
+                          "resume_at": args.get("resume_at", ""), "input": args.get("input", "")}
+        msg = start_watching_now(f"step {teach.get('sid', '')} of my '{name}' skill")
+        if recorder.recording():
+            return _say_final(msg, activity)
+        state.pop("teach", None)             # couldn't watch: carry on with the skill instead
+        args = {"name": name, "input": args.get("input", ""), "resume_at": args.get("resume_at", "")}
+        approved = True
+    elif teach.get("phase") == "apply":      # "change my skill like this?"
+        msg = (skills.edit(name, teach.get("ops", []), author="recorder", cause="shown by the user") if approved
+               else "Okay, I left the skill as it was.")
+        task_log(f"SKILL TAUGHT {name}: {msg[:200]}")
+        if not state.get("skill_run"):
+            return _say_final(msg, activity)
+        out = run_skill({"name": name, "input": args.get("input", ""), "resume_at": args.get("resume_at", "")},
+                        True, activity, model)
+        pause = state.pop("skill_pause", None)
+        if pause:
+            pause["question"] = msg + " " + pause["question"]
+            return ask_skill_question(pause)
+        return _say_final(msg + " " + (state.pop("skill_final", None) or out), activity)
+    if not approved:
+        run = state.pop("skill_run", None) or {}
+        skills.record_run(args.get("name", ""), False, stopped=True)
+        final = f"Okay, I stopped my '{args.get('name', '')}' skill there."
+    else:
+        out = run_skill(args, True, activity, model)
+        pause = state.pop("skill_pause", None)
+        if pause:
+            return ask_skill_question(pause)
+        final = state.pop("skill_final", None) or out
+    state.pop("skill_final", None)
+    state["messages"].append({"role": "assistant", "content": final})
+    return {"reply": final, "activity": activity, "say": final}
+
+
+def ask_skill_question(pause, append=True):
+    """Put a skill's own question to the user as an Allow / No box. append=False: the caller adds the message."""
+    args = {"name": pause["name"], "input": pause["input"], "resume_at": pause["resume_at"]}
+    if pause.get("teach"):
+        args["teach"] = pause["teach"]
+    state["pending"] = [{"id": "skill-resume", "name": "run_skill", "args": args}]
+    if append:
+        state["messages"].append({"role": "assistant", "content": pause["question"]})
+    return {"reply": pause["question"], "activity": [], "say": pause["question"],
+            "pending": [{"tool": "run_skill", "label": pause["question"], "input": args}]}
 
 
 def settle(tool_name, quick=False):
@@ -806,12 +1265,86 @@ def execute(calls, approved, activity, model):
             out = "The user pressed Stop before this step finished. It was not done (or only partly)."
         task_log(f"TOOL {c['name']} {json.dumps(c['args'], ensure_ascii=False)[:300]}\n   -> " + out.replace("\n", "\n      "))
         outs.append(out)
+        _trace(c, out)
     state["last_outs"] = outs
     return [llm.tool_result_message(model, c, out) for c, out in zip(calls, outs)]
 
 
+def _trace(c, out):
+    """Remember what this task really did (tool, arguments, whether it worked): "remember that" turns it into a skill."""
+    task = state.get("task")
+    if task is None or c["name"] in skills.LOCKED:
+        return
+    task.setdefault("trace", []).append({"tool": c["name"], "args": dict(c["args"] or {}), "ok": not _failed(out),
+                                         "out": _short(out), "t": time.time()})
+    del task["trace"][:-60]
+
+
+def skill_hints(goal, steps):
+    """Optional help from the cloud brain when a task becomes a skill: which typed words should be {input}, and what
+    to check after a step. It only suggests; skills.draft_from_steps checks every suggestion. {} without a cloud brain."""
+    s = settings()
+    m = brain(s)
+    if not cloud.parse(m) or llm.cloud_resting():
+        return {}
+    listing = "\n".join(f"{st['id']}. {skills.render_step(st)}" for st in steps)
+    prompt = ("A voice assistant just did this task and will save its steps as a reusable skill.\n"
+              f"Task: {goal[:300]}\nSteps:\n{listing}\n\nReply with ONLY a JSON object: "
+              '{"slots": [{"step": "s2", "arg": "<argument name>", "find": "<the part of the argument that changes each time, e.g. a search word>"}], '
+              '"expect": {"s2": "<check>"}, "not_for": ["<2-4 similar requests that must NOT start this skill>"]}. '
+              'Checks you may use: window_open "text", front_window "text", page_has "text", fullscreen, '
+              "dark_mode on. Use slots only for words the user would change next time. Leave a list empty if unsure.")
+    try:
+        _, text, _ = interruptible(llm.chat, m, [{"role": "user", "content": prompt}], [], fallback=None)
+        found = re.search(r"\{.*\}", text or "", re.S)
+        return json.loads(found.group(0)) if found else {}
+    except Stopped:
+        raise
+    except Exception as e:
+        task_log(f"SKILL HINTS failed: {type(e).__name__}: {e}")
+        return {}
+
+
+def save_task_as_skill_now(args):
+    """"Remember that": turn the steps of the task that just finished into a draft skill."""
+    last = state.get("last_trace")
+    if not last:
+        return "I haven't finished a task I could save yet - do it once, then say 'remember that'."
+    steps, why = skills.steps_from_trace(last["trace"], last["goal"])
+    if not steps:
+        return why
+    hints = skill_hints(last["goal"], steps)
+    msg = skills.draft_from_steps(args.get("name", ""), args.get("description", ""), args.get("examples", ""), steps,
+                                  hints, last["goal"])
+    task_log(f"SKILL FROM TASK: {msg[:200]}")
+    if msg.startswith("Saved"):
+        last["from"] = "saved"               # done: the "what should I call it" note stops
+    return msg
+
+
+RESEARCH_CUE = re.compile(
+    r"\b(research|look (it |that |this )?up|look into|find out|search|google|investigate|dig (in|into)|compare|"
+    r"comparison|versus|vs\.?|latest|news|current|today'?s|prices?|reviews?|best|top \d+|sources?|report|"
+    r"on the (web|internet)|online|in the background|deep dive)\b", re.I)
+
+
+def _asked_to_research(task):
+    """Did the user's request ask for research / looking something up? (Explaining a topic is not.)"""
+    goal = (task or {}).get("goal") or ""
+    return bool(RESEARCH_CUE.search(_unspoken(goal)))
+
+
+WATCH_SEARCH_RE = re.compile(r"\b(show me|on (my|the) screen|in front of me|open (google|chrome)|let me (see|watch)|"
+                             r"browse|in chrome|in the browser)\b", re.I)
+
+
 def _execute_one(c, approved, activity, model):
     check_stop()
+    if c["name"] == "web_research" and not WATCH_SEARCH_RE.search(_unspoken(((state.get("task") or {}).get("goal")) or "")):
+        # The small brain picks the on-screen Google tool for plain "research X" and then makes up the answer
+        # (it never reads a page). Plain research belongs in the background job, which really reads sources.
+        q = (c.get("args") or {}).get("query") or ""
+        c = {**c, "name": "research_in_background", "args": {"topic": q}}
     if is_risky(c) and not approved:
         out = "The user declined this action. Do not do it."
         activity.append(f"Skipped: {FRIENDLY.get(c['name'], ask_label(c['name']))}")
@@ -826,10 +1359,25 @@ def _execute_one(c, approved, activity, model):
             state["task"]["used"].append(c["name"])
     elif c["name"] == "run_skill":
         out = run_skill(c["args"] or {}, approved, activity, model)
+    elif c["name"] == "save_task_as_skill":
+        out = save_task_as_skill_now(c["args"] or {})
+        activity.append("Saved a skill")
+    elif c["name"] == "start_watching":
+        out = start_watching_now(str((c["args"] or {}).get("goal", "")))
+        activity.append("Started watching")
+    elif c["name"] == "stop_watching":
+        out = finish_watching() if recorder.recording() else "I wasn't watching."
+        activity.append("Watched you")
     elif c["name"] == "react" and avatar_client.running():
         out = queue_reaction(c["args"] or {}, activity)
     elif c["name"] == "new_move" and avatar_client.running():
         out = queue_new_move(c["args"] or {}, activity)
+    elif c["name"] == "research_in_background" and not _asked_to_research(state.get("task")):
+        # 2026-11-18: she sent "explain how airplanes fly" and "tell me fun facts" to web research - 4 Chrome jobs piled
+        # up, replies took 40-76 s and she kept interrupting with "research done". Plain questions are answered at once.
+        out = ("Not run - the user did not ask you to research or look anything up. Answer from what you know "
+               "in a few sentences now. If you're not sure of something, say so or ask them, don't guess.")
+        think("🙅 That's a plain question - I'll just answer instead of researching.", cloud_too=False)
     elif c["name"] == "go_to_sleep":
         state["sleep_after"] = True         # she says goodnight first; heard()/chat() then really end the conversation
         activity.append(FRIENDLY["go_to_sleep"])
@@ -890,21 +1438,29 @@ class SpeechStream:
     """Collects the reply as the model writes it and sends each finished sentence to Nova's voice straight away."""
 
     END = re.compile(r"(?<=[.!?।])\s+|\n+")
+    CLOSED_STAGE = re.compile(shared.REACT_MARKER_RE.pattern + r"|\*\(.*?\)\*|\(\*.*?\*\)", re.I)
+    OPEN_STAGE = re.compile(r"\[[^\]\n]*$|\*\((?:(?!\)\*)[^\n])*$|(?:^|\n)[ \t]*([*_])(?![*_\s])[^*_\n]*$")
 
     def __init__(self):
         self.buf = ""
         self.cut = False
 
     def feed(self, piece):
-        self.buf += piece
-        if self.cut:
+        if self.cut:                                              # everything after the cut is the echo: drop it
             return
+        self.buf += piece
         if "[open windows" in self.buf:                           # she started echoing the hidden window list
             self.buf = INFO_ECHO.sub("", self.buf)
             if "[open windows" in self.buf:
                 return                                            # wait for the closing bracket
-        if "[check" in self.buf:                                  # junk the model adds after its answer: stop there
-            self.buf, self.cut = self.buf.split("[check")[0], True
+        m = re.search(r"\[(?:check|spoken)", self.buf)
+        if m:                                                     # junk the model adds after its answer (it repeats the
+            self.buf, self.cut = self.buf[:m.start()], True       # request as "[spoken] ..."): stop there
+        elif re.search(r"\[(?:c(?:h(?:e(?:c)?)?)?|s(?:p(?:o(?:k(?:e(?:n)?)?)?)?)?)?$", self.buf):
+            return                                                # a half-written marker: wait for the rest
+        if self.OPEN_STAGE.search(self.buf):
+            return              # a half-written '[react: ...]' / '*(...)*' / '*italic line*': wait, so it isn't said
+        self.buf = self.CLOSED_STAGE.sub(" ", self.buf)   # whole now: drop it before it's cut into sentences
         while True:
             m = self.END.search(self.buf)
             if not m:
@@ -913,6 +1469,7 @@ class SpeechStream:
             speak(sentence.strip())
 
     def flush(self):
+        self.buf = re.sub(r"\[(?:c(?:h(?:e(?:c)?)?)?|s(?:p(?:o(?:k(?:e(?:n)?)?)?)?)?)?$", "", self.buf)
         speak(INFO_ECHO.sub("", self.buf).split("[open windows")[0].strip())
         self.buf = ""
 
@@ -936,11 +1493,17 @@ def agent_loop(activity):
     return out
 
 
+DONE_CLAIM_RE = re.compile(r"(all set|ready (for|to)\b|is ready|are ready|\bi'?ve (just )?(opened|started|turned|set|closed|pushed|sent|"
+                           r"launched|enabled|switched|made|done|put|muted|played)|\b(opened|started|launched|enabled)\b[ !.]|\bdone[!.])", re.I)
 PROMISE_RE = re.compile(
     r"\b(i'?ll|i will|i'?m|i am|let me|going to|now)\b[^.!?]{0,30}\b(click|open|search|play|scroll|type|press|clos|select|"
     r"tap|launch|start|go to|navigat|lock|mut|paus|turn|set|shut|restart|remind|delet|mov|install)"
     r"|\b(lock|open|clos|play|search|launch|start|turn|mut|paus|set|shut|restart|delet|mov|install|clean)\w*ing\b"
     r"[^.!?]{0,30}\b(now|right away)\b|\bi'?ll do (it|that) (right away|now)\b", re.I)
+# "Reacting now... I'm dancing!" with no react call: her body never moved (2026-11-18 log).
+BODY_CLAIM_RE = re.compile(r"\b(?:i'?m|i am|i'?ll|let me|watch me)\s+(?:now\s+|just\s+|still\s+)?(?P<v>dancing|dance|clapping|clap|"
+                           r"spinning|spin|twirling|laughing|waving|bowing)\b|\breacting now\b|"
+                           r"\bi (?:just )?(?:did a (?:little )?)?(?P<w>danced|clapped|spun|dance|spin|clap)\b", re.I)
 
 
 REPEAT_LIMIT = 3      # the same tool call and result this many times in a row: she's told to stop; once more = the end
@@ -954,12 +1517,16 @@ def _agent_loop(activity):
     model = brain(s)
     spoken = []
     lead_ins = set()     # which of spoken were said just before a tool step ("Let me check:")
-    nudged = did_something = False
+    nudged = did_something = claim_nudged = False
     last_calls = last_outs = None        # the same tool call, with the same result, again and again = stuck in a loop
     same_calls = 0
     unsaid = []      # reply text that has not been spoken yet (text spoken while it was being written isn't here)
 
     def result(reply, **extra):
+        stage = shared.stage_reaction(shared.stage_directions(reply or "")[1])   # '[react: "laugh"]' -> after_turn plays it
+        if stage:
+            extra.setdefault("stage_reaction", stage)
+        reply = re.sub(r"[ \t]{2,}", " ", shared.REACT_MARKER_RE.sub(" ", reply or "")).strip()   # ...and not on screen
         say = " ".join(unsaid).strip()
         if not say and not spoken:
             say = reply                     # e.g. the plain "Done!"
@@ -985,7 +1552,7 @@ def _agent_loop(activity):
         msgs = [{"role": "system", "content": system_prompt(model)}] + trimmed_history()
         # Ordinary questions are spoken while the answer is still being written. During a multi-step screen task
         # she must not talk early - her "done!" may still be corrected by her own check of the screen.
-        stream = SpeechStream() if not (task and task["steps"]) and not state.get("remote") else None   # 📱: no voice
+        stream = SpeechStream() if not (task and (task["steps"] or task.get("skill"))) and not state.get("remote") else None   # 📱: no voice
         think("💭 Working out what you need…" if turns == 1 and not did_something else "💭 Deciding the next step…")
         reasoning = ThoughtStream()
         level = reasoning_level(s, task)
@@ -1035,7 +1602,17 @@ def _agent_loop(activity):
         if text:
             task_log(f"NOVA SAYS: {text[:300]}")
         did_something = did_something or bool(calls)
-        if not calls and not nudged and not did_something and PROMISE_RE.search(text or ""):
+        claimed_body = bool(BODY_CLAIM_RE.search(text or "")) and not state.get("react_after")
+        invent = state.get("invent")        # "make one up" - but no new_move call yet (react_after is set by new_move)
+        if invent and not calls and not nudged and not state.get("react_after"):
+            nudged = True
+            think(f"🙈 I said I'd make the '{invent}' move but didn't - doing it properly now.")
+            state["messages"].append({"role": "user", "content":
+                f"[note from Nova's system] You haven't made the move yet. Call new_move NOW for '{invent}': a short "
+                "name, a duration in seconds, and 4-8 keys (each {\"at\": 0..1, plus poses such as right_arm_out, "
+                "left_arm_out, lean_side, jump, head_nod}). Then say one short line."})
+            continue
+        if not calls and not nudged and (claimed_body or (not did_something and PROMISE_RE.search(text or ""))):
             # Small models sometimes *say* "I'm clicking it now" without calling a tool. Make her follow through.
             nudged = True
             think("🙈 I said I'd do it but didn't actually do anything - doing it properly now.")
@@ -1043,6 +1620,31 @@ def _agent_loop(activity):
                 "[note from Nova's system] You said you'd do something but didn't call a tool, so nothing happened. "
                 "Call the right tool now. If no tool can do it, say so honestly in one sentence."})
             continue
+        rec = task.get("recipe") if task else None
+        if not calls and rec and task.get("calls", 0) <= rec["calls"]:
+            # She was handed a skill's steps and stopped without calling a single tool: nothing happened.
+            if not rec["nudged"]:
+                rec["nudged"] = True
+                think(f"🙈 I haven't done any step of my '{rec['name']}' skill yet - doing it now.")
+                state["messages"].append({"role": "user", "content":
+                    f"[note from Nova's system] You haven't done any step of the skill '{rec['name']}' yet - nothing has "
+                    "happened. Do its first step now with a tool."})
+                continue
+            task_log(f"HALLUCINATED DONE: skill '{rec['name']}' handed over, no tool called after it")
+            text = f"I didn't actually run my '{rec['name']}' skill - nothing happened. Want me to try again?"
+        elif (not calls and not did_something and task and not task.get("calls") and not task["steps"]
+              and DONE_CLAIM_RE.search(text or "") and task.get("skill")):
+            # "You're all set!" with no tool called anywhere in this request: it can't be true.
+            if not claim_nudged:
+                claim_nudged = True
+                think("🙈 I said it was done but I haven't done anything - doing it properly now.")
+                state["messages"].append({"role": "user", "content":
+                    "[note from Nova's system] You said it is done, but you have not called any tool, so nothing "
+                    "happened. If the request needs an action, do it now with the right tool (or run_skill for a "
+                    "skill). If you can't, say honestly that you didn't do it."})
+                continue
+            task_log(f"HALLUCINATED DONE: '{(text or '')[:120]}' with no tool called")
+            text = "I haven't actually done that yet - tell me again and I'll do it properly."
         if (not calls and task and task["steps"] >= LOOK_FROM_STEP and _big_brain(model)
                 and not task.get("final_looks") and tools._screen_allowed()):
             # A cloud brain says it's finished: now take the one screen look that checks the whole task.
@@ -1096,14 +1698,24 @@ def _agent_loop(activity):
             return result((" ".join(spoken) + " " + line).strip())
         if any(is_risky(c) for c in calls):
             state["pending"] = calls
-            think("✋ I need your OK before I " + ", ".join(ASK.get(c["name"], c["name"]).lower()
+            think("✋ I need your OK before I " + ", ".join((ask_text(c) if c["name"] == "run_skill" else ASK.get(c["name"], c["name"])).lower()
                                                             for c in calls if is_risky(c)) + ".")
             return result(" ".join(spoken).strip(),
-                          pending=[{"tool": c["name"], "label": ask_label(c["name"]), "input": c["args"]}
+                          pending=[{"tool": c["name"], "label": ask_text(c), "input": c["args"]}
                                    for c in calls if is_risky(c)])
         if task is not None:
             task["calls"] = task.get("calls", 0) + len(calls)
         state["messages"].extend(execute(calls, True, activity, model))
+        pause = state.pop("skill_pause", None)
+        if pause:                           # a skill asks the user something (confirm / ask steps)
+            asked = ask_skill_question(pause)
+            unsaid.append(asked["reply"])
+            return result(asked["reply"], pending=asked["pending"])
+        final = state.pop("skill_final", None)
+        if final and all(c["name"] == "run_skill" for c in calls):
+            state["messages"].append({"role": "assistant", "content": final})
+            unsaid.append(final)
+            return result(final)
         # Compare only what the tool itself said: the "[check after step N]" note added to it changes every step.
         outs = json.dumps([str(o).split("\n[check after step")[0] for o in state.get("last_outs") or []])
         same = sig == last_calls and outs == last_outs and not repeatable
@@ -1195,12 +1807,14 @@ def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
                    autonomy=s["autonomy"], think=s["think"], reasoning=s.get("reasoning", "auto"), camera=s["camera"], screen=s["screen"],
-                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), suggest=s.get("suggest", False), asleep=nap["asleep"],
+                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), deep_sleep=s.get("deep_sleep", True), listen_pause=s.get("listen_pause", 0.7), listen_max=s.get("listen_max", 10), phone_calls=s.get("phone_calls", True), email_cloud=bool(s.get("email_cloud")),
+                   phone_quiet=s.get("phone_quiet", True), phone_notes_cloud=s.get("phone_notes_cloud", False), suggest=s.get("suggest", False), asleep=nap["asleep"], deep_asleep=nap.get("deep", False),
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    presence=s.get("presence", False), presence_lock=s.get("presence_lock", False),
-                   error_help=s.get("error_help", True), away=presence.state["away"],
+                   error_help=s.get("error_help", True), barge_in=s.get("barge_in", True), away=presence.state["away"],
                    presence_note=presence.state["note"], presence_checks=presence.state["checks"],
-                   autostart=STARTUP_LNK.exists(),
+                   autostart=STARTUP_LNK.exists(), character=characters.get(s.get("character"))["id"],
+                   characters=characters.choices(),
                    voice=s["voice"], wake=s["wake"], voice_name=mouth.voice_name, ears=ears.status, heard=ears.heard,
                    vision_model=llm.vision_model(s["model"]), **ready_info())
 
@@ -1218,6 +1832,9 @@ def setup():
         s["cloud_models"] = dict(s.get("cloud_models") or {}, **{s["provider"]: cloud_model})
     if body.get("avatar_roam") in body_module.ROAM_MODES:
         s["avatar_roam"] = body["avatar_roam"]
+    if body.get("character") in characters.CHARACTERS and body["character"] != s.get("character"):
+        s["character"] = body["character"]
+        apply_character(s["character"])
     if "think" in body:
         s["think"] = bool(body["think"])
     if body.get("reasoning") in REASONING_CHOICES:
@@ -1232,7 +1849,7 @@ def setup():
             mouth.stop()
     if "wake" in body:
         s["wake"] = bool(body["wake"])
-        ears.start() if s["wake"] else ears.stop()
+        set_ears(s["wake"])
     if body.get("autonomy") in ("careful", "trusted", "full"):
         s["autonomy"] = body["autonomy"]
     if "suggest" in body:
@@ -1250,12 +1867,23 @@ def setup():
             pass
         for k in router.ROUTING_KEYS:               # a copy in settings.json would override the file
             s.pop(k, None)
-    for k in ("presence", "presence_lock", "error_help", "notif_sleep"):
+    try:
+        if "listen_pause" in body:
+            s["listen_pause"] = round(min(max(float(body["listen_pause"]), LISTEN_PAUSE[0]), LISTEN_PAUSE[1]), 2)
+        if "listen_max" in body:
+            s["listen_max"] = min(max(int(body["listen_max"]), LISTEN_MAX[0]), LISTEN_MAX[1])
+    except (TypeError, ValueError):
+        pass
+    apply_listening(s)
+    for k in ("presence", "presence_lock", "error_help", "notif_sleep", "deep_sleep", "email_cloud", "phone_calls", "phone_notes_cloud", "phone_quiet", "barge_in"):
         if k in body:
             s[k] = body[k] is True
     save_settings(s)
+    refresh_barge(s)
     if "notifications" in body:
         notif_watcher.start() if s["notifications"] else notif_watcher.stop()
+    if "notifications" in body or "phone_quiet" in body:
+        sync_phone_banners()
     if "autostart" in body:
         set_autostart(bool(body["autostart"]))
     return jsonify(ok=True, **ready_info())
@@ -1337,8 +1965,29 @@ def get_look():
     return jsonify(body.load_look())
 
 
+@app.get("/api/model")
+def get_model():
+    """The 3D model of the chosen character (a VRM file in static/nova3d, made in VRoid Studio) and the colours it
+    was made with, so nova3d.html can tint it for change_look. vrm is null when the file isn't there (toon body)."""
+    from nova.avatar import body
+    ch = characters.get(settings().get("character"))
+    there = (ROOT / "static" / "nova3d" / ch["vrm"]).is_file()
+    return jsonify(vrm=ch["vrm"] if there else None, base={**body.DEFAULT_LOOK, **body.PRESETS.get(ch["look"], {})})
+
+
 avatar_reload_hook = None
 show_window_hook = None  # set by desktop.py
+
+
+@app.post("/api/wake")
+def wake_by_click():
+    """She was clicked while asleep (avatar.py): wake her up - ears back on, the nap clock starts again."""
+    was = nap["asleep"]
+    nap["last_task"] = time.time()
+    wake_body(clicked=True)
+    if was:
+        task_log("WOKE by a click")
+    return jsonify(ok=True, was_asleep=was)
 
 
 @app.post("/api/show_window")
@@ -1382,7 +2031,26 @@ def voice_typing():
 
 # ------------------------------------------------------------------ voice: Nova speaks, and hears "Hey Nova"
 
+voice.NEURAL_VOICE = characters.get(settings().get("character"))["voice"]   # her character's voice
 mouth = voice.Mouth()
+
+
+def apply_character(cid):
+    """Switch to another character now: her voice at once, her 3D look (live 3D), her personality from the next
+    request on. -> the character."""
+    ch = characters.get(cid)
+    voice.NEURAL_VOICE = ch["voice"]
+    with lock:                # a fresh chat: the small brain copies its old name and tone from the history otherwise
+        state["messages"].clear()
+        state["pending"] = None
+    if mouth.voice_name and mouth.voice_name.startswith("Kokoro"):
+        mouth.voice_name = f"Kokoro {ch['voice']} (natural voice)"
+    try:
+        look, _ = body_module.change_look({}, ch["look"])
+        avatar_client.send("look", look=look, timeout=3)
+    except Exception as e:
+        task_log(f"CHARACTER look not applied: {e}")
+    return ch
 events = []  # things that happened by voice, for the chat window to show
 
 
@@ -1392,6 +2060,8 @@ def push_event(e):
 
 
 mouth.on_start = lambda words, timing="": task_log(f"VOICE starts: {words[:60]}  ({timing})")   # "she's slow / out of sync"
+mouth.on_gap = lambda secs, who, words="": task_log(f"VOICE PAUSE {secs:.1f}s mid-reply, waiting for the {who} "
+                                                    f"(before: {words[:40]})")   # brain = text late, voice = synth slow
 
 
 def speak(text):
@@ -1467,11 +2137,258 @@ def warm_brain():
         pass
 
 
+# ------------------------------------------------------------------ 👀 "watch me" (recorder.py) and "show me this step"
+# "Watch me" and "done" are handled here in code, not by the brain: the small model must never be the one that decides
+# when the mouse and keyboard are being watched.
+
+WATCH_START_RE = re.compile(r"^\W*(ok(ay)?\W+|hey\W+)?(nova\W+)?(please\W+)?(watch me\b|watch (how|what) i do\b|"
+                            r"watch and learn\b|let me show you\b|i'?ll show you( how)?\b|learn (this|from me)\b|"
+                            r"record (this|what i do)\b)", re.I)
+WATCH_DONE_RE = re.compile(r"^\W*(ok(ay)?\W+|so\W+)?(nova\W+)?(i'?m |i am |all )?(done|finished|that'?s it|that'?s all|"
+                           r"stop watching|you can stop( watching)?)(\W+nova)?\W*$", re.I)
+
+
+def watch_command(text):
+    """'watch me' / 'done' -> the answer dict, or None if the request is something else."""
+    t = _unspoken(text).strip()
+    if recorder.recording() and WATCH_DONE_RE.search(t):
+        return _watch_answer(finish_watching())
+    if WATCH_START_RE.search(t):
+        return _watch_answer(start_watching_now(t))
+    return None
+
+
+def _watch_answer(text):
+    pause = state.pop("skill_pause", None)          # "change the skill like this?" after showing a step
+    if pause:
+        return ask_skill_question(pause, append=False)
+    return {"reply": text, "activity": ["Watched you" if "Got it" in text else "Started watching"], "say": text}
+
+
+def start_watching_now(goal=""):
+    if state.get("remote"):
+        return "I can only watch you when you're at the laptop."
+    if recorder.recording():
+        return "I'm already watching - say 'done' when you're finished."
+    recorder.stop_listening()
+    err = recorder.start(goal=goal, mode="record")
+    if err:
+        return err
+    task_log(f"WATCHING started: {goal[:100]}")
+    think("👀 Watching how you do it - say 'done' when you're finished.")
+    if avatar_client.running():
+        avatar_client.send("say", text="👀 Watching - say 'done' when you're finished", secs=6)
+    teach = state.get("teach")
+    if teach:
+        return (f"Okay, show me how step {teach['sid']} of my '{teach['skill']}' skill should go - do it now, then say "
+                "'done'. (I never look at passwords or codes.)")
+    return ("Okay, show me! I'm watching your clicks and typing - say 'done' when you're finished. "
+            "(I never look at passwords or codes.)")
+
+
+def finish_watching():
+    """Stop watching. Plain 'watch me': the steps wait for a name (save_task_as_skill). Showing one step of a skill:
+    propose the change to that skill (an Allow / No question, via state['skill_pause'])."""
+    events = recorder.stop()
+    goal, hit = recorder.goal(), recorder.limit_hit()
+    trace = recorder.events_to_trace(events)
+    task_log(f"WATCHING stopped: {len(events)} events -> {len(trace)} steps")
+    teach = state.pop("teach", None)
+    steps, why = skills.steps_from_trace(trace, goal)
+    if teach:
+        return teach_propose(teach, steps, why)
+    if not steps:
+        return f"I watched, but didn't catch anything I could repeat. {why}".strip()
+    state["last_trace"] = {"goal": goal, "trace": trace, "from": "watching", "ts": time.time()}
+    lines = "; ".join(skills.render_step(st)[:60] for st in steps[:6]) + ("; ..." if len(steps) > 6 else "")
+    return (f"Got it - I saw {len(steps)} steps: {lines}." + (" (I stopped watching after 10 minutes.)" if hit else "")
+            + " What should I call this skill, and what will you say to start it?")
+
+
+def watch_note():
+    """Right after 'watch me ... done': the next request is probably the skill's name."""
+    lt = state.get("last_trace") or {}
+    if lt.get("from") != "watching" or time.time() - lt.get("ts", 0) > 900:
+        return ""
+    return ("\n\nYou just watched the user do a task and asked what to call it. If they now give it a name (and the "
+            "words they'll say to start it), call save_task_as_skill with that name and examples. Don't do the task again.")
+
+
+def teach_propose(teach, steps, why):
+    """The user showed one step of a skill: offer to change that step (replace a failed one, or add what they did)."""
+    name, sid = teach["skill"], teach["sid"]
+    steps = [st for st in (steps or []) if "report" not in st][:5]
+    if not steps:
+        state.pop("skill_run", None)
+        return (f"I didn't catch any steps I could use" + (f" ({why})" if why else "")
+                + f", so I left my '{name}' skill as it was.")
+    lines = [skills.render_step(st) for st in steps]
+    if teach["mode"] == "replace":
+        ops = [{"op": "replace_step", "id": sid, "step": lines[0]}] + [
+            {"op": "insert_step", "after": sid, "step": l} for l in reversed(lines[1:])]
+        what = f"do step {sid} like this"
+    else:
+        ops = [{"op": "insert_step", "after": sid, "step": l} for l in reversed(lines)]
+        what = f"add this after step {sid}"
+    run = state.get("skill_run")
+    if run is not None:
+        run["taught"] = True                    # one lesson per run
+        if teach["mode"] == "replace":
+            run["asked"] = sid                  # the user did that step themselves
+    q = f"Change my '{name}' skill to {what}: {'; '.join(l[:60] for l in lines)}?"
+    state["skill_pause"] = {"name": name, "question": q, "resume_at": teach["resume_at"], "input": teach.get("input", ""),
+                            "teach": {"phase": "apply", "ops": ops}}
+    return f"Paused my '{name}' skill to ask the user: {q}"
+
+
+def _can_teach(s):
+    """Can this skill run watch for the user taking over (and learn the step from them)?"""
+    return (recorder.ENABLED and not state.get("remote") and s["risk"] != "read_only"
+            and settings().get("skill_teach", True))
+
+
+def _takeover_pause(s, run, sid, resume_at):
+    """The user clicked or typed while the skill was working: stop and offer to learn from them."""
+    mode = "replace" if any(f[0] == sid for f in run["failed"]) else "insert"
+    q = (f"You took over after step {sid} of my '{s['name']}' skill. Want to show me how it should go? "
+         "Say yes, do it yourself, then say 'done'.")
+    state["skill_run"] = run
+    state["skill_pause"] = {"name": s["name"], "question": q, "resume_at": resume_at, "input": run["input"],
+                            "teach": {"phase": "show", "sid": sid, "mode": mode}}
+    task_log(f"SKILL TAKE-OVER {s['name']} after {sid} ({mode})")
+    think(f"✋ You took over after step {sid} - I'll stop and ask.")
+    return f"Paused my '{s['name']}' skill: the user took over after step {sid}."
+
+
+def _say_final(final, activity):
+    state.pop("skill_final", None)
+    state["messages"].append({"role": "assistant", "content": final})
+    return {"reply": final, "activity": activity, "say": final}
+
+
+# ------------------------------------------------------------------ body commands: "dance!" is done by code
+# The small local brain often *said* "I'm dancing!" without calling react, and when told "you're not dancing" it
+# insisted it was (2026-11-18 log). A plain "dance / clap / spin..." is now played directly - faster, too (no brain
+# round trip) - and a move she doesn't have makes her ASK instead of pretending.
+
+BODY_WORDS = {"dance": "dance", "dancing": "dance", "laugh": "laugh", "laughing": "laugh", "clap": "clap",
+              "clapping": "clap", "applaud": "clap", "spin": "spin", "spinning": "spin", "twirl": "spin",
+              "wave": "wave", "waving": "wave", "bow": "bow", "bowing": "bow", "nod": "nod", "yawn": "yawn",
+              "facepalm": "facepalm", "shrug": "confused", "jump": "happy", "jumping": "happy", "cheer": "happy",
+              "cry": "sad", "crying": "sad", "giggle": "laugh", "hug": "love", "blush": "love", "gasp": "surprised",
+              "stretch": "yawn"}
+STYLE_WORDS = r"\b(desi|indian|bollywood|punjabi|funky|crazy|silly|fancy|wild|cute|funny|cool|gangnam|hip hop)\b"
+DANCE_NAMES = ["thumka", "bhangra", "garba", "dandiya", "kathak", "ghoomar", "lavani", "nagin", "robot", "moonwalk",
+               "macarena", "twerk", "floss", "breakdance", "salsa", "tango", "waltz", "ballet", "disco", "bollywood"]
+DANCE_WORDS = r"(dance|dancing|move|moves|step|steps|thumka|jig|twerk|moonwalk|pose|routine|groove|nachna|naach|nach)"
+_NAME = r"(?:hey |hi |ok |okay )?(?:nova|novah|noah|nover|nava|nowa|sophia)"
+_BODY_POLITE = re.compile(rf"^\W*(?:{_NAME}\W+)?(?:(?:no|nope|nah|arey|arre|yaar|oh)\W+)*|(?:\W+{_NAME})?\W*$", re.I)
+BODY_ASK_RE = re.compile(
+    r"^(?:(?:can|could|will|would) you |please |now |just |go |ok |okay |come on |show me |let'?s see you |"
+    r"i want (?:to see )?you to |i'?d like you to |do you know how to )*"
+    r"(?:(?P<verb>do|give me|show me|perform|try) (?:a |an |the |some |your |my |that |one |another |me a )?"
+    r"(?:little |quick |small |cute |nice |happy |big |proper |real |usual |normal |regular |own )?)?"
+    r"(?P<what>[a-z][a-z' -]{1,30}?)"
+    r"(?:\s+(?:for me|for us|again|once more|now|please|one more time|properly|for real|a bit|"
+    r"(?P<times>two|three|four|five|\d) times|twice))*\W*$", re.I)
+BODY_NOT_DONE_RE = re.compile(
+    r"\b(?:you'?re not|you are not|you aren'?t|you'?re still not|you are still not|you never)\s+(?P<a>\w+ing)\b|"
+    r"\byou (?:didn'?t|did not|don'?t|do not|haven'?t)\s+(?P<b>dance|clap|spin|laugh|wave|bow|jump)\b|"
+    r"\b(?:i )?(?:can'?t|cannot|don'?t) see you\s+(?P<c>\w+ing)\b", re.I)
+_TIMES = {"two": 2, "twice": 2, "three": 3, "four": 4, "five": 5}
+
+
+def _known_move(what):
+    """'dance' / 'bhangra' / 'star jump' -> the name react plays, or None."""
+    from nova.avatar import body
+    what = what.lower().strip()
+    if what in BODY_WORDS:
+        return BODY_WORDS[what]
+    slug = re.sub(r"[^a-z0-9]+", "_", what).strip("_")
+    moves = body.load_moves()
+    if slug in moves:
+        return slug
+    for m in moves:                       # "bhangra" / "bhangra dance" -> bhangra_bounce, "jumping jack" -> jumping_jacks
+        stem = m.split("_")[0]
+        if len(stem) >= 5 and (slug.startswith(stem) or m.startswith(slug)):
+            return m
+    return None
+
+
+def body_command(text):
+    """A plain 'dance' / 'clap for me' / 'you're not dancing' -> the answer dict, played after the short reply.
+    A dance she doesn't know ('do a desi thumka') -> she asks what to do. Anything else -> None (the brain)."""
+    if state.get("remote"):
+        return None
+    t = _BODY_POLITE.sub("", _unspoken(text).strip()).strip()
+    if not t or len(t.split()) > 9:
+        return None
+    asked = state.pop("body_ask", None)       # she asked "make one up, or my usual dance?" - this is the answer
+    if asked and time.time() - asked["at"] < 180:
+        if re.search(r"\b(make|invent|create|new one|try|learn|yes|yeah|yep|sure|ok(ay)?|go ahead)\b", t, re.I) \
+                and not re.search(r"\b(usual|normal|regular|old|known|your own)\b", t, re.I):
+            task = state.get("task")
+            if task and task.get("tools") and "new_move" not in task["tools"]:
+                task["tools"] = list(task["tools"]) + ["new_move"]
+            state["messages"][-1]["content"] += (f"\n[note from Nova's system: they want you to invent the move "
+                                                 f"'{asked['what']}' now with new_move, then say one short line]")
+            state["invent"] = asked["what"]
+            try:        # designing the poses takes the brain ~20 s: say something at once instead of going quiet
+                mouth.say(random.choice(("Okay, let me think of one.", "Alright, give me a moment to make it up.")))
+            except Exception:
+                pass
+            return None                       # the brain designs the move
+        if re.search(r"\b(usual|normal|regular|old|known|dance|that one|the one you know)\b", t, re.I):
+            t = "dance"
+    name, times, reply = None, None, None
+    miss = BODY_NOT_DONE_RE.search(t)
+    if miss:
+        word = (miss.group("a") or miss.group("b") or miss.group("c") or "").lower()
+        name = BODY_WORDS.get(word)
+        if name:
+            reply = f"Sorry! Here's a real {name} for you." if name == "dance" else "Sorry! Here it is, for real."
+    if not name:
+        m = BODY_ASK_RE.match(t)
+        if not m:
+            return None
+        what = m.group("what").strip()
+        times = _TIMES.get((m.group("times") or "").lower()) or (int(m.group("times")) if (m.group("times") or "").isdigit()
+                                                                  else (2 if re.search(r"\btwice\b", t, re.I) else None))
+        name = _known_move(what)
+        if not name:
+            import difflib
+            words = what.lower().split()
+            looks_like_move = (
+                re.fullmatch(rf"(?:[a-z']+ ){{0,3}}{DANCE_WORDS}", what, re.I)      # "robot dance", "thumka"
+                or (len(words) <= 3 and re.search(STYLE_WORDS, what, re.I))          # "desi dunca" (misheard "thumka")
+                or any(difflib.get_close_matches(w, DANCE_NAMES, 1, 0.7) for w in words))   # "bangra", "roboto"
+            if not (m.group("verb") and looks_like_move):
+                return None                  # not "do a <something> dance" ("play dance songs"): the brain handles it
+            reply = (f"I don't know a {what} yet. Should I make one up, or do my usual dance?")
+            state["body_ask"] = {"what": what, "at": time.time()}
+            task_log(f"BODY ASK: unknown move '{what}'")
+            return {"reply": reply, "activity": [], "say": reply}
+        reply = random.choice(("Sure, watch this!", "Here goes!", "Okay, watch me!"))
+    if not avatar_client.running():
+        reply = "I can't move right now: my 3D body isn't on the screen. Turn it back on from the tray menu."
+        return {"reply": reply, "activity": [], "say": reply}
+    state["react_after"] = {"name": name, "repeat": times}
+    task_log(f"BODY COMMAND: {name}" + (f" x{times}" if times else ""))
+    return {"reply": reply, "activity": [FRIENDLY["react"]], "say": reply}
+
+
 def look_first(text, activity):
     """Small models sometimes 'answer' about the user or the screen without looking. If the user clearly asked
     Nova to look, take the picture first and hand her the result, so she describes what's really there.
     (If camera/screen viewing is switched off, the tool itself tells Nova so - no made-up answers either way.)
     Clear video-player requests (full screen, captions...) are done the same way."""
+    watched = watch_command(text)       # 👀 "watch me" / "done": code decides, never the brain
+    if watched:
+        return watched
+    moved = body_command(text)          # 💃 "dance!" - code plays it, the brain can't pretend it did
+    if moved:
+        activity.extend(moved["activity"])
+        return moved
     text = _unspoken(text)       # only the user's words: the 📱 phone note itself mentions "the screen"
     video_action = next((a for rx, a in VIDEO_ASK if rx.search(text)), None)
     if video_action and tools._video_window():
@@ -1530,6 +2447,7 @@ def answer(text, quiet=False, remote=False):
         stop_flag.clear()           # a Stop pressed for the last request doesn't cancel this one
         state["remote"] = remote
         state.pop("sleep_after", None)
+        state.pop("invent", None)
         _cap_history()
         n, old_pending = len(state["messages"]), state["pending"]
         activity = []
@@ -1828,10 +2746,27 @@ def after_turn(user_text, out):
         clean_text = _unspoken(user_text)
         corrected = bool(CORRECTION_RE.search(clean_text))
         asked = state.pop("react_after", None)      # the brain's own pick (react tool) wins over the automatic one
-        if corrected:
-            react_later("facepalm", wait_for_speech=False)
-        elif asked:
+        state.pop("invent", None)
+        stage = out.get("stage_reaction") or shared.stage_reaction(shared.stage_directions(out.get("reply") or "")[1])
+        if not asked and stage:      # she wrote '[react: "laugh"]' / '*spins*' instead of calling react: do it
+            name = tools.reaction_name(stage)
+            if name in REACTIONS or name in body_module.load_moves():
+                task_log(f"STAGE DIRECTION without react -> playing {name}")
+                asked = {"name": name, "repeat": None}
+        if not asked:      # she still only *said* she's dancing (even after the nudge): make her words true
+            claims = list(BODY_CLAIM_RE.finditer(out.get("reply") or ""))
+            claim = bool(claims)
+            word = next(((c.group("v") or c.group("w")).lower() for c in claims if c.group("v") or c.group("w")), "")
+            name = {"danced": "dance", "clapped": "clap", "spun": "spin", "twirling": "spin"}.get(word) or BODY_WORDS.get(word)
+            if claim and not name:     # "reacting now": the move the user asked for, if it's one she has
+                name = next((BODY_WORDS[w] for w in re.findall(r"[a-z]+", clean_text.lower()) if w in BODY_WORDS), None)
+            if name:
+                task_log(f"BODY CLAIM without react -> playing {name}")
+                asked = {"name": name, "repeat": None}
+        if asked:      # asked to act something out ("no, dance properly!" is a correction AND a request)
             react_later(asked["name"], repeat=asked["repeat"])
+        elif corrected:
+            react_later("facepalm", wait_for_speech=False)
         else:
             react_later(pick_reaction(clean_text, out))
         why = why_review(user_text, out)
@@ -1876,10 +2811,33 @@ def knowledge_edit():
 # English and Hindi/Hinglish (Whisper writes Hindi in English letters - see voice.HINGLISH_HINT).
 # Whisper often mishears it ("Noah got to sleep", "go too sleep"), so the verbs and the "to" are loose. Only short
 # utterances count (wants_sleep), so "I can't go to sleep at night, any tips?" is a normal question.
-SLEEP_RE = re.compile(r"\b((go|got|goes|going|gotta|gonna|gone)( (to|too|two|2|ta))? ?sleep|sleep now|(you can|time to|now) sleep|"
+SLEEP_RE = re.compile(r"\b((go|got|goes|going|gotta|gonna|gone)( (to|too|two|2|ta))? ?sleep|sleep now|(go )?back to sleep|(you can|time to|now) sleep|"
                       r"sleep,? (nova|noah|now)|(nova|noah),? sleep|take a nap|nap time|go to bed|stop listening|"
                       r"good ?night|that'?s all|bye,? (nova|noah)|so ?jao|sunna band|shubh ratri|bas itna hi)\b", re.I)
 SLEEP_MAX_WORDS = 8
+
+
+# A bare "Nova, stop" / "ruko" / "bas" / "chup" said to her is a command, not a chat: it ends whatever she's doing
+# (talking, a task) and goes nowhere near her brain. Before, it went to the brain, which chatted back ("I'm here,
+# Vikrant - ready to help") - the opposite of stop. "Stop the music" has more words, so it still goes to the brain.
+JUST_STOP_RE = re.compile(rf"^\W*(?:(?:hey|hi|ok|okay|arey)\W+)?(?:{voice.NOVA_NAMES}\W+)?(?:please\W+)?"
+                          r"(?:stop(?: it| that| talking| now)?|ru+c*k*h?o|roko|ruk jao|bas(?: karo)?|chup(?: raho| ho jao)?|"
+                          r"enough|quiet|be quiet|shut up|that'?s enough)"
+                          rf"(?:\W+(?:{voice.NOVA_NAMES}|please|now|yaar))*\W*$", re.I)
+
+
+def just_stop(text):
+    return bool(JUST_STOP_RE.match(_unspoken(text)))
+
+
+def stopped_by_voice(text, via="silent"):
+    """'Nova, stop' while she's quiet (or right after she was talked over): stop everything, say nothing."""
+    was_busy = stop_now()
+    task_log(f"VOICE STOP: {text[:40]!r} ({'stopped a task' if was_busy else 'nothing was running'})")
+    avatar_client.send("say", text="🤐 Okay.", secs=2, timeout=2)
+    push_event({"reply": "🤐 Okay, stopped." if was_busy else "🤐 Okay.", "kind": "suggestion"})
+    if via != "silent":
+        ear_listen_after_speech() if convo["on"] else ear_close()
 
 
 def wants_sleep(text):
@@ -1918,13 +2876,49 @@ def ear_close():
 # Whisper (offline, most accurate) is used when installed; Windows' recognizer is the backup.
 windows_transcriber = voice.Transcriber()
 whisper = voice.WhisperTranscriber() if voice.WhisperTranscriber.available() else None
+LISTEN_PAUSE = (0.3, 2.0)       # ⚙ Senses: seconds of quiet that mean you've finished speaking
+LISTEN_MAX = (4, 30)            # ⚙ Senses: the longest one spoken request may be
+
+
+def apply_listening(s=None):
+    """Her ears' timing from the settings (Whisper only - the Windows recognizer decides for itself)."""
+    s = s or settings()
+    if whisper:
+        whisper.END_PAUSE = min(max(float(s.get("listen_pause", 0.7)), LISTEN_PAUSE[0]), LISTEN_PAUSE[1])
+        whisper.MAX_LEN = float(min(max(int(s.get("listen_max", 10)), LISTEN_MAX[0]), LISTEN_MAX[1]))
+
+
+apply_listening()
 transcriber = whisper or windows_transcriber
 if whisper:
-    whisper.self_voice = mouth.busy        # never take her own voice (answers, notifications, reaction sounds) as a request
+    # The words so far show in 3D Nova's bubble while the user is still speaking (the final reading replaces them).
+    whisper.on_partial = lambda t: avatar_client.send("say", text=f"“{t[:150]}…”", secs=3, timeout=1)
+    whisper.self_voice = mouth.busy       # never take her own voice (answers, notifications, reaction sounds) as a request
     whisper.expect_reply = lambda: expecting_reply()
 listen_state = {"loop": False, "rt_broken": False, "single": False}
 if whisper:
     threading.Thread(target=lambda: whisper.load(), daemon=True).start()   # warm up so the first request is quick
+
+
+def set_ears(on):
+    """👂 in the chat. Off = she doesn't listen at all: no "Hey Nova", and a conversation or a "yes?" she was
+    waiting for stops listening too (a recording in progress is dropped). The 🎤 button still works - that's you
+    choosing to talk. On = "Hey Nova" works again."""
+    listen_state["ears_off"] = not on
+    if whisper:
+        whisper.muted = not on
+    if on:
+        if not nap.get("deep"):           # deep asleep: the ears come back when she's woken (wake_body)
+            ears.start()
+        avatar_client.send("thought", text="👂 ears on", secs=3, timeout=2)
+        task_log("EARS ON (👂)")
+        return
+    ears.stop()
+    convo["on"] = False
+    listen_state["single"] = False
+    ear_close()
+    avatar_client.send("thought", text="🙉 ears off", secs=4, timeout=2)
+    task_log("EARS OFF (👂) - not listening at all")
 
 
 def silent_ok():
@@ -1973,7 +2967,7 @@ def silent_loop():
         return
     listen_state["loop"] = True
     try:
-        while _still_listening():
+        while _still_listening() and not listen_state.get("ears_off"):
             time.sleep(0.3)
             while mouth.busy():           # never listen while she's talking
                 time.sleep(0.2)
@@ -1988,7 +2982,9 @@ def silent_loop():
                 break
             if kind == "text":
                 listen_state["single"] = False
-                avatar_client.send("say", text=f"“{text}”", secs=4, timeout=2)
+                # (kept up until her own first spoken sentence replaces it - Mouth._bubble)
+                avatar_client.send("say", text=f"“{text}”", secs=30, timeout=2)
+                task_log(f"HEARD {text[:60]!r} ({getattr(transcriber, 'timing_note', lambda: '')()})")
                 heard(text, via="silent")
             elif kind in ("silence", "unclear"):
                 rejected = getattr(transcriber, "rejected", "")
@@ -2076,6 +3072,29 @@ def confirm_pending(approved, quiet=False, remote=None):
         activity = []
         new_turn()
         think("👍 You said yes - going ahead." if approved else "👌 You said no - I'll leave it.")
+        again = next((p for p in state["pending"] if (p["args"] or {}).get("resume_at") is not None), None)
+        if again:                            # a skill asked its own question: carry it on (or stop it) here
+            state["pending"] = None
+            try:
+                out = resume_skill(again["args"], approved, activity)
+            except Exception as e:
+                think(f"💥 Something went wrong: {e}", cloud_too=False)
+                thoughts_done()
+                task_log(f"ERROR in skill resume: {type(e).__name__}: {e}")
+                return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
+            thoughts_done()
+            if quiet:
+                out.pop("say", None)
+            else:
+                speak(out.pop("say", out.get("reply")))
+                bubble(out.get("reply"))
+            return out, 200
+        if not approved:                 # "no" to a skill that only sounded right: that sentence never starts it again
+            task = state.get("task") or {}
+            for p in state["pending"]:
+                if p["name"] == "run_skill" and task.get("skill_how") == "fuzzy" and task.get("skill") == (p["args"] or {}).get("name"):
+                    skills.add_not_for(task["skill"], task.get("goal", ""))
+                    task_log(f"SKILL DENIED {task['skill']}: '{task.get('goal', '')[:80]}' will not start it again")
         state["messages"].extend(execute(state["pending"], approved, activity, brain()))
         state["pending"] = None
         n = len(state["messages"])
@@ -2104,20 +3123,24 @@ def heard(text, via="bubble"):
     text = text.strip()
     convo["last_heard"] = time.time()
     ears._note(f"heard: {text}"[:160])
+    push_event({"me": text})            # in the chat at once - not only after her answer (that can take 20 s)
     if wants_sleep(text):
         go_to_sleep("asked")
+        return
+    if just_stop(text):
+        stopped_by_voice(text, via)
         return
     note_task()
     if help_first():                   # "yes" right after "Notepad shows an error - want me to help?"
         helped = take_help(text)
         if helped is not None:
-            push_event({"me": text, **helped})
+            push_event(dict(helped))
             if via != "silent":
                 ear_listen_after_speech() if convo["on"] else ear_close()
             return
     said = take_offer(text)            # "yes" right after "your email is ready - want to see it?"
     if said is not None:
-        push_event({"me": text, "reply": said})
+        push_event({"reply": said})
         announce(said)
         if via != "silent":
             ear_listen_after_speech() if convo["on"] else ear_close()
@@ -2132,7 +3155,9 @@ def heard(text, via="bubble"):
     finally:
         convo["thinking"] = False
     convo["asked"] = time.time() if str(out.get("say") or out.get("reply") or "").rstrip().endswith("?") else 0.0
-    push_event({"me": text, **out})   # shows up in the chat page's history too
+    if not (out.get("say") or out.get("reply")) and not mouth.busy():
+        avatar_client.send("say", text="", timeout=2)       # nothing was said back: take her "heard" bubble down
+    push_event(dict(out))             # shows up in the chat page's history too (what was said went in at the top)
     ears._note(f"answered: {out.get('reply') or out.get('error', '')}"[:160])
     if status != 200:     # (the reply itself was already said and shown by answer())
         announce("Sorry, my brain isn't answering. Is Ollama running?")
@@ -2169,8 +3194,52 @@ if whisper:
 else:
     ears = voice.Ears(mouth, on_voice)
 ears.on_wake = on_wake
+ears.log = task_log
 ears.on_name = lambda: wake_body()      # (defined below)
 ears.on_sleep = lambda: go_to_sleep("asked")
+ears.is_stop = lambda text: just_stop(text)            # "Hey Nova, stop": stop, don't open a conversation
+ears.on_stop = lambda text: stopped_by_voice(text)
+
+
+# ------------------------------------------------------------------ barge-in: talk over her and she stops
+# ("Nova, stop", "wait", "ruko"). voice.BargeIn tells the user's voice from her own echo. It only runs while her ears
+# are on (👂 Hey Nova), her voice is on and ⚙ "✋ Let me interrupt her by voice" is ticked: it opens the microphone
+# only while she is talking. The setting is cached here, since BargeIn asks ~30 times a second.
+barge_flags = {}
+
+
+def refresh_barge(s=None):
+    s = s or settings()
+    barge_flags.update(on=bool(s.get("barge_in", True)) and bool(s.get("voice", True)) and bool(s.get("wake")))
+
+
+def barge_enabled():
+    return (barge_flags.get("on", False) and not listen_state.get("ears_off") and not nap.get("deep")
+            and not (whisper and whisper.muted))
+
+
+def on_barge(kind, text):
+    """The user talked over her. kind "stop" (stop / ruko / bas...) also stops a task she is working on; "name"
+    (her name, "wait", "hold on") and "talk" (a sentence of their own) only stop her talking. Then she listens
+    for what comes next."""
+    if kind == "stop" and lock.locked():
+        stop_now()
+    mouth.stop(quick=True)
+    ears._note(f"you talked over me: “{text[:50]}” - stopped ({kind})")
+    if whisper:
+        whisper.next_floor = barge.floor       # the user is still talking: don't take their voice for the room's noise
+    if kind in ("name", "talk") or convo["on"]:
+        on_wake()                             # listen for the rest (starts a conversation, like "Hey Nova")
+    else:
+        avatar_client.send("say", text="🤐", secs=2, timeout=2)
+
+
+barge = None
+if whisper:
+    refresh_barge()
+    barge = voice.BargeIn(mouth, whisper, on_barge, enabled=barge_enabled)
+    barge.log = task_log
+    barge.start()
 
 
 # ------------------------------------------------------------------ nap time: 5 minutes without a task -> she sleeps
@@ -2178,11 +3247,14 @@ ears.on_sleep = lambda: go_to_sleep("asked")
 # corner of the screen and only "Hey Nova" (or a typed message) gets her attention.
 
 IDLE_NAP = 300
+DEEP_SLEEP_AFTER = 600      # asleep this long (⚙ "Deep sleep" on): her mic turns off; only a click or a typed message wakes her
 nap = {"asleep": False, "last_task": time.time()}
 
 
 def sleep_body(after_words=False):
     """after_words: she has just been given a goodnight line - let her say it standing, then lie down."""
+    if not nap["asleep"]:
+        nap["since"] = time.time()          # the deep-sleep clock counts from when she lay down
     nap["asleep"] = True
     nap["gen"] = gen = nap.get("gen", 0) + 1
     if not after_words:
@@ -2201,12 +3273,33 @@ def sleep_body(after_words=False):
     threading.Thread(target=later, daemon=True).start()
 
 
-def wake_body():
+def deep_sleep_due(now=None):
+    now = now or time.time()
+    return (nap["asleep"] and not nap.get("deep") and settings().get("deep_sleep", True)
+            and now - nap.get("since", now) >= DEEP_SLEEP_AFTER)
+
+
+def go_deep():
+    """Asleep for a while: turn her ears off completely (no mic, no Whisper) - the TV can talk all it likes.
+    A click on her, a typed message or a phone message wakes her (wake_body turns the ears back on)."""
+    nap["deep"] = True
+    ears.stop()
+    task_log("DEEP SLEEP - mic off until clicked or messaged")
+    push_event({"reply": "💤 I'm deep asleep now - my mic is off. Click me (or type to me) to wake me up.", "kind": "suggestion"})
+    avatar_client.send("sleep", on=True, deep=True, timeout=3)
+
+
+def wake_body(clicked=False):
+    if nap.get("deep"):
+        nap["deep"] = False
+        if settings()["wake"]:
+            ears.start()                     # her ears back on
+            task_log("WOKE from deep sleep - mic on again")
     if nap["asleep"]:
         nap["asleep"] = False
         nap["reason"] = None
         nap["gen"] = nap.get("gen", 0) + 1
-        avatar_client.send("sleep", on=False, timeout=3)
+        avatar_client.send("sleep", on=False, clicked=clicked, timeout=3)
 
 
 def note_task():
@@ -2228,6 +3321,8 @@ def idle_watch():
         try:
             if nap_due():
                 go_to_sleep("idle")
+            elif deep_sleep_due():
+                go_deep()
         except Exception as e:
             task_log(f"idle watch: {type(e).__name__}: {e}")
 
@@ -2322,12 +3417,85 @@ coworker.configure(write=write_text, on_done=job_done, on_note=lambda t: think(t
 SECRETY = re.compile(r"\b(otp|one[- ]time|code|password|passcode|pin|verification|cvv)\b", re.I)
 
 
-def _speakable(n):
-    """A notification as she says it: one-time codes and passwords are never read out."""
-    line = notifications.describe(n, 200)
+def _hide_codes(line):
     if SECRETY.search(line):
         line = re.sub(r"\b[\dA-Z]{4,8}\b(?=[^\w]|$)", "(hidden)", line)
     return line
+
+
+def _speakable(n):
+    """A notification as she says it: one-time codes and passwords are never read out."""
+    return _hide_codes(notifications.describe(n, 200))
+
+
+# The iPhone's notifications arrive through Phone Link (notifications.py). Her BRAIN decides what each one is (a ringing
+# call, a missed call, a message) and how to say it - "Rahul is calling you" / "a call from an unknown number" - so
+# there are no names or phrases in code. Only the local brain sees them unless ⚙ allows the cloud one.
+PHONE_NOTE_SECS = 15       # how long the brain gets before the plain text is used (a cold 4B model took >8 s live;
+                           # a call rings ~25 s)
+PHONE_NOTE_MAX = 4         # at most this many per burst go to the brain; the rest are read as they are
+PHONE_CALL_WAIT = 2        # a ringing call waits at most this long for her own voice to finish
+phone_seen = {}            # notification id -> when: the same toast is not announced twice
+
+
+def sync_phone_banners():
+    """⚙ "Hide Phone Link pop-ups": while she reads notifications, Phone Link's own banners are switched off so only
+    she announces them. Turned back on when either switch goes off - but only if she was the one who hid them."""
+    s = settings()
+    hide = bool(s["notifications"] and s.get("phone_quiet", True))
+    if not hide and not s.get("phone_banners_hidden"):
+        return
+    try:
+        n = notifications.phone_banners(show=not hide)
+    except Exception as e:
+        task_log(f"PHONE BANNERS: couldn't change ({type(e).__name__}: {e})")
+        return
+    if n:
+        task_log(f"PHONE BANNERS: {'hidden' if hide else 'shown again'} for {n} Phone Link source(s)")
+    if bool(s.get("phone_banners_hidden")) != hide:
+        s["phone_banners_hidden"] = hide
+        save_settings(s)
+
+
+def say_only(line):
+    """Out loud only - no chat line and no bubble (iPhone notifications)."""
+    if settings()["voice"] and line:
+        mouth.say(line, show=False)
+
+
+def ring_cue():
+    """An instant ding when something from the iPhone arrives - the brain and the voice need a few seconds."""
+    try:
+        if sfx.play("happy"):
+            mouth.hold(sfx.length("happy") + 0.3)         # keep the mic from hearing it
+    except Exception:
+        pass
+
+
+def phone_note(n):
+    """(kind, sentence) for one iPhone notification: "call", "missed_call", "message" or "other"."""
+    s = settings()
+    fallback = _speakable(n)
+    model = brain(s) if s.get("phone_notes_cloud") else s["model"]
+    msgs = [{"role": "system", "content": notifications.PHONE_PROMPT},
+            {"role": "user", "content": notifications.phone_prompt(n)}]
+    box = {}
+
+    def work():
+        try:
+            box["text"] = llm.chat(model, msgs, [], fallback=s["model"], num_predict=60)[1]
+        except Exception as e:
+            task_log(f"PHONE NOTE: brain failed ({type(e).__name__}: {e})")
+
+    t0 = time.time()
+    th = threading.Thread(target=work, daemon=True)
+    th.start()
+    th.join(PHONE_NOTE_SECS)
+    task_log(f"PHONE NOTE: arrived {max(0, t0 - (n.get('time') or t0)):.1f}s before the brain started, brain took {time.time() - t0:.1f}s")
+    if th.is_alive():
+        task_log(f"PHONE NOTE: brain took longer than {PHONE_NOTE_SECS} s - reading the plain text")
+    kind, say = notifications.parse_phone_note(box.get("text"), fallback)
+    return kind, _hide_codes(say)
 
 
 def on_notifications(items):
@@ -2337,24 +3505,71 @@ def on_notifications(items):
     items = [n for n in items if not notifications.is_muted(n, s.get("notif_muted"))]   # "don't read Claude's"
     if not items:
         return
+    now = time.time()
+    if any(notifications.is_phone(n) and n.get("id") not in phone_seen for n in items) and s.get("phone_calls", True) and (
+            not nap["asleep"] or s.get("notif_sleep", False) or nap.get("reason") != "asked"):
+        ring_cue()          # the moment it arrives: a sound now, her words follow once the brain and the voice are ready
+    if any(notifications.is_phone(n) for n in items) and s.get("phone_quiet", True) and s.get("phone_banners_hidden"):
+        threading.Thread(target=notifications.phone_banners, args=(False,),   # a new iPhone app gets a new Windows key
+                         daemon=True).start()
+    for k in [k for k, t in phone_seen.items() if now - t > 60]:
+        phone_seen.pop(k, None)
+    lines, calls, phone_lines, missed, brained = [], [], [], [], 0
     for n in items:
-        push_event({"reply": "🔔 " + _speakable(n), "kind": "notification"})
-        task_log(f"NOTIFICATION from {n['app']}")
-    if nap["asleep"] and not settings().get("notif_sleep", False):
+        if notifications.is_phone(n):
+            if n.get("id") in phone_seen:
+                continue
+            phone_seen[n.get("id")] = now
+            if brained < PHONE_NOTE_MAX:
+                kind, say = phone_note(n)
+                brained += 1
+            else:
+                kind, say = "other", _speakable(n)
+            if kind in ("call", "missed_call") and not s.get("phone_calls", True):
+                continue                                  # ⚙ "tell me about phone calls" is off
+            task_log(f"NOTIFICATION from {n['app']} ({kind})")
+            (calls if kind == "call" else phone_lines).append(say)
+            if kind == "missed_call":
+                missed.append(say)
+        else:
+            task_log(f"NOTIFICATION from {n['app']}")
+            lines.append(_speakable(n))
+    for line in lines:      # iPhone ones are voice only: not in the chat or her bubble (Phone Link's pop-up is hidden too)
+        push_event({"reply": "🔔 " + line, "kind": "notification"})
+    quiet = nap["asleep"] and not settings().get("notif_sleep", False)
+    if quiet and not (calls and nap.get("reason") != "asked"):
         return              # napping: they're in the chat, but she only reads them out if ⚙ "…while I'm asleep" is on
-    if len(items) == 1:
-        line = "🔔 " + _speakable(items[0])
+    if calls:               # a ringing phone can't wait: not queued behind long answers, and not sent to the phone itself
+        end = time.time() + PHONE_CALL_WAIT          # (it is said even in an idle nap - only "go to sleep" silences it)
+        while (lock.locked() or mouth.busy()) and time.time() < end:
+            time.sleep(0.2)
+        for line in calls:
+            say_only(line)
+    if quiet:
+        return              # the ringing call was the exception; everything else waits for her to wake
+    for line in missed:
+        tell_away(line)     # a missed call is worth knowing about when they are away from the laptop
+    if phone_lines:
+        end = time.time() + 30
+        while (lock.locked() or mouth.busy()) and time.time() < end:
+            time.sleep(0.5)
+        for line in phone_lines:
+            say_only(line)
+    if not lines:
+        return
+    if len(lines) == 1:
+        line = "🔔 " + lines[0]
     else:
-        line = f"🔔 {len(items)} new notifications. " + " … ".join(_speakable(n) for n in items[:3])
-        if len(items) > 3:
-            line += f" … and {len(items) - 3} more."
+        line = f"🔔 {len(lines)} new notifications. " + " … ".join(lines[:3])
+        if len(lines) > 3:
+            line += f" … and {len(lines) - 3} more."
     end = time.time() + 30
     while (lock.locked() or mouth.busy()) and time.time() < end:    # don't talk over her own answer
         time.sleep(0.5)
     announce(line, spoken=line.replace("🔔 ", "", 1))
 
 
-notif_watcher = notifications.Watcher(on_notifications, on_note=lambda s: task_log(s))
+notif_watcher = notifications.Watcher(on_notifications, every=1, on_note=lambda s: task_log(s))   # a ringing call can't wait 4 s
 
 
 # ------------------------------------------------------------------ 📱 phone: talk to Nova through Telegram (phone.py)
@@ -2419,6 +3634,120 @@ def phone_status():
 
 phone = phone_link.Phone(on_message=phone_message, on_confirm=phone_confirm, on_stop=lambda: stop_now(),
                          status_text=phone_status)
+
+# ------------------------------------------------------------------ 📱 Nova on the iPhone (mobile.py): her web app over Tailscale
+# The page is installed from Safari ("Add to Home Screen"); every request is paired and answered like the Telegram
+# remote: short text answers, and anything that changes something asks first with Yes / No, whatever the autonomy.
+
+MOBILE_TAG = ("[from the user's phone app (the Nova web app on their iPhone); they may be away from the laptop and read "
+              "your answer as a short text message, so keep it brief and don't describe things only visible on the screen]")
+
+
+def mobile_message(text):
+    task_log(f"MOBILE in: {text[:200]}")
+    if state["pending"] and len(text.split()) <= 4 and (YES_RE.search(text) or NO_RE.search(text)):
+        out, _ = confirm_pending(bool(YES_RE.search(text)) and not NO_RE.search(text), quiet=True, remote=True)
+    else:
+        out, _ = answer(f"{MOBILE_TAG} {text}", quiet=True, remote=True)
+    push_event({"me": "📱 " + text, **{k: v for k, v in out.items() if k != "images"}})
+    task_log(f"MOBILE out: {(out.get('reply') or out.get('error') or '')[:200]}")
+    return out
+
+
+def mobile_confirm(approved):
+    out, _ = confirm_pending(approved, quiet=True, remote=True)
+    if not (out.get("reply") or out.get("pending") or out.get("activity") or out.get("error")):
+        out["reply"] = "That question isn't waiting any more."
+    push_event({"me": "📱 " + ("Yes" if approved else "No"), **{k: v for k, v in out.items() if k != "images"}})
+    return out
+
+
+mobile = mobile_mod.Mobile(on_message=mobile_message, on_confirm=mobile_confirm, on_stop=lambda: stop_now(),
+                           status_text=phone_status, state=lambda: {"asleep": bool(nap["asleep"]), "busy": lock.locked()})
+
+
+def tailscale_url():
+    """Nova's private https address if Tailscale is installed and 'serve' is set up: shown in settings so it can be typed
+    on the phone. "" when Tailscale isn't there."""
+    import shutil
+    import subprocess
+    exe = shutil.which("tailscale") or "C:/Program Files/Tailscale/tailscale.exe"
+    try:
+        out = subprocess.run([exe, "status", "--json"], capture_output=True, text=True, timeout=6,
+                             creationflags=0x08000000).stdout
+        name = (json.loads(out).get("Self") or {}).get("DNSName", "").rstrip(".")
+        return f"https://{name}" if name else ""
+    except Exception:
+        return ""
+
+
+def mobile_info():
+    return {"on": bool(settings().get("mobile")), "running": mobile.running(), "code": mobile.pairing(),
+            "devices": mobile.devices(), "url": tailscale_url(), "port": mobile_mod.PORT,
+            "serve": f"tailscale serve --bg --https=443 http://127.0.0.1:{mobile_mod.PORT}"}
+
+
+@app.get("/api/mobile")
+def mobile_get():
+    return jsonify(mobile_info())
+
+
+@app.post("/api/mobile")
+def mobile_set():
+    """⚙ Nova on iPhone: switch on/off, new pairing code, remove a paired device."""
+    body = _body()
+    if "on" in body:
+        s = settings()
+        s["mobile"] = body["on"] is True
+        save_settings(s)
+        mobile.start() if s["mobile"] else mobile.stop()
+    if body.get("new_code") is True:
+        if not mobile.running():
+            return jsonify(error="Switch Nova on iPhone on first.", **mobile_info()), 400
+        mobile.new_pair_code()
+    if "remove" in body:
+        mobile.remove(str(body["remove"]))
+    return jsonify(mobile_info())
+
+
+# ------------------------------------------------------------------ 📧 Gmail, read-only (gmail.py)
+
+def email_allowed():
+    """Her mail is read by the local brain only - unless ⚙ allows the chosen cloud brain to see it too."""
+    s = settings()
+    return bool(s.get("email_cloud")) or not cloud.parse(task_brain(s))
+
+
+tools.email_ok = email_allowed
+
+
+@app.get("/api/gmail")
+def gmail_get():
+    return jsonify(**gmail.status(), connecting=gmail.connecting["on"], error=gmail.connecting["error"])
+
+
+@app.post("/api/gmail")
+def gmail_set():
+    """⚙ Gmail: save the Google client, connect (Google's own sign-in opens in the browser), disconnect."""
+    body = _body()
+    try:
+        if "client_id" in body or "client_secret" in body:
+            gmail.save_client(_text(body, "client_id"), _text(body, "client_secret"))
+        if body.get("connect") is True and not gmail.connecting["on"]:
+            gmail.connecting.update(on=True, error="")
+
+            def go():
+                try:
+                    gmail.connect()
+                except gmail.GmailError as e:
+                    gmail.connecting["error"] = str(e)
+                    task_log(f"GMAIL connect: {e}")
+            threading.Thread(target=go, daemon=True).start()
+        if body.get("disconnect") is True:
+            gmail.disconnect()
+    except gmail.GmailError as e:
+        return jsonify(error=str(e), **gmail.status()), 400
+    return jsonify(**gmail.status(), connecting=gmail.connecting["on"], error=gmail.connecting["error"])
 
 
 @app.get("/api/phone")
@@ -2612,6 +3941,28 @@ toolpick.EXTRA = mcp.tools_list
 toolpick.EXTRA_GROUPS = mcp.groups
 
 
+@app.get("/api/forms")
+def forms_get():
+    """⚙ Forms: the user's saved form details (this page only - _ours() keeps other sites out)."""
+    from nova.actions import forms
+    labels = {k: lbl for k, lbl, _ in forms.FIELDS}
+    d = forms.load()
+    return jsonify(fields=[{"key": k, "label": labels[k], "value": d[k]} for k in forms.DIALOG_ORDER])
+
+
+@app.post("/api/forms")
+def forms_set():
+    from nova.actions import forms
+    body = _body().get("details")
+    if not isinstance(body, dict):
+        return jsonify(error="expected details"), 400
+    saved, err = forms.save(body)
+    if err:
+        return jsonify(error=err), 400
+    task_log(f"FORMS: saved {len([v for v in saved.values() if v])} details (values not logged)")
+    return forms_get()
+
+
 @app.get("/api/mcp")
 def mcp_get():
     try:
@@ -2751,12 +4102,15 @@ def start_background():
     threading.Thread(target=idle_watch, daemon=True).start()
     threading.Thread(target=suggest_watch, daemon=True).start()
     phone.start()                               # only if a bot token is saved
+    if settings().get("mobile"):
+        mobile.start()                          # the iPhone web app's server (127.0.0.1 only)
     mcp.start()                                 # 🔌 connectors in data/mcp.json, each on its own thread
     threading.Thread(target=presence_watch, daemon=True).start()
     threading.Thread(target=work_watch, daemon=True).start()
     threading.Thread(target=help_watch, daemon=True).start()
     if settings()["notifications"]:
         notif_watcher.start()
+    threading.Thread(target=sync_phone_banners, daemon=True).start()
 # The listener is started by the running app (desktop.py / __main__ below), never as a side effect of importing
 # this module - a stray second listener would answer "Hey Nova" at the same time as the real one.
 
@@ -2858,7 +4212,7 @@ quit_hook = None          # set by desktop.py: closes the windows, tray, 3D Nova
 def quit_nova():
     """Shut Nova down completely (not the laptop): ears, notifications, phone, connectors, 3D Nova, then the process."""
     task_log("QUIT (asked)")
-    for f in (stop_now, mouth.stop, ears.stop, notif_watcher.stop, ear_close):
+    for f in (stop_now, mouth.stop, ears.stop, notif_watcher.stop, mobile.stop, ear_close):
         try:
             f()
         except Exception:

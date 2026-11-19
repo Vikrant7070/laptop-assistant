@@ -205,6 +205,7 @@ class Nova:
         self.working_since = 0.0
         self.working_end = 0.0       # when the assistant last stopped being busy (the desk stays a little longer)
         self.asleep = False          # napping in the bottom-right corner (5 minutes without a task, or "go to sleep")
+        self.deep = False            # ...and asleep long enough that the app turned her mic off
         self.next_fidget = time.time() + random.uniform(20, 40)
         self.dibs = {}
         self.moves = body.load_moves()   # moves the brain invented, by name
@@ -380,12 +381,23 @@ class Nova:
         ev = self.walk_to(*self.corner())
         threading.Thread(target=lambda: (ev.wait(20), self.q.put(({"do": "_doze"}, None, None))), daemon=True).start()
 
-    def wake_up(self):
+    def sleep_pose(self):
+        """Lying down on her side ("nap"); the older standing doze ("sleepy") if the sprites predate it."""
+        return "nap" if "nap" in self.sp.images else "sleepy"
+
+    def wake_up(self, clicked=False):
         if not self.asleep:
             return
         self.asleep = False
+        self.deep = False
         self.base = "idle"
-        self.start_oneshot("wave")      # no "Hey!" here: she's usually woken to listen, and the mic would hear it
+        if "wakeup" in self.sp.images:
+            # Up off the floor, eyes flutter open, a rub of the eyes, a big stretch, a happy hop with sparkles, a wave.
+            self.start_oneshot("wakeup", after="wave")
+            if clicked:
+                self.say("I'm up! ✨", 3)    # a bubble, not her voice: the mic is just coming back on
+        else:
+            self.start_oneshot("wave")  # no "Hey!" here: she's usually woken to listen, and the mic would hear it
         self.next_wander = time.time() + random.uniform(20, 40)
         self.next_fidget = time.time() + random.uniform(25, 60)
 
@@ -449,11 +461,17 @@ class Nova:
             self.last_errand = time.time()           # she goes back to her corner a few seconds after the last one
         if do == "anim" and cmd.get("name") in self.sp.images:
             name = cmd["name"]
-            if self.asleep and name != "talk":
-                name = "sleepy"          # napping: only talking (in her sleep) changes the pose
+            if self.asleep:
+                name = self.sleep_pose()     # napping: she stays lying down (her mouth still moves if she talks)
             self.base = name
         elif do == "sleep":
-            self.nap() if cmd.get("on") else self.wake_up()
+            if cmd.get("on"):
+                self.nap()
+                if cmd.get("deep") and not self.deep:
+                    self.deep = True       # her mic is off now - say so once, quietly
+                    self.think_aloud("💤 mic off - click me to wake me", 8)
+            else:
+                self.wake_up(clicked=bool(cmd.get("clicked")))
         elif do == "work":
             on, now = bool(cmd.get("on")), time.time()
             if on and not self.working and now - self.working_end >= self.WORK_HOLD:
@@ -463,8 +481,8 @@ class Nova:
             self.working = on
         elif do == "_doze":
             if self.asleep:
-                self.base = "sleepy"
-                self.start_oneshot("yawn")
+                self.base = self.sleep_pose()
+                self.start_oneshot("yawn", after="liedown" if "liedown" in self.sp.images else None)
         elif do == "say":
             self.say(cmd.get("text", ""), float(cmd.get("secs", 6)))
         elif do == "thought":
@@ -646,7 +664,7 @@ class Nova:
                     return
                 b = nova.bubble
                 body = json.dumps({"ok": True, "pos": nova.pos, "visible": nova.visible, "talking": nova.base == "talk",
-                                   "asleep": nova.asleep, "base": nova.base,
+                                   "asleep": nova.asleep, "deep": nova.deep, "base": nova.base,
                                    "bubble": b[0] if b and time.time() < b[1] else "",
                                    "reactions": [r for r in REACTIONS if r in nova.sp.images],
                                    "moves": sorted(nova.moves), "live": nova.live_now(),
@@ -674,7 +692,11 @@ class Nova:
             self.pos = [px + e.x_root - x0, py + e.y_root - y0]
 
     def on_release(self, e):
-        if self.drag and not self.drag[4]:
+        if self.drag and not self.drag[4] and self.asleep:
+            # Clicked while asleep: wake up (with the wake-up move) and tell the app, which turns her mic back on.
+            self.wake_up(clicked=True)
+            threading.Thread(target=self.tell_app_awake, daemon=True).start()
+        elif self.drag and not self.drag[4]:
             self.start_oneshot("wave")
             try:
                 urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:5055/api/show_window", method="POST"), timeout=1)
@@ -684,6 +706,13 @@ class Nova:
         if not self.asleep:
             self.next_wander = time.time() + random.uniform(20, 40)
             self.last_errand = time.time()
+
+    @staticmethod
+    def tell_app_awake():
+        try:
+            urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:5055/api/wake", method="POST"), timeout=3)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ main loop
     def tick(self):

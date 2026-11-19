@@ -28,8 +28,9 @@ GROUPS = [
      "organize_folder"},                                                                                     # space
     {"find_app", "search_installable_apps", "install_app", "uninstall_app", "list_installed_apps",
      "list_startup_apps"},                                                                                   # apps
-    {"add_note", "list_notes", "set_reminder"},
+    {"add_note", "list_notes", "set_reminder", "list_reminders"},
     {"read_notifications", "mute_notifications"},
+    {"check_email", "read_email", "connect_gmail"},
     {"remember_fact", "forget_fact", "update_profile", "learn_lesson", "recall_knowledge"},
     {"look_at_screen", "look_through_camera", "take_screenshot"},
     {"list_top_processes", "kill_process", "get_system_status", "network_info"},
@@ -38,8 +39,10 @@ GROUPS = [
     {"window_action", "minimize_all_windows", "close_all_windows", "drag_window", "list_windows"},
     {"draft_email", "write_document", "research_in_background", "show_finished_work", "background_jobs",
      "stop_background_job"},                                                                                  # co-worker
-    {"run_skill", "save_skill", "list_skills", "delete_skill"},                                              # skills
+    {"run_skill", "save_skill", "edit_skill", "undo_skill_change", "save_task_as_skill", "list_skills", "delete_skill",
+     "start_watching", "stop_watching"},                                              # skills
     {"react", "new_move", "forget_move", "change_look"},                                                     # 3D body
+    {"fill_form", "help_login", "login_if_needed", "wait_for_code", "click_element", "list_clickable", "open_website"},         # forms, logins
 ]
 
 # What people actually say, so a short request finds its tool ("make it louder" -> set_volume).
@@ -56,6 +59,14 @@ HINTS = {
     "read_page": "read this page article website docs, what does the page say, summarise the page",
     "find_app": "do I have this app, is it installed, open an app I may not have, need an app for this",
     "fill_in": "search for something on a website, type in the search box",
+    "fill_form": "fill in this form, fill out the form with my details, sign up form, application form, my address name email",
+    "help_login": "log in sign in login to the site account, my password, help me log in",
+    "login_if_needed": "make sure I am logged in, sign in to the site if needed, log in before continuing",
+    "edit_skill": "change my skill, fix the skill, update the skill, add a step to the skill, the skill should also, undo skill change",
+    "save_task_as_skill": "remember that, save that as a skill, next time do that, make that a skill, call it",
+    "start_watching": "watch me, watch how I do this, let me show you, learn this from me, record what I do",
+    "stop_watching": "done, I'm finished showing you, stop watching",
+    "wait_for_code": "otp verification code one time password two factor 2fa sms code authenticator code enter the code",
     "click_nth": "play the first video, open the second result",
     "list_clickable": "what can I click on this page, buttons links",
     "look_at_screen": "what's on my screen, read this error, look at this",
@@ -68,6 +79,7 @@ HINTS = {
     "clean_temp_files": "clean up junk temp files, free space",
     "add_note": "write this down, note that, jot",
     "set_reminder": "remind me in minutes, alarm, timer",
+    "list_reminders": "what reminders do I have, my reminders, upcoming reminders",
     "take_screenshot": "screenshot capture the screen",
     "power_action": "shut down turn off restart sleep the laptop computer pc",
     "lock_screen": "lock my laptop",
@@ -87,6 +99,9 @@ HINTS = {
     "install_app": "install download an app program",
     "uninstall_app": "uninstall remove an app program",
     "read_notifications": "read my notifications, any new messages, what did I miss, alerts, whatsapp mail",
+    "check_email": "check my email gmail inbox unread mail any important emails today did someone email me find the email from",
+    "read_email": "read the email open that mail summarise the email what does the email say",
+    "connect_gmail": "connect gmail link my gmail sign in to gmail set up gmail for nova give nova access to my email",
     "mute_notifications": "don't read notifications from an app, stop reading ignore mute silence that app's "
                           "notifications, resume start reading unmute its notifications again",
     "draft_email": "draft write compose an email mail gmail to someone in the background",
