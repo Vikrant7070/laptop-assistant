@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from nova.actions import checks, recorder, skills
+from nova.actions import recorder, skills
 from nova.core import app
 
 

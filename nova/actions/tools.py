@@ -1421,7 +1421,7 @@ def fill_form(window=""):
         return f"I don't see any form boxes in '{w[1]}'."
     to_fill, left, unknown = forms.plan(boxes, details)
     if not to_fill:
-        return (f"Nothing on this form matches the details I have. Boxes I see: "
+        return ("Nothing on this form matches the details I have. Boxes I see: "
                 + ", ".join(b["name"] for b in boxes)[:400])
     from nova.avatar import avatar_client
     _focus(w[0])
