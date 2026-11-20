@@ -1,6 +1,6 @@
 # Child brain — full development plan
 
-Status: **building** — WP 0.1 + 0.2 done 2026-11-20 (PyTorch + GPU OK, run cards repeat exactly).
+Status: **building** — WP 0.1–0.3 done 2026-11-20 (PyTorch + GPU OK, run cards repeat exactly, Snake + Maze on the GPU).
 The *why* and the big idea are in [child-brain-plan.md](child-brain-plan.md). This file is the *how*: what to
 build, in what order, how to test each piece, and when each part counts as done.
 
@@ -123,6 +123,7 @@ end of each phase.
 | 0.2 | `childbrain/` skeleton, `runs/` ignored by git, a "run card" (settings + seed + code version saved with every run) | Re-running a saved run card gives the same numbers |
 | | **✅ Done 2026-11-20:** `childbrain/runcard.py` + `python -m childbrain run / rerun / list`. A saved run, re-run by a fresh program, gives **exactly** the same numbers on the CPU and on the GPU. See "WP 0.2 result" below | |
 | 0.3 | Shared game format + Snake + Maze, thousands of copies on the GPU | 10,000 Snake steps run in well under a second; a random player gets the expected low score |
+| | **✅ Done 2026-11-20:** `childbrain/worlds/` (shared format + Snake + Maze). 10,000 Snake steps take ~30–130 ms on the GPU; a random player scores as low as two independent checks predict. See "WP 0.3 result" below | |
 | 0.4 | The other 8 games and the three "changed" generators | Every game passes the same format tests; sealed games are stored with fingerprints |
 | 0.5 | Guard v1: separate program, allowed-action list, limits, log, off switch | A test brain that tries a forbidden action is blocked and logged; the off switch stops it within 1 second |
 | 0.6 | Nightly exam + saved versions + rollback | A deliberately damaged brain fails the exam and is rolled back automatically |
@@ -158,6 +159,28 @@ end of each phase.
 - **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 14 passed.
 - **Small note:** PyTorch prints "Failed to initialize NumPy" because NumPy isn't installed. It's harmless.
   NumPy arrives with matplotlib when we need charts.
+
+#### WP 0.3 result (2026-11-20)
+
+- **Shared format** (`childbrain/worlds/base.py`): every game is a batch of `n` copies on one device.
+  `observe()` → (n, 6, 12, 12) layers *walls, me, items, enemies, goal, extra* (outside the playing area = wall);
+  `allowed()` → (n, 6) for *up, down, left, right, stay, use* (a move that isn't allowed counts as "stay");
+  `step(actions)` → obs, reward, done, info (finished copies restart at once). Every game has a step limit, its own
+  seeded random source (same seed = same game), and `split="test"` for fixed exam worlds.
+- **Snake** (8×8, 200 steps): +1 food, −1 crash. "stay" = keep going; turning straight back isn't allowed;
+  going 128 steps without food ends the episode, so it can't loop forever.
+- **Maze** (11×11, 100 steps): +1 at the goal, a rare reward. Mazes come from two fixed banks (practice and
+  exam, 1,024 mazes each, ×8 rotations/mirror images). Found while testing: depth-first carving often makes one
+  long corridor, so small mazes repeat by chance. Repeats are now skipped, and no practice maze, in any rotation,
+  is in the exam bank.
+- **Speed** (GPU shared with a running Nova): 10,000 Snake steps (1,000 copies × 10) take ~30–130 ms.
+  With 4,096 copies: ~1.4 M Snake and ~3 M Maze steps per second on the GPU (~0.5 M / 1 M on the CPU).
+- **Random player = the floor every brain must beat:**
+  Snake −0.89 average (it almost always crashes first; a plain-Python Snake written separately gives −0.89);
+  Maze 16% reach the goal in time (the exact chance, worked out without dice, is 16.3%).
+  Sanity players: a simple greedy Snake scores +17; a shortest-path Maze player always wins.
+- **Run cards:** `python -m childbrain run random-play --set game=maze` saves and repeats exactly.
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 41 passed (~30 s).
 
 ### Phase 1 — Show the problem (≈ 1 week)
 

@@ -14,6 +14,7 @@ from .runcard import CARD_FILE, RESULTS_FILE, rerun, run
 
 EXPERIMENTS = {
     "sanity": "childbrain.measure.sanity:tiny_train",
+    "random-play": "childbrain.measure.random_play:random_play",
 }
 
 
