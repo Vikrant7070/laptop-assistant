@@ -58,10 +58,17 @@ class BadBrain(Exception):
     """The brain gave scores that aren't numbers (NaN / infinity)."""
 
 
-def act(net: nn.Module, obs: torch.Tensor, allowed: torch.Tensor) -> torch.Tensor:
-    """Pick the best-scoring allowed button for every copy."""
+def choose(net: nn.Module, obs: torch.Tensor, allowed: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """(best allowed button per copy, whether all scores were real numbers). Stays on the GPU: no waiting."""
     with torch.no_grad():
         scores = net(obs)
-    if not torch.isfinite(scores[allowed]).all():
+    ok = torch.isfinite(torch.where(allowed, scores, 0.0)).all()
+    return torch.where(allowed, scores, -torch.inf).argmax(1), ok
+
+
+def act(net: nn.Module, obs: torch.Tensor, allowed: torch.Tensor) -> torch.Tensor:
+    """Pick the best-scoring allowed button for every copy; a brain giving NaN / infinity is broken."""
+    buttons, ok = choose(net, obs, allowed)
+    if not ok:
         raise BadBrain("the brain's button scores aren't all numbers")
-    return torch.where(allowed, scores, -torch.inf).argmax(1)
+    return buttons
