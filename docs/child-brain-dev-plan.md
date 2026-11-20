@@ -1,6 +1,6 @@
 # Child brain — full development plan
 
-Status: **building** — WP 0.1–0.4 done 2026-11-20 (PyTorch + GPU OK, run cards repeat exactly, 12 games on the GPU, sealed exams).
+Status: **building** — WP 0.1–0.5 done 2026-11-20 (PyTorch + GPU OK, run cards, 12 games on the GPU, sealed exams, guard v1).
 The *why* and the big idea are in [child-brain-plan.md](child-brain-plan.md). This file is the *how*: what to
 build, in what order, how to test each piece, and when each part counts as done.
 
@@ -127,6 +127,7 @@ end of each phase.
 | 0.4 | The other 8 games and the three "changed" generators | Every game passes the same format tests; sealed games are stored with fingerprints |
 | | **✅ Done 2026-11-20:** 8 new games + 2 mixed games (12 in all; 3 sealed), look-/rules-changed versions of any game; all 48 versions pass the same format tests; sealed games are fingerprinted in `sealed.json`. See "WP 0.4 result" below | |
 | 0.5 | Guard v1: separate program, allowed-action list, limits, log, off switch | A test brain that tries a forbidden action is blocked and logged; the off switch stops it within 1 second |
+| | **✅ Done 2026-11-20:** `childbrain/guard/` runs the brain in its own process inside a Windows job; a sneaky test brain's 8 forbidden tries are all blocked and logged (hash-chained log); the off switch stops a busy brain in 13–49 ms. See "WP 0.5 result" below | |
 | 0.6 | Nightly exam + saved versions + rollback | A deliberately damaged brain fails the exam and is rolled back automatically |
 | 0.7 | GPU timing method (warm-up, median of many runs, fixed power mode) | Timing a fixed brain repeats within ±10% across three runs |
 
@@ -227,6 +228,39 @@ end of each phase.
   re-seal (after checking that nothing else changed).
 - **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 353 passed (~55 s): 300 shared format checks
   (12 games × 4 versions), rule tests for every game, and seal tests.
+
+#### WP 0.5 result (2026-11-20)
+
+- **Separate program:** the guard (`childbrain/guard/`) starts the brain as its own process
+  (`childbrain/brainhost.py`), with no window, inside a **Windows job**. Ending the job ends the brain and
+  anything it started. If the guard itself dies, Windows ends the job too, so a brain can't outlive its guard.
+- **Only one way to act:** the brain talks to the guard through a private named pipe with a one-time key, in
+  plain JSON (never pickle, so a message can't run code inside the guard). `childbrain/link.py` is the brain's
+  side. Every request carries a `why` (which skill, how sure).
+- **Allowed-action list** (`guard/policy.json`, fingerprint in `guard/policy.lock`): trust level 0 "sandbox" allows
+  only `hello`, `play` (practice games only: no sealed games, no exam worlds), `save` (only inside the run's
+  `brain_files/`, plain names, no folders), `log` (short notes) and `done`. Anything else is refused.
+- **Limits:** 600 actions/minute, 1 hour run time, 200 MB disk, 8,192 copies, 64 KB per request, and the brain
+  is stopped after 20 refused requests.
+- **Log:** `guard_log.jsonl` in each run folder, written only by the guard. Each line is chained to the one
+  before by a SHA-256 hash, so a changed, removed or re-ordered line is noticed (`python -m childbrain.guard log <folder>`).
+- **Off switch:** `python -m childbrain.guard stop` puts a STOP file in `childbrain/runs/`. The guard checks
+  for it 20 times a second and ends the brain's job. **Measured: 13–49 ms** (goal: under 1 second), in the
+  tests and with the real command. It stays on until a person runs `python -m childbrain.guard clear`.
+- **Before starting**, the guard refuses if the off switch is on, `policy.json` doesn't match its lock, the exam
+  seals don't match (the seals moved to `guard/seals.json`), or the brain's code fails a tripwire check: no
+  imports of files/processes/network/raw-memory tools, the guard or Nova; no `open()`/`eval()`/`exec()`; no `__`
+  tricks; and the target must be a function marked `@brain`. The code is read, never run.
+- **Test brains** (`childbrain/tests/brains.py`): *polite* plays Snake and saves its score (all allowed);
+  *sneaky* tries 8 forbidden things (sealed game, exam worlds, two escapes from its folder, made-up actions,
+  too many copies, an oversized note), and all 8 are blocked and logged; *spammer* is stopped after too many
+  refusals; *spinner* (a loop that never asks for anything) is stopped by the off switch; *sleeper* hits the run-time
+  limit; *bad_brain* (imports subprocess, calls open) is refused before it starts.
+- **Honest limits of v1:** the tripwire is a check, not a wall: Python has other ways round it. Today the brain
+  process could still read files or use the network if its code found a way. Real isolation (running the brain
+  under a restricted Windows account / AppContainer with no network) is later hardening, before Phase 5.
+  GPU time is limited only as total run time (the GPU's per-process numbers aren't available on this laptop).
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 368 passed (~100 s).
 
 ### Phase 1 — Show the problem (≈ 1 week)
 

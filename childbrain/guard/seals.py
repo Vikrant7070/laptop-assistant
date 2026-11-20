@@ -1,13 +1,13 @@
 """Fingerprints (SHA-256) for the sealed exam games.
 
-For each sealed game, sealed.json keeps two fingerprints:
+For each sealed game, seals.json keeps two fingerprints:
   code  the game's own file plus the shared files it is built from
   exam  the exact exam it produces: a fixed batch of exam worlds played with fixed moves on the CPU,
         hashing every picture, score and "done" (so a changed rule or a changed exam layout shows up
         even if nobody touched the file listed under "code")
 
-`verify()` lists every mismatch; the guard (WP 0.5) refuses to run exams when the list isn't empty.
-Only a person re-seals, after looking at the change:  python -m childbrain seal
+`verify()` lists every mismatch; the guard refuses to start while the list isn't empty.
+Only a person re-seals, after looking at the change:  python -m childbrain.guard seal
 """
 
 from __future__ import annotations
@@ -22,7 +22,8 @@ import torch
 
 from .. import ROOT
 
-SEAL_FILE = Path(__file__).with_name("sealed.json")
+SEAL_FILE = Path(__file__).with_name("seals.json")
+WORLDS_DIR = Path(__file__).resolve().parent.parent / "worlds"
 SHARED = ("base.py", "enemies.py", "maze.py")  # files every sealed game may depend on
 EXAM_COPIES, EXAM_STEPS = 64, 60
 
@@ -36,8 +37,7 @@ def _file_hash(paths: list[Path]) -> str:
 
 
 def code_fingerprint(cls) -> str:
-    here = Path(__file__).parent
-    return _file_hash([Path(inspect.getsourcefile(cls))] + [here / f for f in SHARED])
+    return _file_hash([Path(inspect.getsourcefile(cls))] + [WORLDS_DIR / f for f in SHARED])
 
 
 def exam_fingerprint(cls) -> str:
@@ -62,7 +62,7 @@ def _bytes(t: torch.Tensor) -> bytes:
 
 
 def fingerprints() -> dict:
-    from . import SEALED
+    from ..worlds import SEALED
 
     return {name: {"code": code_fingerprint(cls), "exam": exam_fingerprint(cls)} for name, cls in SEALED.items()}
 
