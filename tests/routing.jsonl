@@ -1,0 +1,49 @@
+{"kind": "tool", "query": "what time is it", "must": ["get_datetime"], "note": "time question"}
+{"kind": "tool", "query": "how is my battery", "must": ["get_system_status"], "note": "status question"}
+{"kind": "tool", "query": "open chrome", "must": ["open_app", "open_website"], "note": "opening an app"}
+{"kind": "tool", "query": "close everything", "must": ["close_all_windows"], "note": "bulk close"}
+{"kind": "tool", "query": "make it louder", "must": ["set_volume"], "note": "volume, no explicit noun"}
+{"kind": "tool", "query": "play the first video", "must": ["click_nth", "video_control"], "note": "page group expansion"}
+{"kind": "tool", "query": "what's on my screen", "must": ["look_at_screen"], "note": "vision"}
+{"kind": "tool", "query": "remember that I like tea", "must": ["remember_fact"], "note": "long-term memory"}
+{"kind": "tool", "query": "remind me in 10 minutes to call mom", "must": ["set_reminder"], "note": "reminder"}
+{"kind": "tool", "query": "how much space is left", "must": ["find_large_files", "temp_files_size"], "note": "disk group"}
+{"kind": "tool", "query": "clean up temp files", "must": ["clean_temp_files"], "note": "cleanup"}
+{"kind": "tool", "query": "turn on dark mode", "must": ["set_dark_mode"], "note": "windows setting"}
+{"kind": "tool", "query": "shut down the laptop", "must": ["power_action"], "note": "power"}
+{"kind": "tool", "query": "lock my laptop", "must": ["lock_screen"], "note": "lock"}
+{"kind": "tool", "query": "read my notifications", "must": ["read_notifications"], "note": "notifications group"}
+{"kind": "tool", "query": "check my email", "must": ["check_email"], "note": "email group"}
+{"kind": "tool", "query": "dance", "must": ["react"], "note": "body"}
+{"kind": "tool", "query": "change your hair to pink", "must": ["change_look"], "note": "appearance"}
+{"kind": "tool", "query": "watch me do this", "must": ["start_watching"], "note": "recorder"}
+{"kind": "tool", "query": "take a screenshot", "must": ["take_screenshot"], "note": "screenshot"}
+{"kind": "tool", "query": "what is eating my memory", "must": ["list_top_processes"], "note": "process group"}
+{"kind": "tool", "query": "find my resume", "must": ["search_files", "list_folder"], "note": "file group"}
+{"kind": "tool", "query": "install vlc", "must": ["install_app"], "note": "app install group"}
+{"kind": "tool", "query": "turn off wifi", "must": ["toggle_wifi"], "note": "network toggle"}
+{"kind": "tool", "query": "move chrome to the left side", "must": ["drag_window", "window_action"], "note": "window move; brings the whole window group"}
+{"kind": "tool", "query": "put chrome in the top-left corner", "must": ["window_action"], "note": "corner wording only reaches the catch-all window tool, not drag_window (known gap, follow-up)"}
+{"kind": "tool", "query": "play some music", "must": ["media_control"], "note": "media"}
+{"kind": "tool", "query": "research the best laptop under 50k", "must": ["research_in_background"], "note": "background research"}
+{"kind": "skill", "query": "movie time", "skill": "movie-time", "how": "exact", "note": "name is the phrase"}
+{"kind": "skill", "query": "hey lucy, movie time", "skill": "movie-time", "how": "exact", "note": "phrase inside a sentence"}
+{"kind": "skill", "query": "anime time", "skill": "anime-time", "how": "exact", "note": "name is the phrase"}
+{"kind": "skill", "query": "crunchyroll fullscreen", "skill": "anime-time", "how": "exact", "note": "example phrase"}
+{"kind": "skill", "query": "morning check", "skill": "morning-check", "how": "exact", "note": "name is the phrase"}
+{"kind": "skill", "query": "work mode", "skill": "work-mode", "how": "exact", "note": "name is the phrase"}
+{"kind": "skill", "query": "focus mode", "skill": "focus-mode", "how": "exact", "note": "name is the phrase"}
+{"kind": "skill", "query": "laptop health", "skill": "laptop-health", "how": "exact", "note": "name is the phrase"}
+{"kind": "skill", "query": "how is my laptop doing", "skill": "laptop-health", "how": "exact", "note": "example phrase"}
+{"kind": "skill", "query": "research quantum computing", "skill": "web-research", "how": "exact", "note": "needs_input skill still matches"}
+{"kind": "skill", "query": "good night", "skill": null, "how": null, "note": "near miss must not start the morning briefing"}
+{"kind": "skill", "query": "play lofi music", "skill": null, "how": null, "note": "no skill for this; must answer instead"}
+{"kind": "skill", "query": "check the latest anime", "skill": null, "how": null, "note": "vetoed by anime-time's not_for"}
+{"kind": "route", "query": "write a python script to rename files", "code": true, "deep": false, "question": false, "note": "code job"}
+{"kind": "route", "query": "what's wrong with this code: print('hi' - 1)", "code": true, "deep": false, "question": true, "note": "code question, not a job"}
+{"kind": "route", "query": "why is my laptop slow and what should I do step by step", "code": false, "deep": true, "question": true, "note": "planning request"}
+{"kind": "route", "query": "compare python and javascript for beginners", "code": true, "deep": true, "question": false, "note": "both triggers"}
+{"kind": "route", "query": "run the tests in my project", "code": false, "deep": false, "question": false, "note": "everyday brain"}
+{"kind": "route", "query": "open notepad", "code": false, "deep": false, "question": false, "note": "everyday brain"}
+{"kind": "route", "query": "what time is it", "code": false, "deep": false, "question": false, "note": "everyday brain"}
+{"kind": "route", "query": "explain recursion", "code": false, "deep": false, "question": true, "note": "question trigger without a code trigger"}
