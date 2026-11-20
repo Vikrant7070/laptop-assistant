@@ -290,6 +290,22 @@ class Guard:
             return False, f"notes must be text of at most {self.limits['log_text_chars']} characters", None
         return True, "noted", None
 
+    def _do_submit(self, args):
+        """Hand in a saved file {"genes", "weights"} as a new version. It is only used after it passes
+        a nightly exam; until then nothing changes."""
+        from ..brain.net import from_json
+        from .versions import VersionStore
+
+        name = args["file"]
+        if not isinstance(name, str) or not NAME_OK.match(name) or not (self.files / name).exists():
+            return False, "submit a file saved earlier in this run", None
+        data = json.loads((self.files / name).read_text(encoding="utf-8"))
+        genes, weights = data["genes"], data["weights"]
+        from_json(genes, weights)  # must build and fit, or it's refused now
+        vid = VersionStore(self.runs_dir / "versions").submit(genes, weights, source=str(self.folder),
+                                                               note=str(args.get("note", "")))
+        return True, "submitted for tonight's exam", {"version": vid}
+
     def _do_done(self, args):
         return True, "bye", None
 

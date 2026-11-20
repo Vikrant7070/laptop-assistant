@@ -25,6 +25,10 @@ class ChainLog:
         self.prev, self.seq = START, 0
         self.lock = threading.Lock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.exists():  # carry on an existing log's chain
+            entries = read(self.path)
+            if entries:
+                self.prev, self.seq = entries[-1]["hash"], entries[-1]["seq"] + 1
 
     def write(self, **entry) -> dict:
         with self.lock:

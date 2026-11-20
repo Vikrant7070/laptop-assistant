@@ -3,8 +3,15 @@
   "levels": {
     "0": {
       "name": "sandbox",
-      "means": "play practice games only; nothing outside its own run folder",
-      "actions": ["hello", "play", "save", "log", "done"]
+      "means": "play practice games only; nothing outside its own run folder; new versions only through the nightly exam",
+      "actions": [
+        "hello",
+        "play",
+        "save",
+        "log",
+        "submit",
+        "done"
+      ]
     }
   },
   "limits": {
@@ -15,6 +22,6 @@
     "max_steps_per_play": 1000000,
     "blocked_before_stop": 20,
     "log_text_chars": 500,
-    "request_bytes": 65536
+    "request_bytes": 8388608
   }
 }
