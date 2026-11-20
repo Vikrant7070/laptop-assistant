@@ -79,7 +79,7 @@ def choices():
 
 
 def model_path(ch):
-    """Her VRM file, or None when the folder has none (she uses the toon body)."""
+    """Her VRM file, or None when the folder has none (then she can't be shown)."""
     p = ch["folder"] / ch["model"]["file"]
     return p if p.is_file() else None
 

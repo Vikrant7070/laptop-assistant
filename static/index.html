@@ -829,6 +829,7 @@ function openSetup(s) {
   fillRouting(s); $("#avatarRoam").value = s.avatar_roam || "corner";
   $("#character").innerHTML = (s.characters || []).map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join("");
   $("#character").value = s.character || "nova";
+  $("#character").dataset.was = $("#character").value;   // Save sends her only when you picked another one
   $("#reasoning").value = s.reasoning || "auto";
   $("#sounds").checked = s.reaction_sounds !== false; $("#powerOk").checked = !!s.power_ok;
   $("#setup").classList.add("show");
@@ -937,7 +938,7 @@ $("#saveModel").onclick = async () => {
       autonomy: document.querySelector("[name=aut]:checked")?.value, autostart: $("#autostart").checked,
       camera: $("#camera").checked, screen: $("#screen").checked,
       suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, deep_sleep: $("#deepSleep").checked, listen_pause: +$("#listenPause").value || 0.7, listen_max: +$("#listenMax").value || 10, phone_calls: $("#phoneCalls").checked, phone_quiet: $("#phoneQuiet").checked,phone_notes_cloud: $("#phoneCloud").checked, email_cloud: $("#emailCloud").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
-      avatar_roam: $("#avatarRoam").value, character: $("#character").value || undefined,
+      avatar_roam: $("#avatarRoam").value, character: $("#character").value !== $("#character").dataset.was ? $("#character").value : undefined,
       routing: {auto_route: $("#autoRoute").checked, coder_model: $("#coderModel").value, deep_model: $("#deepModel").value,
         heavy_model: $("#heavyModel").value, heavy_steps: +$("#heavySteps").value || 6},
       error_help: $("#errorHelp").checked, barge_in: $("#bargeIn").checked, presence: $("#presence").checked, presence_lock: $("#presenceLock").checked});

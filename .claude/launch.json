@@ -4,7 +4,7 @@
     {
       "name": "nova",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["app.py"],
+      "runtimeArgs": ["-m", "nova.core.app"],
       "env": { "NOVA_NO_BROWSER": "1" },
       "port": 5055
     }
