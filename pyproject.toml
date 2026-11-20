@@ -1,0 +1,20 @@
+[project]
+name = "nova"
+version = "0.1.0"
+description = "A local-first Windows desktop assistant: chat, voice, 3D avatar and tools."
+requires-python = ">=3.12"
+readme = "README.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The suite is hermetic: conftest.py redirects NOVA_DATA to a temp folder and stubs the
+# voice, keyboard, browser, PowerShell and 3D body. Safe to run on any machine.
+
+[tool.ruff]
+target-version = "py312"
+line-length = 130          # the code is deliberately dense; see docs/ARCHITECTURE.md
+extend-exclude = ["data", "static", "characters", "skills", "sounds", "reports", "research_notes", ".claude"]
+
+[tool.ruff.lint]
+# Start with pyflakes-equivalent checks only. Style/lint expansion is a separate decision.
+select = ["F", "E9"]
