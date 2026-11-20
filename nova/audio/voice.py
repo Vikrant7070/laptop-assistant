@@ -827,6 +827,7 @@ WHISPER_HINT = ("Open Chrome, open VS Code, open WhatsApp, YouTube, Spotify. "
                 "What's on my screen? Check my battery. Volume up.")
 # Gives Whisper her name to spell while it listens for "Hey Nova" (without it: "Noah", "Inua", "Noelle").
 WAKE_HINT = "Hey Nova. Nova, what's the time? Hey Nova, open Chrome."
+WAKE_NAME = "Nova"       # the name she answers to now (set_wake: the chosen character's)
 WHISPER_JUNK = {"", "you", "thank you.", "thanks for watching!", "thank you for watching.", "bye.", ".", "so", "okay."}
 # The same stock words, compared without punctuation or capitals ("Thank you!", "you.", "Bye bye."): what Whisper
 # writes for a cough, a door or a few seconds of hum.
@@ -926,11 +927,15 @@ NOVA_NAMES = r"(?:nova|novah|noah|nover|nava|nowa|inua|innova|enova|nuva|noelle|
 # Nova's name as the first or second word ("Nova, ...", "Hey Nova ...", "Hei Nova", "Ok Nova", "Arey Nova", "हे नोवा"),
 # or stuck to the greeting ("HeyNova"), or "hey/ok Nova" anywhere in the sentence. Whisper spells the greeting many
 # ways, especially in Hindi mode, so the greeting itself is not checked.
-WAKE_RE = re.compile(rf"^\W*(?:\S+\s+)?(?:he[yi]|hi|ok)?{NOVA_NAMES}(?!\w)"
-                     rf"|\b(?:he[yi]|hi|hai|hello|okay|ok|arey)\W*{NOVA_NAMES}(?!\w)"
-                     # A soft "Hey Nova" on its own can come out as "See you, Noah." - a short phrase that ends in
-                     # her name is a call too.
-                     rf"|^\W*(?:\S+\W+){{0,2}}{NOVA_NAMES}\W*$", re.I)
+def _wake_re(names):
+    return re.compile(rf"^\W*(?:\S+\s+)?(?:he[yi]|hi|ok)?{names}(?!\w)"
+                      rf"|\b(?:he[yi]|hi|hai|hello|okay|ok|arey)\W*{names}(?!\w)"
+                      # A soft "Hey Nova" on its own can come out as "See you, Noah." - a short phrase that ends in
+                      # her name is a call too.
+                      rf"|^\W*(?:\S+\W+){{0,2}}{names}\W*$", re.I)
+
+
+WAKE_RE = _wake_re(NOVA_NAMES)
 EARS_SLEEP_RE = re.compile(r"go (?:back )?to sleep|back to sleep|stop listening|good ?night|so ?jao|so ?ja\b|sunna band|shubh ratri|सो जा", re.I)
 EARS_WAKEUP_RE = re.compile(r"wake up|are you there|uth ?jao|\butho\b|jaag ?jao|\bjaago\b|उठ|जाग", re.I)
 
@@ -1273,7 +1278,7 @@ class _EarsBase:
         self.heard = (self.heard + [f"{time.strftime('%H:%M:%S')} {what}"])[-10:]
 
     def _woke_for_conversation(self):
-        self._note("heard 'Nova, wake up' - conversation mode")
+        self._note(f"heard '{WAKE_NAME}, wake up' - conversation mode")
         if getattr(self, "on_name", None):
             self.on_name()
         avatar_client.send("wave", quiet=True, timeout=2)
@@ -1281,7 +1286,7 @@ class _EarsBase:
             threading.Thread(target=self.on_wake, kwargs={"conversation": True}, daemon=True).start()
 
     def _asked_to_sleep(self):
-        self._note("heard 'Nova, go to sleep'")
+        self._note(f"heard '{WAKE_NAME}, go to sleep'")
         if self.on_sleep:
             threading.Thread(target=self.on_sleep, daemon=True).start()
 
@@ -1411,7 +1416,7 @@ class WhisperEars(_EarsBase):
             # Not for Nova. Only the start of the latest one is kept (in memory, replaced each time), so that
             # "she doesn't react" can be worked out from the status screen.
             self.heard = [h for h in self.heard if "didn't start with" not in h]
-            self._note(f"heard speech that didn't start with 'Hey Nova': “{text[:50]}” (mic level {self.w.level:.2f})")
+            self._note(f"heard speech that didn't start with 'Hey {WAKE_NAME}': “{text[:50]}” (mic level {self.w.level:.2f})")
             return
         low = text.lower()
         rest = text[m.end():].strip(" ,.!?-…")
@@ -1428,12 +1433,12 @@ class WhisperEars(_EarsBase):
         if EARS_SLEEP_RE.search(low):
             self._asked_to_sleep()
         elif getattr(self, "is_stop", None) and self.on_stop and self.is_stop(text):   # "Hey Nova, stop"
-            self._note(f"heard 'Hey Nova, stop' (mic level {self.w.level:.2f})")
+            self._note(f"heard 'Hey {WAKE_NAME}, stop' (mic level {self.w.level:.2f})")
             threading.Thread(target=self.on_stop, args=(text,), daemon=True).start()
         elif EARS_WAKEUP_RE.search(low):
             self._woke_for_conversation()
         elif len(rest.split()) >= 2:                       # "Hey Nova, what's the time?" in one breath
-            self._note(f"heard 'Hey Nova' + request (mic level {self.w.level:.2f}): {rest}"[:160])
+            self._note(f"heard 'Hey {WAKE_NAME}' + request (mic level {self.w.level:.2f}): {rest}"[:160])
             if not early:
                 avatar_client.send("wave", quiet=True, timeout=2)
             avatar_client.send("say", text=f"“{rest}”", secs=30, timeout=2)   # (her first spoken sentence replaces it)
@@ -1441,7 +1446,7 @@ class WhisperEars(_EarsBase):
                 self.log(f"HEARD {rest[:60]!r} ({self.w.timing_note()})")
             threading.Thread(target=self.on_text, args=(rest,), daemon=True).start()
         else:
-            self._note(f"heard 'Hey Nova' (mic level {self.w.level:.2f})")
+            self._note(f"heard 'Hey {WAKE_NAME}' (mic level {self.w.level:.2f})")
             if not early:     # (if early, the same bubble is up already and the app's listener keeps it up)
                 avatar_client.send("wave", quiet=True, timeout=2)
                 avatar_client.send("listen", on=True, secs=6, timeout=2)
@@ -1452,8 +1457,19 @@ class WhisperEars(_EarsBase):
 # Words that mean "stop talking, I'm saying something" when the user says them over her. Her name counts too.
 # (Whisper writes "ruko" as Rucco / Ruco / Roko / Ruconova, so those count too.)
 BARGE_STOP_RE = re.compile(r"\b(?:stop|ru+c*k*h?o(?:nova)?|roko|ruk ?jao|bas|chup|enough|shut up|quiet)\b", re.I)
-BARGE_RE = re.compile(rf"\b(?:{NOVA_NAMES}|wait|hold on|one sec(?:ond)?|pause|excuse me)\b|" + BARGE_STOP_RE.pattern,
-                      re.I)
+def _barge_re(names):
+    return re.compile(rf"\b(?:{names}|wait|hold on|one sec(?:ond)?|pause|excuse me)\b|" + BARGE_STOP_RE.pattern, re.I)
+
+
+BARGE_RE = _barge_re(NOVA_NAMES)
+
+
+def set_wake(names, hint, name="Nova"):
+    """Answer to another name: the chosen character's ("Hey Lucy"). names = a regex group of its spellings
+    (characters.wake_names), hint = a sentence that teaches Whisper to spell it. Only this name wakes her now."""
+    global NOVA_NAMES, WAKE_RE, BARGE_RE, WAKE_HINT, WAKE_NAME
+    NOVA_NAMES, WAKE_HINT, WAKE_NAME = names, hint, name
+    WAKE_RE, BARGE_RE = _wake_re(names), _barge_re(names)
 
 
 def other_apps_playing(level=0.02):
@@ -1755,7 +1771,7 @@ class Ears(_EarsBase):
                 if time.time() < self.quiet_until:
                     continue   # the user is mid-sentence in voice typing; "nova" in their words isn't a new wake
                 self.skip_next = False
-                self._note("heard 'Hey Nova'")
+                self._note(f"heard 'Hey {WAKE_NAME}'")
                 avatar_client.send("wave", quiet=True, timeout=2)
                 if self.mode == "typing" and self.on_wake:
                     self.quiet_until = time.time() + 20
@@ -1774,7 +1790,7 @@ class Ears(_EarsBase):
                 if noise_words(text):     # "Thank you.", "Hmm." from a cough: nothing to answer or ask about
                     continue
                 if (kind == "dict" and conf < 0.45) or (kind == "rt" and conf < 0.2):  # not sure: ask again
-                    avatar_client.send("say", text=f"Did you say “{text}”? Say “Hey Nova” and try again 🙏", secs=5, timeout=2)
+                    avatar_client.send("say", text=f"Did you say “{text}”? Say “Hey {WAKE_NAME}” and try again 🙏", secs=5, timeout=2)
                     self.mouth.say("Sorry, I didn't catch that clearly. Could you say it again?")
                     continue
                 if text and not self.mouth.busy():

@@ -1,0 +1,106 @@
+{
+  "name": "Makima",
+  "label": "🖤 Makima - calm, composed, quietly in charge",
+  "voice": "af_nicole",
+  "note": "A fan character for this laptop only - her 3D model must never be shared or uploaded.",
+  "wake": {
+    "names": ["makima", "makeema", "makema", "makimma", "macima", "mackima", "ma kima", "makimah", "mikima",
+              "मकिमा", "माकिमा"],
+    "hint": "Hey Makima. Makima, what's the time? Hey Makima, open Chrome."
+  },
+  "look_preset": "office",
+  "look": {"hair": "#d64b3c", "hair_tips": "#a8382c", "eyes": "#e8b730", "hoodie": "#f4f4f2", "pants": "#3a4044",
+           "shoes": "#6e4024", "glow": "#e8b730", "accent": "#1a1a1a", "headphones": false, "hair_clip": false,
+           "ahoge": false},
+  "model": {
+    "file": "model.vrm",
+    "fit": {"top": 4.25, "floor": 0.35, "spread": 0.3, "accessories": 0.92, "reach": 0.65,
+            "work": {"upper": 0.35, "inward": 0.25, "bend": 0.0, "seat": 0.0, "desk": 1.4}}
+  },
+  "style": {
+    "note": "Calm and economical: hands clasped behind her back, small slow moves, a serene smile instead of beaming, watches more than she fidgets. Her dance is a slow sway with one graceful hand.",
+    "size": 0.7, "speed": 0.8, "talk_hands": 0.3,
+    "faces": {"happy": {"relaxed": 0.9, "happy": 0.15}, "sad": {"sad": 0.4, "relaxed": 0.1},
+              "surprised": {"surprised": 0.35}, "angry": {"angry": 0.3, "relaxed": 0.3}},
+    "walk": {"stride": 0.38, "swing": 0.1, "bounce": 0.012, "sway": 0.015, "lean": -0.02, "head": -0.03,
+             "hands": "behind", "pace": 0.8},
+    "swap": {"laugh": "quiet_chuckle", "happy": "soft_smile", "clap": "slow_clap", "spin": "head_tilt_watch",
+             "love": "soft_smile", "facepalm": "head_tilt_watch", "surprised": "calm_blink", "wave": "small_wave",
+             "confused": "chin_think", "dance": "makima_sway"},
+    "fidgets": {"head_tilt_watch": 25, "fold_hands": 20, "look": 20, "chin_think": 10, "nod": 5},
+    "touch": {"click": "small_wave", "right_click": ["quiet_chuckle", "soft_smile", "bow", "makima_sway"],
+              "poke": "finger_wag", "pokes": 4, "poke_say": "That's enough. I'm listening.", "picked_up": "calm_blink",
+              "greeting": "I'm Makima. I'll take care of things from here."},
+    "gestures": {
+      "explain": {"keys": [
+        {"at": 0.3, "right_arm_forward": 25, "right_elbow": 75, "right_wrist": -30, "left_hand_behind": 1},
+        {"at": 0.7, "right_arm_forward": 28, "right_elbow": 70, "right_wrist": -40, "right_wrist_side": 10, "left_hand_behind": 1}]},
+      "explain_one": {"keys": [
+        {"at": 0.35, "right_arm_forward": 22, "right_elbow": 80, "right_wrist": -25, "head_tilt": 5, "left_hand_behind": 1},
+        {"at": 0.7, "right_arm_forward": 22, "right_elbow": 75, "right_wrist": -35, "left_hand_behind": 1}]},
+      "point_you": {"keys": [
+        {"at": 0.35, "right_arm_forward": 80, "right_arm_out": 8, "right_elbow": 10, "right_wrist": -5, "head_tilt": 6, "mouth": "smile"},
+        {"at": 0.75, "right_arm_forward": 78, "right_arm_out": 8, "right_elbow": 12, "right_wrist": -5, "head_tilt": 7, "eyes": "happy"}]},
+      "point_me": {"keys": [
+        {"at": 0.35, "head_tilt": 5, "right_hand_on_chest": 1},
+        {"at": 0.7, "head_tilt": 5, "right_hand_on_chest": 1}]},
+      "ask": {"keys": [
+        {"at": 0.35, "head_tilt": 14, "eyes": "open", "hands_behind": 1},
+        {"at": 0.75, "head_tilt": 15, "eyes": "happy", "hands_behind": 1}]},
+      "excited": {"keys": [
+        {"at": 0.4, "head_tilt": 8, "eyes": "happy", "right_arm_forward": 25, "right_elbow": 70, "right_wrist": -40},
+        {"at": 0.75, "head_tilt": 9, "eyes": "happy", "right_arm_forward": 25, "right_elbow": 70, "right_wrist": -35}]},
+      "think": {"keys": [
+        {"at": 0.3, "left_arm_forward": 20, "left_elbow": 90, "left_elbow_side": -30, "head_tilt": 10, "eyes": "up", "right_hand_on_chin": 1},
+        {"at": 0.75, "left_arm_forward": 20, "left_elbow": 90, "left_elbow_side": -30, "head_tilt": 10, "right_hand_on_chin": 1}]},
+      "count": {"keys": [
+        {"at": 0.25, "right_arm_forward": 30, "right_elbow": 80, "right_wrist": -20},
+        {"at": 0.5, "right_arm_forward": 30, "right_elbow": 80, "right_wrist": -20, "right_wrist_side": 15},
+        {"at": 0.75, "right_arm_forward": 30, "right_elbow": 80, "right_wrist": -20, "right_wrist_side": -10}]}
+    },
+    "moves": {
+      "quiet_chuckle": {"duration": 1.8, "keys": [
+        {"at": 0.25, "head_tilt": 8, "head_nod": 6, "eyes": "closed", "mouth": "smile", "right_hand_on_mouth": 1},
+        {"at": 0.5, "head_tilt": 9, "head_nod": 9, "eyes": "happy", "right_hand_on_mouth": 1},
+        {"at": 0.75, "head_tilt": 8, "head_nod": 5, "eyes": "happy", "right_hand_on_mouth": 1}]},
+      "soft_smile": {"duration": 2.2, "keys": [
+        {"at": 0.3, "head_tilt": 10, "head_nod": 4, "eyes": "happy", "mouth": "smile", "hands_behind": 1},
+        {"at": 0.75, "head_tilt": 11, "head_nod": 3, "eyes": "happy", "mouth": "smile", "hands_behind": 1}]},
+      "slow_clap": {"duration": 2.8, "keys": [
+        {"at": 0.15, "right_arm_forward": 40, "left_arm_forward": 40, "right_arm_out": 12, "left_arm_out": 12, "right_elbow": 55, "left_elbow": 55, "right_wrist_side": 15, "left_wrist_side": 15, "mouth": "smile"},
+        {"at": 0.3, "right_arm_forward": 40, "left_arm_forward": 40, "right_arm_out": -12, "left_arm_out": -12, "right_elbow": 55, "left_elbow": 55, "right_wrist_side": 25, "left_wrist_side": 25},
+        {"at": 0.5, "right_arm_forward": 40, "left_arm_forward": 40, "right_arm_out": 12, "left_arm_out": 12, "right_elbow": 55, "left_elbow": 55, "right_wrist_side": 15, "left_wrist_side": 15},
+        {"at": 0.65, "right_arm_forward": 40, "left_arm_forward": 40, "right_arm_out": -12, "left_arm_out": -12, "right_elbow": 55, "left_elbow": 55, "right_wrist_side": 25, "left_wrist_side": 25, "eyes": "happy"},
+        {"at": 0.85, "right_arm_forward": 35, "left_arm_forward": 35, "right_arm_out": 5, "left_arm_out": 5, "right_elbow": 50, "left_elbow": 50, "eyes": "happy"}]},
+      "head_tilt_watch": {"duration": 2.6, "keys": [
+        {"at": 0.3, "head_tilt": 14, "head_turn": -6, "eyes": "open", "mouth": "smile", "hands_behind": 1},
+        {"at": 0.75, "head_tilt": 15, "head_turn": -6, "eyes": "happy", "hands_behind": 1}]},
+      "fold_hands": {"duration": 3.2, "keys": [
+        {"at": 0.25, "right_arm_forward": 15, "left_arm_forward": 15, "right_arm_out": -4, "left_arm_out": -4, "right_elbow": 70, "left_elbow": 70, "right_wrist": 35, "left_wrist": 35, "head_nod": 4},
+        {"at": 0.8, "right_arm_forward": 15, "left_arm_forward": 15, "right_arm_out": -4, "left_arm_out": -4, "right_elbow": 70, "left_elbow": 70, "right_wrist": 35, "left_wrist": 35, "head_nod": 6, "head_tilt": 5}]},
+      "finger_wag": {"duration": 1.9, "keys": [
+        {"at": 0.2, "right_arm_forward": 40, "right_arm_out": 5, "right_elbow": 100, "right_wrist": -10, "head_tilt": 6, "eyes": "half", "mouth": "smile"},
+        {"at": 0.4, "right_arm_forward": 40, "right_arm_out": 5, "right_elbow": 100, "right_wrist": -10, "right_wrist_side": 30, "head_tilt": 6},
+        {"at": 0.6, "right_arm_forward": 40, "right_arm_out": 5, "right_elbow": 100, "right_wrist": -10, "right_wrist_side": -25, "head_tilt": 6},
+        {"at": 0.8, "right_arm_forward": 40, "right_arm_out": 5, "right_elbow": 100, "right_wrist": -10, "right_wrist_side": 25, "head_tilt": 6, "eyes": "open"}]},
+      "small_wave": {"duration": 2.0, "keys": [
+        {"at": 0.2, "right_arm_out": 40, "right_arm_forward": 30, "right_elbow": 90, "right_elbow_side": 40, "right_wrist": -20, "right_wrist_side": 20, "head_tilt": 8, "mouth": "smile"},
+        {"at": 0.4, "right_arm_out": 40, "right_arm_forward": 30, "right_elbow": 90, "right_elbow_side": 40, "right_wrist": -20, "right_wrist_side": -20, "head_tilt": 8},
+        {"at": 0.6, "right_arm_out": 40, "right_arm_forward": 30, "right_elbow": 90, "right_elbow_side": 40, "right_wrist": -20, "right_wrist_side": 20, "head_tilt": 8, "eyes": "happy"},
+        {"at": 0.8, "right_arm_out": 40, "right_arm_forward": 30, "right_elbow": 90, "right_elbow_side": 40, "right_wrist": -20, "right_wrist_side": -15, "head_tilt": 8}]},
+      "calm_blink": {"duration": 1.6, "keys": [
+        {"at": 0.15, "head_nod": -6, "eyes": "wide", "mouth": "smile", "hands_behind": 1},
+        {"at": 0.45, "head_nod": -2, "eyes": "open", "hands_behind": 1},
+        {"at": 0.75, "head_tilt": 8, "eyes": "happy", "hands_behind": 1}]},
+      "chin_think": {"duration": 2.6, "keys": [
+        {"at": 0.3, "left_arm_forward": 20, "left_elbow": 90, "left_elbow_side": -30, "head_tilt": 10, "eyes": "up", "right_hand_on_chin": 1},
+        {"at": 0.75, "left_arm_forward": 20, "left_elbow": 90, "left_elbow_side": -30, "head_tilt": 10, "eyes": "open", "mouth": "smile", "right_hand_on_chin": 1}]},
+      "makima_sway": {"duration": 2.0, "loop": true, "keys": [
+        {"at": 0.125, "lean_side": 5, "head_tilt": 10, "turn": 8, "eyes": "happy", "mouth": "smile", "right_hand_behind": 1, "left_hand_behind": 1},
+        {"at": 0.375, "lean_side": -5, "head_tilt": -10, "turn": -8, "eyes": "open", "right_hand_behind": 1, "left_hand_behind": 1},
+        {"at": 0.6, "lean_side": 4, "head_tilt": 8, "turn": 5, "right_arm_forward": 50, "right_arm_out": 15, "right_elbow": 50, "right_elbow_side": 0, "right_wrist": -35, "right_hand_behind": 0, "left_hand_behind": 1},
+        {"at": 0.78, "lean_side": 0, "head_tilt": 4, "right_arm_forward": 50, "right_arm_out": 15, "right_elbow": 60, "right_elbow_side": 0, "right_wrist": 45, "eyes": "happy", "right_hand_behind": 0, "left_hand_behind": 1},
+        {"at": 0.92, "lean_side": -4, "head_tilt": -6, "turn": -5, "right_hand_behind": 1, "left_hand_behind": 1}]}
+    }
+  }
+}
