@@ -101,6 +101,11 @@ def isolated(tmp_path, monkeypatch):
     app.events.clear()
     monkeypatch.setattr(tools.keyboard, "send", lambda *a, **k: None)     # never press real keys
     monkeypatch.setattr(tools.keyboard, "write", lambda *a, **k: None)
+    # typing goes in by pasting: a pretend clipboard, so tests never touch the real one
+    monkeypatch.setattr(tools, "_clip_save", lambda: [])
+    monkeypatch.setattr(tools, "_clip_set_text", lambda text: 1)
+    monkeypatch.setattr(tools, "_clip_restore", lambda saved, seq: None)
+    monkeypatch.setattr(tools, "_focused_text", lambda: None)
     monkeypatch.setattr(tools.webbrowser, "open", lambda *a, **k: True)  # never open real browser tabs
     monkeypatch.setattr(tools, "open_windows_summary", lambda limit=6: "")
     monkeypatch.setattr(tools, "_screen_allowed", lambda: False)

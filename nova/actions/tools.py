@@ -1056,6 +1056,177 @@ def _stop_pointing():
     avatar_client.send("finish_point")
 
 
+# --- Typing by pasting -------------------------------------------------------------------------------------
+# keyboard.write sends each letter as a Windows "unicode packet" key. When the app falls behind (Windows 11
+# Notepad does, e.g. just after it was brought to the front or while the laptop is busy) it reads the letter
+# for the queued packets late and gets the *latest* one: "hello judge" landed as "hello eeeee" (seen
+# 2026-11-20). So text goes in as one paste: put it on the clipboard, press Ctrl+V once, then put the user's
+# clipboard back exactly as it was (text, pictures, copied files). The pasted text is kept out of Win+V
+# clipboard history and cloud clipboard. If the clipboard can't be used, letters are typed slowly instead.
+
+_CF_UNICODETEXT = 13
+_GMEM_MOVEABLE = 0x0002
+# clipboard formats whose data is a GDI handle, not memory - they can't be copied byte by byte. (A bitmap
+# also lives on the clipboard as CF_DIB, which is copied, so a copied picture still comes back.)
+_CLIP_HANDLE_FORMATS = {2, 3, 9, 14, 0x80, 0x82, 0x83, 0x8E}
+_CLIP_SAVE_MAX = 64 * 1024 * 1024      # don't hold more than this much of the user's clipboard in memory
+_clip_api = None
+
+
+def _clip():
+    """user32/kernel32 with the argument types set (handles are 64-bit pointers)."""
+    global _clip_api
+    if _clip_api is None:
+        import ctypes
+        from ctypes import wintypes as w
+        u, k = ctypes.WinDLL("user32", use_last_error=True), ctypes.WinDLL("kernel32", use_last_error=True)
+        for f, args, res in (
+                (u.OpenClipboard, [w.HWND], w.BOOL), (u.CloseClipboard, [], w.BOOL),
+                (u.EmptyClipboard, [], w.BOOL), (u.EnumClipboardFormats, [w.UINT], w.UINT),
+                (u.GetClipboardData, [w.UINT], w.HANDLE), (u.SetClipboardData, [w.UINT, w.HANDLE], w.HANDLE),
+                (u.RegisterClipboardFormatW, [w.LPCWSTR], w.UINT), (u.GetClipboardSequenceNumber, [], w.DWORD),
+                (k.GlobalAlloc, [w.UINT, ctypes.c_size_t], w.HGLOBAL), (k.GlobalFree, [w.HGLOBAL], w.HGLOBAL),
+                (k.GlobalLock, [w.HGLOBAL], w.LPVOID), (k.GlobalUnlock, [w.HGLOBAL], w.BOOL),
+                (k.GlobalSize, [w.HGLOBAL], ctypes.c_size_t)):
+            f.argtypes, f.restype = args, res
+        _clip_api = (ctypes, u, k)
+    return _clip_api
+
+
+def _clip_open():
+    _, u, _ = _clip()
+    for _ in range(20):                 # another app may be holding the clipboard for a moment
+        if u.OpenClipboard(None):
+            return True
+        time.sleep(0.025)
+    return False
+
+
+def _clip_put(items):
+    """Replace the clipboard with [(format, bytes)]; a format may be a registered name. Call with it open."""
+    ctypes, u, k = _clip()
+    u.EmptyClipboard()
+    for fmt, data in items:
+        if isinstance(fmt, str):
+            fmt = u.RegisterClipboardFormatW(fmt)
+        h = k.GlobalAlloc(_GMEM_MOVEABLE, max(len(data), 1))
+        if not h:
+            continue
+        p = k.GlobalLock(h)
+        if not p:
+            k.GlobalFree(h)
+            continue
+        ctypes.memmove(p, data, len(data))
+        k.GlobalUnlock(h)
+        if not u.SetClipboardData(fmt, h):
+            k.GlobalFree(h)            # (on success the clipboard owns it)
+
+
+_KEEP_OUT_OF_HISTORY = [("ExcludeClipboardContentFromMonitorProcessing", b"\0\0\0\0"),
+                        ("CanIncludeInClipboardHistory", b"\0\0\0\0"), ("CanUploadToCloudClipboard", b"\0\0\0\0")]
+
+
+def _clip_save():
+    """A copy of everything on the clipboard: [(format, bytes)], [] when empty, None when it couldn't be read."""
+    ctypes, u, k = _clip()
+    if not _clip_open():
+        return None
+    try:
+        items, total, fmt = [], 0, u.EnumClipboardFormats(0)
+        while fmt:
+            if fmt not in _CLIP_HANDLE_FORMATS and not 0x200 <= fmt <= 0x3FF:   # (private / GDI-object ranges)
+                h = u.GetClipboardData(fmt)
+                size = k.GlobalSize(h) if h else 0
+                if size:
+                    total += size
+                    if total > _CLIP_SAVE_MAX:
+                        return None
+                    p = k.GlobalLock(h)
+                    if p:
+                        items.append((fmt, ctypes.string_at(p, size)))
+                        k.GlobalUnlock(h)
+            fmt = u.EnumClipboardFormats(fmt)
+        return items
+    finally:
+        u.CloseClipboard()
+
+
+def _clip_set_text(text):
+    """Put text on the clipboard (kept out of clipboard history). Returns the clipboard's sequence number, or
+    0 when the clipboard couldn't be opened."""
+    _, u, _ = _clip()
+    if not _clip_open():
+        return 0
+    try:
+        _clip_put([(_CF_UNICODETEXT, (text + "\0").encode("utf-16-le"))] + _KEEP_OUT_OF_HISTORY)
+    finally:
+        u.CloseClipboard()
+    return u.GetClipboardSequenceNumber() or 1
+
+
+def _clip_restore(saved, our_seq):
+    """Put the user's clipboard back - unless something else was copied since we pasted (then that stays)."""
+    _, u, _ = _clip()
+    if saved is None or u.GetClipboardSequenceNumber() != our_seq or not _clip_open():
+        return
+    try:
+        if saved:
+            _clip_put(list(saved) + _KEEP_OUT_OF_HISTORY)   # (it is in Win+V history already - no second copy)
+        else:
+            u.EmptyClipboard()
+    finally:
+        u.CloseClipboard()
+
+
+def _focused_text():
+    """What the focused box holds (to see a paste land), or None when it can't be read."""
+    try:
+        import uiautomation as auto
+        c = auto.GetFocusedControl()
+        try:
+            return c.GetValuePattern().Value
+        except Exception:
+            return c.GetTextPattern().DocumentRange.GetText(200000)
+    except Exception:
+        return None
+
+
+def _wait_for_paste(before, timeout=2.0):
+    """Ctrl+V was pressed: wait until the app has read the clipboard (its text changed) before it is put back.
+    If the box can't be read, wait a fixed half second."""
+    time.sleep(0.15)
+    if before is None:
+        time.sleep(0.35)
+        return
+    end = time.time() + timeout
+    while time.time() < end:
+        now = _focused_text()
+        if now is None or now != before:
+            time.sleep(0.05)
+            return
+        time.sleep(0.05)
+
+
+def _type_into_focus(text):
+    """Put text into whatever has the keyboard focus. Returns how it went in: "paste" or "keys"."""
+    if not text:
+        return "paste"
+    saved = _clip_save()
+    before = _focused_text()
+    seq = _clip_set_text(text) if saved is not None else 0
+    if not seq:
+        for ch in text:                 # clipboard busy: one letter at a time, slow enough to keep up
+            keyboard.write(ch)
+            time.sleep(0.03)
+        return "keys"
+    try:
+        keyboard.send("ctrl+v")
+        _wait_for_paste(before)
+    finally:
+        _clip_restore(saved, seq)
+    return "paste"
+
+
 def type_text(text, into_window=None):
     if into_window:
         msg = window_action(into_window, "focus")
@@ -1066,7 +1237,7 @@ def type_text(text, into_window=None):
         return NO_SECRETS
     pointing = _point_at_focus("Typing…")
     try:
-        keyboard.write(text, delay=0.01)
+        _type_into_focus(text)
     finally:
         if pointing:
             _stop_pointing()
@@ -1352,7 +1523,7 @@ def fill_in(text, box="", window="", press_enter=True):
         return NO_SECRETS
     keyboard.send("ctrl+a")
     time.sleep(0.1)
-    keyboard.write(text, delay=0.02)
+    _type_into_focus(text)
     if press_enter:
         time.sleep(0.2)
         keyboard.send("enter")
