@@ -108,6 +108,8 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "review_turn", lambda why: None)
     # skill step checks look at the real desktop: a test says what they find (or patches checks.evaluate itself)
     monkeypatch.setattr(checks, "evaluate", lambda *a, **k: (True, "ok (test)"))
+    # the Judge's "which checks prove this?" brain call would eat a scripted FakeBrain answer: none fit by default
+    monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: "NONE")
     # Phone Link's banner switch lives in the real registry: tests only record what would have been asked
     app.banner_calls = []
     monkeypatch.setattr(app.notifications, "phone_banners", lambda show, **k: (app.banner_calls.append(show), 1)[1])

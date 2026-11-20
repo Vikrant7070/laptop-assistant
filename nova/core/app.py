@@ -33,6 +33,7 @@ from nova.brain import retrieval
 from nova.audio import sfx
 from nova.actions import skills
 from nova.actions import checks
+from nova.actions import judge
 from nova.actions import recorder
 from nova.brain import toolpick
 from nova.brain import router
@@ -59,7 +60,7 @@ def _unspoken(text):
 
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "deep_sleep": True, "listen_pause": 0.7, "listen_max": 10, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_quiet": True, "phone_notes_cloud": False, "suggest": False,
+         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "deep_sleep": True, "listen_pause": 0.7, "listen_max": 10, "mic_level": 5, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_quiet": True, "phone_notes_cloud": False, "suggest": False,
          "reaction_sounds": True, "power_ok": False, "reasoning": "auto",
          "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
          "skill_screen_checks": False, "skill_teach": True, "barge_in": True, "character": characters.DEFAULT}
@@ -442,6 +443,7 @@ ACT_TOOLS = {"open_app", "open_website", "web_research", "open_path", "window_ac
              "close_all_windows", "run_in_terminal", "press_keys", "fill_in", "click_element", "click_nth", "click_at", "scroll", "video_control", "drag_window"}
 SLOW_TOOLS = {"open_app", "open_website", "web_research", "open_path"}   # these need a moment before the screen settles
 LOOK_FROM_STEP = 2      # one-step requests ("open Chrome") stay quick: only the window list is checked
+STEP_CHECK_WAIT, FINAL_CHECK_WAIT = 1.5, 5.0   # seconds a judge check may wait to come true: after a step / at the end
 MAX_TURNS, MAX_TASK_TURNS = 10, 24
 # A cloud brain on High/Max reasoning plans its steps well, so a big job (find my GitHub username, then set up the
 # repo...) gets more steps before she pauses; 24 is a guard against a small model going round in circles.
@@ -680,6 +682,16 @@ def new_task(goal):
     state["task"] = {"goal": clean, "start": len(state["messages"]), "steps": 0, "did": [], "done": None,
                      "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": [],
                      "skill": skill["name"] if skill else "", "skill_how": how or ""}
+    try:
+        made = judge.goal_checks(clean)   # the Judge's checks for this goal (more may be proposed later)
+    except Exception as e:
+        task_log(f"JUDGE goal checks failed: {type(e).__name__}: {e}")
+        made = {"checks": [], "covers": False}
+    state["task"].update(checks=made["checks"], covers=made["covers"], proposed=bool(made["checks"]), strict=True,
+                         looks=0, verdict=None)
+    if made["checks"]:
+        task_log("JUDGE CHECKS (code): " + "; ".join(judge.describe(c) for c in made["checks"])
+                 + (" - cover the whole goal" if made["covers"] else " - cover part of it"))
     s = settings()
     if cloud.parse(brain(s)) and llm.cloud_resting():   # the cloud failed a moment ago: this whole task runs locally
         state["task"]["model"] = s["model"]
@@ -1205,35 +1217,100 @@ def _big_brain(model):
     return bool(cloud.parse(model)) or model != settings()["model"]
 
 
+def ask_for_checks(goal, windows, model):
+    """One short text-only brain call: which checks.py checks would prove this goal is done (judge.PROPOSE_PROMPT)."""
+    prompt = judge.PROPOSE_PROMPT.format(goal=goal, windows=windows or "none")
+    return interruptible(llm.chat, model, [{"role": "user", "content": prompt}], [], fallback=settings()["model"],
+                         num_predict=80)[1]
+
+
+def propose_checks(task, windows, model):
+    """No code-made check fits this goal: ask the brain once for 1-3 checks from the checks.py list. They're
+    validated like skill `expect:` lines (invalid ones dropped, never fixed). Text only, no screenshot, so it's
+    quick and doesn't push the brain off the GPU the way the vision model does."""
+    task["proposed"] = True
+    try:
+        text = ask_for_checks(task["goal"], windows, model)
+    except Stopped:
+        raise
+    except Exception as e:
+        task_log(f"JUDGE couldn't get checks from the brain: {type(e).__name__}: {e}")
+        return
+    found = judge.parse_proposed(text)
+    task_log("JUDGE CHECKS (brain): " + ("; ".join(judge.describe(c) for c in found) if found else "none fit"))
+    if found:
+        task["checks"], task["covers"], task["strict"] = found, True, False   # advisory when they fail
+
+
 def check_step(call, out, activity, model):
-    """After an on-screen action: wait for the screen to settle, look, and add what Nova sees to the tool result.
-    A cloud brain is trusted to follow the window list step by step; the (slow, ~10 s) screen look runs once, when
-    it says it has finished (final_check). The small local model needs the look after every step."""
+    """After an on-screen action: wait for the screen to settle and run the Judge's checks for the goal (quick, no
+    screenshot), adding the window list and what the checks saw to the tool result. The slow (~10 s) screen look
+    runs at most once, at the end (final_judge), and only when no check covers the goal. That holds for every
+    brain, so the small local model no longer looks after every step."""
     task = state.get("task")
     if not task or out.startswith("Error"):
         return out
     task["steps"] += 1
     task["did"].append(f"{call['name']} {json.dumps(call['args'], ensure_ascii=False)[:80]}")
-    on_cloud = _big_brain(model)
-    windows = settle(call["name"], quick=on_cloud)
+    for key in ("into_window", "title_or_app", "window"):
+        if call["args"].get(key):
+            task["window"] = str(call["args"][key])     # page checks look at the window she worked in
+    windows = settle(call["name"], quick=True)
     note = f"\n[check after step {task['steps']}] Windows now, front first: {windows or 'none'}."
-    if on_cloud:
-        task["done"] = None        # an earlier verdict is out of date after a new step
-    elif task["steps"] >= LOOK_FROM_STEP and tools._screen_allowed():
-        try:
-            step = f"{call['name']} {json.dumps(call['args'], ensure_ascii=False)[:150]}"
-            note += "\nI looked at the screen:\n" + look_check(task, step, out, windows, activity, model)
-        except Exception as e:
-            note += f" (Couldn't look at the screen: {e})"
+    task["done"] = None            # an earlier verdict is out of date after a new step
+    if task["steps"] >= LOOK_FROM_STEP and not task.get("proposed"):
+        propose_checks(task, windows, model)
+    verdict = None
+    if task.get("checks"):
+        verdict = judge.decide(judge.run_checks(task["checks"], {"result": out, "window": task.get("window", "")},
+                                                timeout=STEP_CHECK_WAIT), task.get("covers"), strict=task.get("strict", True))
+        if verdict["done"]:
+            task["done"] = True
+            think("✅ My checks say it's done: " + verdict["why"])
     if task["done"]:
         return (out + note + f"\nThe task: {task['goal']}\nThe task looks finished. Do NOT press or click anything "
                 "else - just tell the user in one short sentence.")
-    if task["done"] is False:
-        return (out + note + f"\nThe task: {task['goal']}\nVERDICT: the task is NOT finished - a part of it has not "
-                "been done yet (steps done so far: " + "; ".join(d.split(" ")[0] for d in task["did"]) + "). "
-                "Do the next step now with a tool. Do not tell the user it is done.")
+    if verdict and verdict["done"] is False:
+        return (out + note + f"\nThe task: {task['goal']}\nNot true yet: {verdict['why']}.\nIf it isn't finished, "
+                "do the next step now. If this step didn't work, try another way.")
     return (out + note + f"\nThe task: {task['goal']}\nIf it isn't finished, do the next step now. "
             "If this step didn't work, try another way.")
+
+
+def final_judge(task, text, activity, model):
+    """The brain says it has finished: the Judge's verdict, in the plan's order of trust. Deterministic checks come
+    first (a failed one means not done, whatever the screen look says). A screen look only happens when no check
+    covers the goal, at most once per task, and its answer is advisory. Sets task['done'] / task['screen'] /
+    task['verdict_source'] and logs a verdict record."""
+    strict = task.get("strict", True)
+    results = (judge.run_checks(task["checks"], {"window": task.get("window", "")}, timeout=FINAL_CHECK_WAIT)
+               if task.get("checks") else [])
+    vision, seen = None, ""
+    if (judge.needs_vision(results, task.get("covers"), strict) and task["steps"] >= LOOK_FROM_STEP
+            and not task.get("looks") and tools._screen_allowed()):
+        task["looks"] = task.get("looks", 0) + 1
+        try:
+            seen = look_check(task, f"(all steps done; the assistant now says: {(text or '')[:150]})", "",
+                              tools.open_windows_summary(3), activity, model)
+            vision = task["done"]
+        except Stopped:
+            raise
+        except Exception as e:
+            task_log(f"FINAL CHECK failed: {e}")
+    verdict = judge.decide(results, task.get("covers"), vision, strict)
+    if verdict["source"] == "checks":
+        task["done"] = verdict["done"]
+        if verdict["done"] is False:
+            task["screen"] = "A check failed: " + verdict["why"]
+            task["fail_plain"] = judge.plain_failure(results)
+            think("❌ My check says it isn't done: " + task["fail_plain"])
+        else:
+            think("✅ My checks say it's done: " + verdict["why"])
+        activity.append("Checked it worked")
+    if verdict["source"] != "none":
+        task["verdict_source"] = verdict["source"]
+    task["verdict"] = judge.record(task["goal"], task.get("checks") or [], results, seen, verdict)
+    task_log("VERDICT " + json.dumps(task["verdict"], ensure_ascii=False))
 
 
 def execute(calls, approved, activity, model):
@@ -1641,34 +1718,33 @@ def _agent_loop(activity):
                 continue
             task_log(f"HALLUCINATED DONE: '{(text or '')[:120]}' with no tool called")
             text = "I haven't actually done that yet - tell me again and I'll do it properly."
-        if (not calls and task and task["steps"] >= LOOK_FROM_STEP and _big_brain(model)
-                and not task.get("final_looks") and tools._screen_allowed()):
-            # A cloud brain says it's finished: now take the one screen look that checks the whole task.
-            task["final_looks"] = task.get("final_looks", 0) + 1
-            try:
-                seen = look_check(task, f"(all steps done; the assistant now says: {(text or '')[:150]})", "",
-                                  tools.open_windows_summary(3), activity, model)
-                task_log("FINAL CHECK:\n      " + seen.replace("\n", "\n      "))
-            except Exception as e:
-                task_log(f"FINAL CHECK failed: {e}")
-        if not calls and task and task["steps"] >= 2 and task["done"] is False and not task["nudged"]:
-            # She's about to stop, but her own last look at the screen says the task isn't finished. One more push.
+        if not calls and task and task["steps"] and (task.get("checks") or task["steps"] >= LOOK_FROM_STEP):
+            # She says she's finished: the Judge decides (checks first, at most one advisory screen look).
+            final_judge(task, text, activity, model)
+        by_check = bool(task) and task.get("verdict_source") == "checks"
+        if (not calls and task and (task["steps"] >= 2 or by_check) and task["done"] is False
+                and not task["nudged"]):
+            # She's about to stop, but a check (or her one screen look) says the task isn't finished. One more push.
             task["nudged"] = True
             think("🔁 My check says part of it isn't done yet - going back to finish it.")
             state["messages"].append({"role": "user", "content":
-                "[note from Nova's system] Your last look at the screen says the task is not finished yet:\n"
-                f"{task['screen']}\nThe task: {task['goal']}\nThe only steps you have really done so far:\n- "
+                "[note from Nova's system] " + ("A check shows the task is not finished yet:\n" if by_check else
+                                                "Your last look at the screen says the task is not finished yet:\n")
+                + f"{task['screen']}\nThe task: {task['goal']}\nThe only steps you have really done so far:\n- "
                 + "\n- ".join(task["did"]) + "\nWork out which part of the task has no step yet and do it now with "
-                "a tool. You may not say the task is done until a check says TASK DONE: yes. If you are truly "
-                "stuck, tell the user honestly in one sentence what is left."})
+                "a tool. " + ("You may not say the task is done until the check passes. " if by_check else "")
+                + "If you are truly stuck, tell the user honestly in one sentence what is left."})
             continue
-        if not calls and task and task["nudged"] and task["done"] is False and not cloud.parse(model):
-            # (A cloud brain has seen the checker's verdict and decided anyway - the small checker can be wrong,
-            # e.g. it called a written-but-unsent email "not done". Only the small local brain gets overruled.)
-            # Pushed once and still stopping with the task unfinished: say so plainly instead of claiming success.
-            seen = re.search(r"SCREEN:\s*(.+)", task["screen"])
-            text = ("I don't think I finished that. " + (f"Here's where I got to: {seen.group(1).strip()} " if seen else "")
-                    + "Want me to try again?")
+        if not calls and task and task["nudged"] and task["done"] is False:
+            # Pushed once and still stopping with the task unfinished.
+            if by_check:
+                # A failed deterministic check is the truth for every brain: say so plainly, never claim success.
+                text = ("I don't think I finished that - " + (task.get("fail_plain") or "a check failed")
+                        + ". Want me to try again?")
+            elif text and "?" not in text[-40:]:
+                # The screen look only advises (it can be wrong, e.g. it calls a written-but-unsent email "not
+                # done"): keep her answer and ask instead of overruling it.
+                text = text.rstrip() + " My screen check wasn't sure it worked - did it?"
         text = re.split(r"\[(?:check|spoken)[^\]]*\]", INFO_ECHO.sub("", text or "").split("[open windows")[0])
         text = (text[0].strip() or " ".join(t.strip() for t in text[1:]).strip()) if text else ""
         if text:
@@ -1803,7 +1879,7 @@ def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
                    autonomy=s["autonomy"], think=s["think"], reasoning=s.get("reasoning", "auto"), camera=s["camera"], screen=s["screen"],
-                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), deep_sleep=s.get("deep_sleep", True), listen_pause=s.get("listen_pause", 0.7), listen_max=s.get("listen_max", 10), phone_calls=s.get("phone_calls", True), email_cloud=bool(s.get("email_cloud")),
+                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), deep_sleep=s.get("deep_sleep", True), listen_pause=s.get("listen_pause", 0.7), listen_max=s.get("listen_max", 10), mic_level=s.get("mic_level", 5), phone_calls=s.get("phone_calls", True), email_cloud=bool(s.get("email_cloud")),
                    phone_quiet=s.get("phone_quiet", True), phone_notes_cloud=s.get("phone_notes_cloud", False), suggest=s.get("suggest", False), asleep=nap["asleep"], deep_asleep=nap.get("deep", False),
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    presence=s.get("presence", False), presence_lock=s.get("presence_lock", False),
@@ -1813,6 +1889,18 @@ def status():
                    characters=characters.choices(),
                    voice=s["voice"], wake=s["wake"], wake_phrase=wake_phrase(), voice_name=mouth.voice_name, ears=ears.status, heard=ears.heard,
                    vision_model=llm.vision_model(s["model"]), **ready_info())
+
+
+@app.get("/api/mic_level")
+def mic_level():
+    """⚙ Senses live meter: the mic's loudness now and the level that starts a recording (both RMS). Read from
+    the recording Whisper already runs - no second microphone stream. live is False while nothing is listening
+    (ears off, Windows recognizer, or she is talking and her own voice is being skipped)."""
+    if not whisper:
+        return jsonify(live=False, rms=0.0, start=0.0, why="the offline Whisper ears aren't installed")
+    rms, start, at = whisper.meter
+    live = time.time() - at < 1.0
+    return jsonify(live=live, rms=rms if live else 0.0, start=start, why="" if live else "not listening right now")
 
 
 @app.post("/api/setup")
@@ -1869,6 +1957,8 @@ def setup():
             s["listen_pause"] = round(min(max(float(body["listen_pause"]), LISTEN_PAUSE[0]), LISTEN_PAUSE[1]), 2)
         if "listen_max" in body:
             s["listen_max"] = min(max(int(body["listen_max"]), LISTEN_MAX[0]), LISTEN_MAX[1])
+        if "mic_level" in body:
+            s["mic_level"] = min(max(int(round(float(body["mic_level"]))), MIC_LEVEL[0]), MIC_LEVEL[1])
     except (TypeError, ValueError):
         pass
     apply_listening(s)
@@ -2905,6 +2995,7 @@ windows_transcriber = voice.Transcriber()
 whisper = voice.WhisperTranscriber() if voice.WhisperTranscriber.available() else None
 LISTEN_PAUSE = (0.3, 2.0)       # ⚙ Senses: seconds of quiet that mean you've finished speaking
 LISTEN_MAX = (4, 30)            # ⚙ Senses: the longest one spoken request may be
+MIC_LEVEL = (1, 10)             # ⚙ Senses: how loud you must be before she starts recording (5 = the built-in levels)
 
 
 def apply_listening(s=None):
@@ -2913,6 +3004,11 @@ def apply_listening(s=None):
     if whisper:
         whisper.END_PAUSE = min(max(float(s.get("listen_pause", 0.7)), LISTEN_PAUSE[0]), LISTEN_PAUSE[1])
         whisper.MAX_LEN = float(min(max(int(s.get("listen_max", 10)), LISTEN_MAX[0]), LISTEN_MAX[1]))
+        try:
+            level = min(max(float(s.get("mic_level", 5)), MIC_LEVEL[0]), MIC_LEVEL[1])
+        except (TypeError, ValueError):
+            level = 5
+        whisper.scale = voice.WhisperTranscriber.level_scale(level)
 
 
 apply_listening()
