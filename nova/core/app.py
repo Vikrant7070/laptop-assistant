@@ -405,6 +405,8 @@ def is_risky(call):
     s = settings()
     if name == "power_action" and args.get("action") == "cancel":
         return False
+    if name in ("press_keys", "type_text") and wrong_app(call):
+        return False                                    # it will be refused (wrong window): nothing to ask about
     if name == "run_skill" and skill_needs_ok(args):    # it only sounds like that skill (or the brain picked it): ask
         return True
     if mcp.owns(name):                                  # 🔌 connector tools (mcp.py): ask unless known to be safe
@@ -681,7 +683,8 @@ def new_task(goal):
         picked, facts = None, knowledge.prompt_block()
     state["task"] = {"goal": clean, "start": len(state["messages"]), "steps": 0, "did": [], "done": None,
                      "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": [],
-                     "skill": skill["name"] if skill else "", "skill_how": how or ""}
+                     "skill": skill["name"] if skill else "", "skill_how": how or "",
+                     "app": tools.named_app(clean)}      # "type hello in notepad": keys and typing go only there
     try:
         made = judge.goal_checks(clean)   # the Judge's checks for this goal (more may be proposed later)
     except Exception as e:
@@ -1395,6 +1398,32 @@ WATCH_SEARCH_RE = re.compile(r"\b(show me|on (my|the) screen|in front of me|open
                              r"browse|in chrome|in the browser)\b", re.I)
 
 
+def wrong_app(c):
+    """The request named an app ("type hello in notepad"): refuse keys/typing that would land in another window
+    (2026-11-20 she pressed ctrl+n in VS Code and typed there, because Notepad wasn't open). None when it's fine."""
+    task = state.get("task") or {}
+    app_name = task.get("app")
+    if not app_name:
+        return None
+    try:   # right after open_app the window can take a moment to appear
+        return tools.app_guard(c["name"], c.get("args"), app_name, wait=3.0 if "open_app" in task.get("used", ()) else 0.0)
+    except Exception as e:
+        task_log(f"APP GUARD failed: {type(e).__name__}: {e}")
+        return None
+
+
+def not_open_note(text):
+    """For the [open windows] line: "notepad is not open" when the request names an app with no window yet,
+    so the small brain calls open_app first instead of pressing new-window keys in some other app."""
+    try:
+        name = tools.named_app(_unspoken(text))
+        if name and not tools._app_window(name):
+            return f". {name} is not open: call open_app(name='{name}') first"
+    except Exception:
+        pass
+    return ""
+
+
 def _execute_one(c, approved, activity, model):
     check_stop()
     if c["name"] == "web_research" and not WATCH_SEARCH_RE.search(_unspoken(((state.get("task") or {}).get("goal")) or "")):
@@ -1450,6 +1479,10 @@ def _execute_one(c, approved, activity, model):
         out = more_tools(state.get("task"), need)
         activity.append(FRIENDLY["more_tools"])
         think("🧰 " + out.split(". Use")[0], cloud_too=False)
+    elif c["name"] in ("press_keys", "type_text") and (wrong := wrong_app(c)):
+        out = wrong
+        activity.append(f"Skipped: {FRIENDLY.get(c['name'], c['name'])}")
+        think(f"🙅 That would go into the wrong window - it has to be {state['task']['app']}.", cloud_too=False)
     else:
         hint = _short_args(c["args"])
         think(f"🔧 Using {c['name']}" + (f" ({hint})" if hint else ""))
@@ -2570,6 +2603,8 @@ def answer(text, quiet=False, remote=False):
             screen = tools.open_windows_summary()
         except Exception:
             screen = ""
+        missing = not_open_note(text)
+        screen = (screen or "none") + missing if missing else screen
         resume = new_task(text)
         # (Tried also passing the time and battery here to save a tool call: the small model then read the line
         # out loud and stopped calling tools for other facts. Only the window list is passed.)
