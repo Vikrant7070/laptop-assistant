@@ -108,6 +108,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "_focused_text", lambda: None)
     monkeypatch.setattr(tools.webbrowser, "open", lambda *a, **k: True)  # never open real browser tabs
     monkeypatch.setattr(tools, "open_windows_summary", lambda limit=6: "")
+    monkeypatch.setattr(tools, "_windows", lambda: [])      # an empty pretend desktop (a test adds its own windows)
     monkeypatch.setattr(tools, "_screen_allowed", lambda: False)
     monkeypatch.setattr(app, "react_later", lambda *a, **k: None)
     monkeypatch.setattr(app, "review_turn", lambda why: None)
