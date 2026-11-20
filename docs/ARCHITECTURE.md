@@ -67,6 +67,7 @@ the same approval rules as a direct tool call.
 | `nova/actions/forms.py` | ~0.15k | Form filling plan |
 | `nova/actions/checks.py` | ~0.15k | Step checks (`window_open`, `page_has`, ...) |
 | `nova/shared.py` | ~0.13k | Paths (`ROOT`, `DATA`), PowerShell quoting, host checks |
+| `nova/protocol.py` | ~0.09k | Every text marker: builders, `strip_meta`, vision verdict parsing |
 | `nova/brain/retrieval.py` | ~0.13k | Embeddings, with a shared-word fallback |
 | `nova/core/characters.py` | ~0.1k | Character folders / personas |
 | `nova/avatar/joint_check.py` | ~0.09k | 3D joint sanity check |
@@ -85,6 +86,8 @@ user's routines, `config/model_routing.json` the routing knobs, `characters/` th
 - **Tool selection is deterministic.** `toolpick.pick` returns the same names in `tools.TOOLS` order,
   so two identical requests produce byte-identical prompts. `tests/test_routing_golden.py` pins this.
 - **Tools never bypass approval.** `is_risky` runs for direct calls and for every skill step.
+- **What a person hears has been through `protocol.strip_meta`.** Hidden notes, window lists and
+  check markers are prompt text; never speak or show them raw.
 - **`data/` is personal and git-ignored.** Tests redirect it (`NOVA_DATA`) and stub the voice, the
   keyboard, the browser, PowerShell and the 3D body, so the suite is safe on any machine.
 - **Heavy imports stay lazy.** `faster-whisper`, `kokoro`, `cv2`, `uiautomation`, `comtypes` and
