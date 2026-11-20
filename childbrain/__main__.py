@@ -44,7 +44,20 @@ def main(argv: list[str] | None = None) -> int:
     rr.add_argument("folder")
     rr.add_argument("--tolerance", type=float, default=0.0)
     sub.add_parser("list", help="list saved runs")
+    sub.add_parser("seal", help="(people only) re-fingerprint the sealed exam games after checking a change")
+    sub.add_parser("verify", help="check the sealed exam games against their fingerprints")
     a = p.parse_args(argv)
+
+    if a.cmd in ("seal", "verify"):
+        from .worlds import sealed
+
+        if a.cmd == "seal":
+            for name, prints in sealed.seal().items():
+                print(f"sealed {name}: code {prints['code'][:12]}..., exam {prints['exam'][:12]}...")
+            return 0
+        problems = sealed.verify()
+        print("\n".join(problems) or "sealed games OK")
+        return 1 if problems else 0
 
     if a.cmd == "run":
         folder = run(EXPERIMENTS.get(a.experiment, a.experiment), _parse_set(a.set), a.seed, a.device, a.name)

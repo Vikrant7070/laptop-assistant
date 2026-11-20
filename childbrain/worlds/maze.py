@@ -55,8 +55,8 @@ def _key(m: torch.Tensor) -> bytes:
 
 @lru_cache(maxsize=8)
 def _bank(size: int, split: str) -> tuple[torch.Tensor, frozenset]:
-    if size % 2 == 0 or size < 5:
-        raise ValueError("maze size must be odd and at least 5")
+    if size % 2 == 0 or size < 11:
+        raise ValueError("maze size must be odd and at least 11")
     # Depth-first carving often makes one long corridor, so small mazes repeat by chance.
     # Skip repeats, and never let a practice maze (in any rotation) into the exam bank.
     banned = _bank(size, "train")[1] if split == "test" else frozenset()
@@ -85,6 +85,7 @@ class Maze(World):
     name = "maze"
     actions_used = (UP, DOWN, LEFT, RIGHT, STAY)
     default_size = 11
+    sizes = (11,)  # 9x9 and smaller have too few different layouts for two banks of 1,024
     default_max_steps = 100
 
     def _setup(self):

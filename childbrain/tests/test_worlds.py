@@ -1,4 +1,4 @@
-"""WP 0.3: the shared game format, Snake and Maze.
+"""WP 0.3: Snake and Maze (the shared format tests for every game are in test_format.py).
 
 Done when: 10,000 Snake steps run in well under a second, and a random player gets the expected low score.
 """
@@ -11,92 +11,17 @@ import pytest
 torch = pytest.importorskip("torch")  # skipped under Nova's Python
 
 from childbrain.runcard import rerun, run
-from childbrain.worlds import ACTIONS, LAYERS, MAX_SIZE, WORLDS, Maze, Snake, play_once, random_actions
-from childbrain.worlds.base import DOWN, EXTRA, GOAL, ITEMS, LEFT, ME, RIGHT, STAY, UP, USE, WALLS
+from childbrain.worlds import Maze, Snake, play_once, random_actions
+from childbrain.worlds.base import DOWN, EXTRA, ITEMS, LEFT, ME, RIGHT, STAY, UP
 from childbrain.worlds.maze import maze_bank
 
 GPU = "cuda" if torch.cuda.is_available() else "cpu"
-ALL = pytest.mark.parametrize("cls", list(WORLDS.values()), ids=list(WORLDS))
 
 
 def rand_player(device="cpu", seed=0):
     g = torch.Generator(device=device)
     g.manual_seed(seed)
     return lambda obs, allowed: random_actions(allowed, g)
-
-
-# ---------- the shared format: every game passes the same tests ----------
-
-@ALL
-def test_format(cls):
-    w = cls(n=64, seed=0)
-    obs = w.observe()
-    assert obs.shape == (64, len(LAYERS), MAX_SIZE, MAX_SIZE) and obs.dtype == torch.float32
-    assert obs.min() >= 0 and obs.max() <= 1
-    assert (obs[:, ME].flatten(1).sum(1) == 1).all(), "exactly one 'me' per copy"
-    s = w.size
-    outside = torch.ones(MAX_SIZE, MAX_SIZE, dtype=torch.bool)
-    outside[:s, :s] = False
-    assert (obs[:, WALLS][:, outside] == 1).all(), "outside the playing area is wall"
-    allowed = w.allowed()
-    assert allowed.shape == (64, len(ACTIONS)) and allowed.dtype == torch.bool
-    assert allowed.any(1).all() and not allowed[:, USE].any()
-
-
-@ALL
-def test_step_result(cls):
-    w = cls(n=64, seed=0)
-    res = w.step(torch.full((64,), STAY))
-    assert res.obs.shape == (64, len(LAYERS), MAX_SIZE, MAX_SIZE)
-    assert res.reward.shape == (64,) and res.done.shape == (64,) and res.done.dtype == torch.bool
-    assert set(res.info) >= {"episode_return", "timeout", "length"}
-
-
-@ALL
-def test_step_limit_is_never_passed(cls):
-    w = cls(n=256, seed=0, max_steps=30)
-    play = rand_player()
-    longest = 0
-    for _ in range(100):
-        res = w.step(play(None, w.allowed()))
-        longest = max(longest, int(res.info["length"][res.done].max().item()) if res.done.any() else 0)
-        assert (w.t < 30).all()
-    assert longest == 30  # some random episodes run to the limit
-
-
-@ALL
-def test_same_seed_same_game(cls):
-    def trace(seed):
-        w, play, out = cls(n=32, seed=seed), rand_player(seed=5), []
-        for _ in range(50):
-            res = w.step(play(None, w.allowed()))
-            out.append(res.obs)
-        return torch.stack(out)
-
-    assert torch.equal(trace(3), trace(3))
-    assert not torch.equal(trace(3), trace(4))
-
-
-@ALL
-def test_exam_worlds_are_fixed(cls):
-    a, b = cls(n=16, split="test"), cls(n=16, split="test")
-    assert torch.equal(a.observe(), b.observe())
-
-
-@ALL
-def test_not_allowed_action_means_stay(cls):
-    a, b = cls(n=64, seed=9), cls(n=64, seed=9)
-    ra, rb = a.step(torch.full((64,), USE)), b.step(torch.full((64,), STAY))
-    assert torch.equal(ra.obs, rb.obs) and torch.equal(ra.reward, rb.reward)
-
-
-@ALL
-def test_runs_on_gpu_like_on_cpu(cls):
-    if GPU == "cpu":
-        pytest.skip("no GPU")
-    w = cls(n=512, device=GPU, seed=0)
-    scores = play_once(w, rand_player(GPU))
-    assert scores.device.type == "cuda" and scores.shape == (512,)
 
 
 # ---------- speed ----------

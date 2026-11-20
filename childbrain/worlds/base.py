@@ -46,15 +46,20 @@ class World:
     name = "world"
     actions_used = (UP, DOWN, LEFT, RIGHT, STAY)  # the game's actions; others are never allowed
     default_size = 8
+    sizes: tuple = tuple(range(5, MAX_SIZE + 1))  # the board sizes this game can be played at
     default_max_steps = 200
+    sealed = False  # sealed games are exam-only: they can't be built for practice
+    one_me = True  # exactly one "me" cell (False for a paddle or a board of discs)
 
     def __init__(self, *, n: int = 1024, size: int | None = None, device: str = "cpu",
                  max_steps: int | None = None, seed: int | None = None, split: str = "train"):
         self.size = size or self.default_size
-        if not 3 <= self.size <= MAX_SIZE:
-            raise ValueError(f"size must be 3..{MAX_SIZE}, got {self.size}")
+        if self.size not in self.sizes:
+            raise ValueError(f"{self.name} can be size {self.sizes}, not {self.size}")
         if split not in ("train", "test"):
             raise ValueError("split must be 'train' or 'test'")
+        if self.sealed and split != "test":
+            raise PermissionError(f"{self.name} is a sealed exam game: build it with split='test' only")
         self.n, self.split = n, split
         self.device = torch.device(device)
         self.max_steps = max_steps or self.default_max_steps
@@ -79,6 +84,11 @@ class World:
         self.reset()
 
     # ----- the public format -----
+
+    @property
+    def area(self) -> tuple[int, int, int]:
+        """Where the playing area sits in the 12x12 picture: (top row, left column, size)."""
+        return 0, 0, self.size
 
     def reset(self, which: torch.Tensor | None = None) -> torch.Tensor:
         if which is None:
@@ -134,9 +144,29 @@ class World:
         return torch.randint(0, k, (self.n, 2), generator=self.gen, device=self.device)
 
     def mark(self, obs: torch.Tensor, layer: int, cells: torch.Tensor, show: torch.Tensor | None = None) -> None:
-        """Set one cell per copy on a layer (only where `show` is True)."""
-        value = torch.ones(self.n, device=self.device) if show is None else show.float()
-        obs[self.rows, layer, cells[:, 0], cells[:, 1]] = value
+        """Set cells on a layer. `cells` is (n, 2) or (n, k, 2); with `show`, only where it's True.
+        Cells that aren't shown keep what was there (so things can't hide other things)."""
+        if cells.dim() == 2:
+            cells = cells[:, None]
+            show = None if show is None else show[:, None]
+        rows = self.rows[:, None].expand(-1, cells.shape[1])
+        old = obs[rows, layer, cells[..., 0], cells[..., 1]]
+        new = torch.ones_like(old) if show is None else torch.where(show, 1.0, old)
+        obs[rows, layer, cells[..., 0], cells[..., 1]] = new
+
+    def pick_cells(self, free: torch.Tensor, k: int) -> torch.Tensor:
+        """(n, k, 2) different random cells per copy, chosen among `free` (n, s, s) cells."""
+        s = free.shape[-1]
+        score = torch.rand(free.shape, generator=self.gen, device=self.device)
+        score = torch.where(free, score, -1.0)
+        idx = score.flatten(1).topk(k, dim=1).indices
+        return torch.stack([idx // s, idx % s], dim=2)
+
+    def same_cell(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        """Is cell a == cell b? Works for (n, 2) against (n, k, 2) too."""
+        if a.dim() < b.dim():
+            a = a[:, None]
+        return (a == b).all(dim=-1)
 
 
 def random_actions(allowed: torch.Tensor, gen: torch.Generator) -> torch.Tensor:
