@@ -7,6 +7,9 @@
     python -m childbrain.guard lock        (people only) re-lock policy.json after reading the change
     python -m childbrain.guard seal        (people only) re-seal the exam games after checking the change
     python -m childbrain.guard log <run folder>   show a run's log and check it wasn't tampered with
+    python -m childbrain.guard nightly     exam + keep or roll back + the morning line
+    python -m childbrain.guard versions    list saved versions and which one is in use
+    python -m childbrain.guard rollback <version>   (a person) go back to an earlier version
 """
 
 import argparse
@@ -19,10 +22,33 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="python -m childbrain.guard")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("run").add_argument("target")
-    for name in ("stop", "clear", "check", "lock", "seal"):
+    for name in ("stop", "clear", "check", "lock", "seal", "nightly", "versions"):
         sub.add_parser(name)
     sub.add_parser("log").add_argument("folder")
+    sub.add_parser("rollback").add_argument("version")
     a = p.parse_args(argv)
+
+    if a.cmd == "nightly":
+        from .nightly import nightly
+
+        print(nightly()["line"])
+        return 0
+    if a.cmd == "rollback":
+        from .nightly import rollback
+
+        print(rollback(a.version))
+        return 0
+    if a.cmd == "versions":
+        from .versions import VersionStore
+
+        store = VersionStore()
+        current = store.current
+        for vid in store.ids():
+            card = store.card(vid)
+            exam = (card.get("exam") or {}).get("total")
+            mark = "  <- in use" if vid == current else ""
+            print(f"{vid}  {card['status']:<11} exam {exam if exam is not None else '-':<10} {card.get('why', '')}{mark}")
+        return 0
 
     if a.cmd == "stop":
         from .server import off_switch

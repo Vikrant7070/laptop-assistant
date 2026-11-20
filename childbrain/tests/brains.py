@@ -1,8 +1,45 @@
 """Test brains for the guard. They run in their own process, started by the guard."""
 
+import json
 import time
 
 from childbrain.link import brain
+
+
+def catch_follower():
+    """A hand-set test brain (not learned): in Catch it moves toward the falling thing.
+    Button scores: right = (thing column - my column), left = the opposite, stay = 0.5."""
+    import torch
+
+    from childbrain.brain.net import build
+    from childbrain.worlds.base import DOWN, ITEMS, LEFT, MAX_SIZE, ME, RIGHT, STAY, UP, USE
+
+    net = build({"kind": "linear"})
+    w, b = net[1].weight, net[1].bias
+    cells = MAX_SIZE * MAX_SIZE
+    cols = torch.arange(MAX_SIZE).float().repeat(MAX_SIZE)
+    with torch.no_grad():
+        w.zero_()
+        b.zero_()
+        for layer, sign in ((ITEMS, 1.0), (ME, -1.0)):
+            w[RIGHT, layer * cells:(layer + 1) * cells] = sign * cols
+            w[LEFT, layer * cells:(layer + 1) * cells] = -sign * cols
+        b[STAY] = 0.5
+        b[UP], b[DOWN], b[USE] = -100.0, -100.0, -100.0
+    return net
+
+
+@brain
+def trainer(link):
+    """Makes a brain version and hands it in for tonight's exam."""
+    from childbrain.brain.net import weights_to_json
+
+    link.hello()
+    net = catch_follower()
+    link.save("brain.json", json.dumps({"genes": {"kind": "linear"}, "weights": weights_to_json(net)}))
+    answer = link.ask("submit", file="brain.json", note="hand-set catch follower")
+    link.note(f"submitted: {answer['ok']} {answer['result']}")
+    link.done()
 
 
 @brain

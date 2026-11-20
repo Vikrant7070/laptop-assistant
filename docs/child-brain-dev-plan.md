@@ -1,6 +1,6 @@
 # Child brain — full development plan
 
-Status: **building** — WP 0.1–0.5 done 2026-11-20 (PyTorch + GPU OK, run cards, 12 games on the GPU, sealed exams, guard v1).
+Status: **building** — WP 0.1–0.6 done 2026-11-20 (PyTorch + GPU OK, run cards, 12 games on the GPU, sealed exams, guard v1, nightly exam + rollback).
 The *why* and the big idea are in [child-brain-plan.md](child-brain-plan.md). This file is the *how*: what to
 build, in what order, how to test each piece, and when each part counts as done.
 
@@ -129,6 +129,7 @@ end of each phase.
 | 0.5 | Guard v1: separate program, allowed-action list, limits, log, off switch | A test brain that tries a forbidden action is blocked and logged; the off switch stops it within 1 second |
 | | **✅ Done 2026-11-20:** `childbrain/guard/` runs the brain in its own process inside a Windows job; a sneaky test brain's 8 forbidden tries are all blocked and logged (hash-chained log); the off switch stops a busy brain in 13–49 ms. See "WP 0.5 result" below | |
 | 0.6 | Nightly exam + saved versions + rollback | A deliberately damaged brain fails the exam and is rolled back automatically |
+| | **✅ Done 2026-11-20:** versions kept by the guard with fingerprints; a sandboxed, exactly repeatable exam (12 games incl. sealed); a damaged candidate is thrown away and a version damaged in place (even with faked fingerprints) is rolled back automatically. See "WP 0.6 result" below | |
 | 0.7 | GPU timing method (warm-up, median of many runs, fixed power mode) | Timing a fixed brain repeats within ±10% across three runs |
 
 #### WP 0.1 result (2026-11-20)
@@ -261,6 +262,49 @@ end of each phase.
   under a restricted Windows account / AppContainer with no network) is later hardening, before Phase 5.
   GPU time is limited only as total run time (the GPU's per-process numbers aren't available on this laptop).
 - **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 368 passed (~100 s).
+
+#### WP 0.6 result (2026-11-20)
+
+- **A brain on disk** (`childbrain/brain/net.py`) = *genes* (a small JSON shape: `linear` or `mlp`) + *weights* as
+  plain JSON numbers. No pickle, so loading a brain can never run code. Every brain answers the shared format:
+  picture in, best allowed button out; scores that aren't numbers (NaN/∞) count as a broken brain.
+- **Saved versions** (`guard/versions.py`, in `childbrain/runs/versions/`, kept by the guard): every version
+  is kept forever (`0001/`, `0002/` ...) with a card holding each file's SHA-256, its status (candidate / kept /
+  thrown away / damaged), where it came from and its exam. `state.json` says which version is in use.
+- **How a version arrives:** a brain saves `{genes, weights}` through the guard and asks `submit` (newly
+  allowed at trust level 0; the policy was re-locked). The guard checks that it builds and fits. Nothing
+  changes until the night.
+- **The exam** (`guard/exam.py`): all 9 practice games on their exam worlds plus the 3 sealed games, 128 copies
+  each. It runs in its own process inside a Windows job, with a 5-minute limit, so a broken brain can't crash or
+  hang the guard. It's exactly repeatable (same brain = same score to the last digit). About 3 s of exam,
+  ~7 s with start-up.
+- **The night** (`guard/nightly.py`, `python -m childbrain.guard nightly`):
+  1. Checks the version in use: files unchanged, still passes, *same score as when it was kept*. If not, it
+     **rolls back automatically** to the newest earlier kept version that is still fine.
+  2. Examines each candidate. It's kept only if its files are unchanged, the run that made it broke no guard
+     rule (and its log is intact), the exam doesn't break, and its score is no worse than the version in
+     use (tolerance 2%). Otherwise it's thrown away.
+  3. Two failed nights in a row drop the trust level by one (noted; level 0 is already the lowest).
+  4. One line for the morning in `report.txt`, and every decision in a hash-chained `nightly_log.jsonl`.
+  No exam runs at all if the policy lock or the exam seals don't match.
+- **The "done when" test**, night by night, with the real sandboxed exam:
+  1. A blank brain is kept as `0001`.
+  2. A hand-set test brain that catches every falling thing (Catch 10/10) is kept as `0002`.
+  3. A **damaged copy** (left and right swapped) is thrown away: "its exam score … is worse".
+  4. The version in use is **damaged in place, with its fingerprints faked to match**. Its exam score changed,
+     so it's marked damaged and **rolled back automatically to `0001`**.
+
+  Other tests: a brain giving NaN scores fails; changed files are caught; a version from a rule-breaking run is
+  thrown away without an exam; two failed nights drop the level; no exam runs when the seals are broken; a person
+  can go back to any saved version (`python -m childbrain.guard rollback 0001`); a brain's own `submit` through
+  the guard is kept the next night.
+- **Commands:** `python -m childbrain.guard nightly | versions | rollback <version>`.
+- **Not yet:** the exam score is a plain sum over games with very different scales (Catch counts ±10, most
+  games ±1). Per-game scaling against random/expert baselines comes with the first learning brains (Phase 1).
+  Running the night automatically (idle + charging, Task Scheduler) is left for when there's something to learn
+  overnight (WP 2.2).
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 378 passed (~3 min; the nightly tests use
+  the real sandboxed exam, ~7 s each).
 
 ### Phase 1 — Show the problem (≈ 1 week)
 
