@@ -150,6 +150,7 @@ def test_failed_brain_check_is_only_advice(brain, looks, monkeypatch):
     # never pass, and treating it as the truth made Nova retype the text again and again.
     monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: 'front_window "Untitled - Notepad"')
     monkeypatch.setattr(checks, "evaluate", lambda c, ctx=None, **k: (False, "in front: 'Claude'"))
+    monkeypatch.setattr(app.tools, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
     fake, _ = brain([("", [("type_text", {"text": "hi", "into_window": "Untitled - Notepad"})]),
                      ("", [("press_keys", {"keys": "enter", "into_window": "Untitled - Notepad"})]),
                      ("Typed it.", [])])
