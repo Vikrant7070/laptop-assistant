@@ -59,7 +59,7 @@ def _unspoken(text):
 
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "deep_sleep": True, "listen_pause": 0.7, "listen_max": 10, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_quiet": True, "phone_notes_cloud": False, "suggest": False,
+         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "deep_sleep": True, "listen_pause": 0.7, "listen_max": 10, "mic_level": 5, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_quiet": True, "phone_notes_cloud": False, "suggest": False,
          "reaction_sounds": True, "power_ok": False, "reasoning": "auto",
          "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
          "skill_screen_checks": False, "skill_teach": True, "barge_in": True, "character": characters.DEFAULT}
@@ -1803,7 +1803,7 @@ def status():
     s = settings()
     return jsonify(name=ASSISTANT_NAME, memories=tools.memories(), default_model=DEFAULT_MODEL,
                    autonomy=s["autonomy"], think=s["think"], reasoning=s.get("reasoning", "auto"), camera=s["camera"], screen=s["screen"],
-                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), deep_sleep=s.get("deep_sleep", True), listen_pause=s.get("listen_pause", 0.7), listen_max=s.get("listen_max", 10), phone_calls=s.get("phone_calls", True), email_cloud=bool(s.get("email_cloud")),
+                   notifications=s["notifications"], notif_sleep=s.get("notif_sleep", False), deep_sleep=s.get("deep_sleep", True), listen_pause=s.get("listen_pause", 0.7), listen_max=s.get("listen_max", 10), mic_level=s.get("mic_level", 5), phone_calls=s.get("phone_calls", True), email_cloud=bool(s.get("email_cloud")),
                    phone_quiet=s.get("phone_quiet", True), phone_notes_cloud=s.get("phone_notes_cloud", False), suggest=s.get("suggest", False), asleep=nap["asleep"], deep_asleep=nap.get("deep", False),
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    presence=s.get("presence", False), presence_lock=s.get("presence_lock", False),
@@ -1813,6 +1813,18 @@ def status():
                    characters=characters.choices(),
                    voice=s["voice"], wake=s["wake"], wake_phrase=wake_phrase(), voice_name=mouth.voice_name, ears=ears.status, heard=ears.heard,
                    vision_model=llm.vision_model(s["model"]), **ready_info())
+
+
+@app.get("/api/mic_level")
+def mic_level():
+    """⚙ Senses live meter: the mic's loudness now and the level that starts a recording (both RMS). Read from
+    the recording Whisper already runs - no second microphone stream. live is False while nothing is listening
+    (ears off, Windows recognizer, or she is talking and her own voice is being skipped)."""
+    if not whisper:
+        return jsonify(live=False, rms=0.0, start=0.0, why="the offline Whisper ears aren't installed")
+    rms, start, at = whisper.meter
+    live = time.time() - at < 1.0
+    return jsonify(live=live, rms=rms if live else 0.0, start=start, why="" if live else "not listening right now")
 
 
 @app.post("/api/setup")
@@ -1869,6 +1881,8 @@ def setup():
             s["listen_pause"] = round(min(max(float(body["listen_pause"]), LISTEN_PAUSE[0]), LISTEN_PAUSE[1]), 2)
         if "listen_max" in body:
             s["listen_max"] = min(max(int(body["listen_max"]), LISTEN_MAX[0]), LISTEN_MAX[1])
+        if "mic_level" in body:
+            s["mic_level"] = min(max(int(round(float(body["mic_level"]))), MIC_LEVEL[0]), MIC_LEVEL[1])
     except (TypeError, ValueError):
         pass
     apply_listening(s)
@@ -2905,6 +2919,7 @@ windows_transcriber = voice.Transcriber()
 whisper = voice.WhisperTranscriber() if voice.WhisperTranscriber.available() else None
 LISTEN_PAUSE = (0.3, 2.0)       # ⚙ Senses: seconds of quiet that mean you've finished speaking
 LISTEN_MAX = (4, 30)            # ⚙ Senses: the longest one spoken request may be
+MIC_LEVEL = (1, 10)             # ⚙ Senses: how loud you must be before she starts recording (5 = the built-in levels)
 
 
 def apply_listening(s=None):
@@ -2913,6 +2928,11 @@ def apply_listening(s=None):
     if whisper:
         whisper.END_PAUSE = min(max(float(s.get("listen_pause", 0.7)), LISTEN_PAUSE[0]), LISTEN_PAUSE[1])
         whisper.MAX_LEN = float(min(max(int(s.get("listen_max", 10)), LISTEN_MAX[0]), LISTEN_MAX[1]))
+        try:
+            level = min(max(float(s.get("mic_level", 5)), MIC_LEVEL[0]), MIC_LEVEL[1])
+        except (TypeError, ValueError):
+            level = 5
+        whisper.scale = voice.WhisperTranscriber.level_scale(level)
 
 
 apply_listening()
