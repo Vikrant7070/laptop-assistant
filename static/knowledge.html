@@ -23,6 +23,8 @@
   .chip{background:#1d2140;border:1px solid var(--line);border-radius:999px;padding:3px 6px 3px 11px;display:inline-flex;gap:6px;align-items:center;max-width:100%;overflow-wrap:anywhere}
   .chip button,.lesson button.del{border:0;background:transparent;color:var(--muted);padding:0 5px;border-radius:50%;font-size:15px;line-height:1}
   .chip button:hover,.lesson button.del:hover{color:var(--warn)}
+  .lesson button.ok{border:0;background:transparent;color:var(--muted);padding:0 5px;font-size:15px;line-height:1}
+  .lesson button.ok:hover{color:var(--accent2)}
   input,select{background:#0f1222;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font:inherit;min-width:0}
   input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--accent2);outline-offset:1px}
   form.add{display:flex;gap:6px;flex:1 1 220px}
@@ -64,6 +66,13 @@
       <button>Add lesson</button>
     </form>
   </div>
+  <h2>Sites Nova has learned</h2>
+  <p class="lead">Noticed by herself after background research: which sites ended up in the report, and which she opened and didn't use. Next time she researches the same topic she reads the good ones first. Marked "unconfirmed" until you say it's right.</p>
+  <div class="card" id="facts"></div>
+
+  <h2>Questions waiting for you</h2>
+  <p class="lead">Things she wants to ask while she learns (like "save that as a skill?"). She asks them once a day, one at a time, when you're talking to her at the laptop.</p>
+  <div class="card" id="questions"></div>
   <div class="note" id="where"></div>
 </div>
 <script>
@@ -88,12 +97,25 @@ async function load() {
       <button class="del" title="Delete this lesson" aria-label="Delete this lesson" data-id="${+l.id}">×</button>
       <div class="meta">${l.situation ? "When: " + esc(l.situation) + " · " : ""}learned ${esc(l.when || "")}${l.hits > 1 ? " · came up " + l.hits + " times" : ""}${l.source === "auto" ? " · noticed by herself" : l.source === "user" ? " · added by you" : l.source === "starter" ? " · starter lesson" : ""}</div>
     </div>`).join("") : `<div class="empty">No lessons yet. She will write one the first time something goes wrong.</div>`;
-  $("where").textContent = "Saved in this file on your laptop: " + k.file + ". When Nova thinks with a cloud brain (Gemini, ChatGPT or Claude), a short summary of this page is sent along with each message so she can use it; with the local brain nothing leaves the laptop.";
+  $("facts").innerHTML = k.facts.length ? k.facts.map(f => `<div class="lesson">
+      <div class="what">${f.confirmed ? "" : '<span class="tag improvement">unconfirmed</span>'}${esc(f.text)}</div>
+      <span>${f.confirmed ? "" : `<button class="ok" title="This is right" aria-label="Mark this fact as right" data-fact-ok="${+f.id}">✓</button>`}<button class="del" title="Forget this" aria-label="Forget this fact" data-fact="${+f.id}">×</button></span>
+      <div class="meta">last used ${esc(f.when)}</div>
+    </div>`).join("") : `<div class="empty">Nothing yet. She learns these when a background research job finishes.</div>`;
+  $("questions").innerHTML = k.questions.length ? k.questions.map(q => `<div class="lesson">
+      <div class="what">${q.urgent ? '<span class="tag mistake">urgent</span>' : ""}${esc(q.text)}</div>
+      <button class="del" title="Don't ask this" aria-label="Don't ask this question" data-q="${+q.id}">×</button>
+      <div class="meta">Why: ${esc(q.why)}${q.asked ? " · asked " + q.asked + " time" + (q.asked > 1 ? "s" : "") : " · not asked yet"}</div>
+    </div>`).join("") : `<div class="empty">No questions right now.</div>`;
+  $("where").textContent = "Saved in this file on your laptop: " + k.file + " (learned sites: " + k.facts_file + ", questions: " + k.questions_file + "). When Nova thinks with a cloud brain (Gemini, ChatGPT or Claude), a short summary of this page is sent along with each message so she can use it; with the local brain nothing leaves the laptop.";
 }
 document.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.v !== undefined) send({do: "profile_remove", field: b.dataset.f, value: b.dataset.v});
   else if (b.dataset.id) send({do: "lesson_delete", id: +b.dataset.id});
+  else if (b.dataset.fact) send({do: "fact_delete", id: +b.dataset.fact});
+  else if (b.dataset.factOk) send({do: "fact_confirm", id: +b.dataset.factOk});
+  else if (b.dataset.q) send({do: "question_drop", id: +b.dataset.q});
 });
 document.addEventListener("submit", e => {
   e.preventDefault();

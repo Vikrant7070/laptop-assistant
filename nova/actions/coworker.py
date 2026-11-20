@@ -30,7 +30,7 @@ SW_MINIMIZE, SW_SHOWMINNOACTIVE, SW_RESTORE, SW_MAXIMIZE = 6, 7, 9, 3
 
 jobs = []                      # newest last: {id, kind, title, status, step, hwnd, result, error, started, finished}
 _ids = itertools.count(1)
-_hooks = {"write": None, "on_done": None, "on_note": None}
+_hooks = {"write": None, "on_done": None, "on_note": None, "sites": None}
 KEEP_JOBS = 30                 # finished jobs remembered (running ones are never dropped)
 _jobs_lock = threading.RLock()  # jobs run on their own threads, so the list is only changed under this
 # New windows are found by "which window of this program wasn't there before?". Two jobs opening Chrome at the same
@@ -46,11 +46,14 @@ MAX_URL_BODY = 1800            # Gmail's compose link: keep the whole URL well u
 LOAD_SECS = 45
 
 
-def configure(write=None, on_done=None, on_note=None):
+def configure(write=None, on_done=None, on_note=None, sites=None):
     """write(prompt, max_tokens) -> text   (her brain)
     on_done(job)                          (tell the user)
-    on_note(text)                         (her thoughts / task log)"""
+    on_note(text)                         (her thoughts / task log)
+    sites(topic) -> (prefer, avoid)       (research: hosts learned as good / ignored for this topic, learner.py)"""
     _hooks.update(write=write, on_done=on_done, on_note=on_note)
+    if sites is not None:
+        _hooks["sites"] = sites
 
 
 def _job():
@@ -660,6 +663,38 @@ each ending with its source number in brackets like [2]. Only use what the sourc
 Under 350 words."""
 
 
+def _site_hints(topic):
+    """(prefer, avoid) hosts the Learner remembers for this topic; ([], []) without a hook or on any error."""
+    fn = _hooks.get("sites")
+    if not fn:
+        return [], []
+    try:
+        prefer, avoid = fn(topic)[:2]
+        return list(prefer or [])[:3], list(avoid or [])
+    except Exception as e:
+        _note(f"couldn't read the sites I remember: {e}")
+        return [], []
+
+
+def _with_learned_sites(links, prefer, avoid, topic, query, proc, exe, windows, keep):
+    """Search results reordered by what earlier research on this topic learned: good sites first, ignored ones out.
+    When no good site is in the results, one more search on the best one (site:) brings its page in."""
+    from nova.actions import learner
+    links = learner.rerank(links, prefer, avoid, keep)
+    hosts = {learner.host(u) for _, u in links}
+    if prefer and not any(h == p or h.endswith("." + p) for h in hosts for p in prefer):
+        try:
+            extra = search(f"{query} site:{prefer[0]}", proc, exe, windows)
+            links = [lk for lk in extra if learner.host(lk[1]).endswith(prefer[0])][:1] + links
+        except RuntimeError:
+            pass
+    shown = [p for p in prefer if any(learner.host(u).endswith(p) for _, u in links)]
+    if shown:
+        _note(f"🧠 I remember {' and '.join(shown[:2])} {'were' if len(shown[:2]) > 1 else 'was'} useful for "
+              f"{topic} - reading {'them' if len(shown[:2]) > 1 else 'it'} first.")
+    return links
+
+
 def search(query, proc, exe, windows):
     """Search the web in a parked Chrome window: Google first, the next engine if one shows a robot check.
     Returns the result links (title, address)."""
@@ -714,9 +749,12 @@ def research(topic, focus="", kind="general", max_sources=3):
         proc, exe = _browser()
         queries = [q.format(t=topic) for q in CODE_QUERIES] if kind == "code" else [topic]
         picked, windows = [], []
+        prefer, avoid = _site_hints(topic)
         try:
             for q in queries:
                 links = search(q, proc, exe, windows)
+                if prefer or avoid:
+                    links = _with_learned_sites(links, prefer, avoid, topic, q, proc, exe, windows, n_sources)
                 per = 1 if len(queries) > 1 else n_sources
                 for title, link in links:
                     if per > 0 and all(link != u for _, u in picked):
@@ -751,6 +789,8 @@ def research(topic, focus="", kind="general", max_sources=3):
         headline, body = _parse_report(text)
         if len(body) < 20:
             raise RuntimeError("my brain didn't write the report")
+        used = {int(n) for n in re.findall(r"\[(\d+)\]", headline + " " + body)}
+        job["cited"] = [s["url"] for s in sources if s["n"] in used]    # the Learner: which sites were really used
         report = (f"Research: {topic}\n{time.strftime('%d %b %Y, %I:%M %p')}\n\n{headline}\n\n{body}\n\nSources:\n"
                   + "\n".join(f"[{s['n']}] {s['title']}\n    {s['url']}" for s in sources) + "\n")
         folder = tools.HOME / "Documents" / "Nova"
