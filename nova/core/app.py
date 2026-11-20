@@ -39,6 +39,7 @@ from nova.brain import router
 from nova.actions import tools
 from nova.audio import voice
 from nova import shared
+from nova import protocol
 from nova.shared import REACTIONS, host_allowed, ps_escape
 
 ROOT = shared.ROOT
@@ -49,12 +50,11 @@ ASSISTANT_NAME = "Nova"
 MAX_HISTORY = 12  # the 8K context holds ~5300 tokens of prompt + tools, so only ~2900 are left for these
 MAX_STORED = 120  # messages kept in memory at all (Nova runs for days in the tray; only MAX_HISTORY reach the model)
 MAX_EVENTS = 50   # voice events waiting for the chat page
-SPOKEN_TAG = re.compile(r"^\[(spoken|from the user's phone)[^\]]*\]\s*")   # voice and 📱 phone requests carry one
 
 
 def _unspoken(text):
     """The user's words without the "[spoken; ...]" marker that voice requests carry."""
-    return SPOKEN_TAG.sub("", text or "")
+    return protocol.unspoken(text)
 
 
 def settings():
@@ -655,8 +655,9 @@ def new_task(goal):
         last["paused"] = False
         task_log(f"RESUMING paused task: {last['goal'][:200]}")
         think(f"▶️ Carrying on with: {last['goal'][:120]}", cloud_too=False)
-        return ("\n[note from Nova's system] You paused this task after many steps and the user wants you to carry "
-                f"on: {last['goal']}\nContinue from where you stopped. Don't redo steps that already worked.")
+        return "\n" + protocol.note(
+            "You paused this task after many steps and the user wants you to carry "
+            f"on: {last['goal']}\nContinue from where you stopped. Don't redo steps that already worked.")
     skill = how = None
     try:
         skill, how = skills.pick(clean)       # exact (it said the skill), fuzzy (it only sounds like it) or neither
@@ -860,8 +861,8 @@ def skill_screen_ok(s, step, out):
         raise
     except Exception as e:
         return True, f"(couldn't look: {e})"
-    m = re.search(r"STEP WORKED:\s*(yes|no)", seen, re.I)
-    return bool(m and m.group(1).lower() == "yes"), (re.search(r"SCREEN:\s*(.+)", seen) or [None, seen])[1]
+    verdict = protocol.parse_worked(seen)
+    return verdict["worked"], verdict["screen"]
 
 
 def _skill_say(run, text):
@@ -1187,12 +1188,11 @@ def look_check(task, step, result, windows, activity, model):
     seen = interruptible(llm.see, img, CHECK_PROMPT.format(goal=task["goal"], step=step, result=result[:200], windows=windows),
                    preferred=model, kind="check")
     state["check_image"] = img        # the chat shows the last thing she looked at
-    done = re.search(r"TASK DONE:\s*(yes|no)", seen, re.I)
-    task["done"] = (done.group(1).lower() == "yes") if done else None
+    verdict = protocol.parse_verdict(seen)
+    task["done"] = verdict["done"]
     task["screen"] = seen
-    what = re.search(r"SCREEN:\s*(.+)", seen)
     think(("✅ The screen says it's done." if task["done"] else "❌ Not finished yet." if task["done"] is False
-           else "🤔 Can't tell from the screen.") + (f" I see: {what.group(1).strip()}" if what else ""))
+           else "🤔 Can't tell from the screen.") + (f" I see: {verdict['screen']}" if verdict["screen"] else ""))
     activity.append("Checked the screen")
     return seen
 
@@ -1215,7 +1215,7 @@ def check_step(call, out, activity, model):
     task["did"].append(f"{call['name']} {json.dumps(call['args'], ensure_ascii=False)[:80]}")
     on_cloud = _big_brain(model)
     windows = settle(call["name"], quick=on_cloud)
-    note = f"\n[check after step {task['steps']}] Windows now, front first: {windows or 'none'}."
+    note = protocol.check_note(task["steps"], windows)
     if on_cloud:
         task["done"] = None        # an earlier verdict is out of date after a new step
     elif task["steps"] >= LOOK_FROM_STEP and tools._screen_allowed():
@@ -1390,7 +1390,7 @@ def _execute_one(c, approved, activity, model):
 
 
 def _is_real_user(m):
-    return m["role"] == "user" and not m["content"].startswith(("TOOL RESULT", "[note from Nova"))
+    return m["role"] == "user" and not protocol.is_meta_line(m["content"])
 
 
 def trimmed_history():
@@ -1401,16 +1401,13 @@ def trimmed_history():
     cut = max(0, len(msgs) - MAX_HISTORY)
     if task and task["start"] < len(msgs) and cut > task["start"]:
         tail = msgs[-(MAX_HISTORY - 2):]
-        while tail and (tail[0]["role"] == "tool" or tail[0]["content"].startswith("TOOL RESULT")):
+        while tail and (tail[0]["role"] == "tool" or tail[0]["content"].startswith(protocol.TOOL_RESULT_START)):
             tail = tail[1:]   # a result whose call was cut off
         return [msgs[task["start"]]] + tail
     h = msgs[cut:]
     while h and not _is_real_user(h[0]):
         h = h[1:]
     return h
-
-
-INFO_ECHO = re.compile(r"\(\s*laptop info[^)]*\)|\[\s*now:[^\]]*\]|\[\s*open windows[^\]]*\]", re.I)   # echoes of hidden context
 
 
 def no_self_greeting(text, name=None):
@@ -1441,14 +1438,14 @@ class SpeechStream:
             if len(self.buf) < 24 and not self.END.search(self.buf):
                 return
             self.buf, self.opened = no_self_greeting(self.buf), True
-        if "[open windows" in self.buf:                           # she started echoing the hidden window list
-            self.buf = INFO_ECHO.sub("", self.buf)
-            if "[open windows" in self.buf:
+        if protocol.WINDOW_NOTE_START in self.buf:                 # she started echoing the hidden window list
+            self.buf = protocol.INFO_ECHO_RE.sub("", self.buf)
+            if protocol.WINDOW_NOTE_START in self.buf:
                 return                                            # wait for the closing bracket
-        m = re.search(r"\[(?:check|spoken)", self.buf)
+        m = protocol.STARTED_MARKER_RE.search(self.buf)
         if m:                                                     # junk the model adds after its answer (it repeats the
             self.buf, self.cut = self.buf[:m.start()], True       # request as "[spoken] ..."): stop there
-        elif re.search(r"\[(?:c(?:h(?:e(?:c)?)?)?|s(?:p(?:o(?:k(?:e(?:n)?)?)?)?)?)?$", self.buf):
+        elif protocol.PARTIAL_MARKER_RE.search(self.buf):
             return                                                # a half-written marker: wait for the rest
         if self.OPEN_STAGE.search(self.buf):
             return              # a half-written '[react: ...]' / '*(...)*' / '*italic line*': wait, so it isn't said
@@ -1463,8 +1460,8 @@ class SpeechStream:
     def flush(self):
         if not self.opened:
             self.buf, self.opened = no_self_greeting(self.buf), True
-        self.buf = re.sub(r"\[(?:c(?:h(?:e(?:c)?)?)?|s(?:p(?:o(?:k(?:e(?:n)?)?)?)?)?)?$", "", self.buf)
-        speak(INFO_ECHO.sub("", self.buf).split("[open windows")[0].strip())
+        self.buf = protocol.PARTIAL_MARKER_RE.sub("", self.buf)
+        speak(protocol.strip_echoes(self.buf))
         self.buf = ""
 
 
@@ -1603,17 +1600,17 @@ def _agent_loop(activity):
             nudged = True
             think(f"🙈 I said I'd make the '{invent}' move but didn't - doing it properly now.")
             state["messages"].append({"role": "user", "content":
-                f"[note from Nova's system] You haven't made the move yet. Call new_move NOW for '{invent}': a short "
-                "name, a duration in seconds, and 4-8 keys (each {\"at\": 0..1, plus poses such as right_arm_out, "
-                "left_arm_out, lean_side, jump, head_nod}). Then say one short line."})
+                protocol.note(f"You haven't made the move yet. Call new_move NOW for '{invent}': a short "
+                              "name, a duration in seconds, and 4-8 keys (each {\"at\": 0..1, plus poses such as right_arm_out, "
+                              "left_arm_out, lean_side, jump, head_nod}). Then say one short line.")})
             continue
         if not calls and not nudged and (claimed_body or (not did_something and PROMISE_RE.search(text or ""))):
             # Small models sometimes *say* "I'm clicking it now" without calling a tool. Make her follow through.
             nudged = True
             think("🙈 I said I'd do it but didn't actually do anything - doing it properly now.")
             state["messages"].append({"role": "user", "content":
-                "[note from Nova's system] You said you'd do something but didn't call a tool, so nothing happened. "
-                "Call the right tool now. If no tool can do it, say so honestly in one sentence."})
+                protocol.note("You said you'd do something but didn't call a tool, so nothing happened. "
+                              "Call the right tool now. If no tool can do it, say so honestly in one sentence.")})
             continue
         rec = task.get("recipe") if task else None
         if not calls and rec and task.get("calls", 0) <= rec["calls"]:
@@ -1622,8 +1619,8 @@ def _agent_loop(activity):
                 rec["nudged"] = True
                 think(f"🙈 I haven't done any step of my '{rec['name']}' skill yet - doing it now.")
                 state["messages"].append({"role": "user", "content":
-                    f"[note from Nova's system] You haven't done any step of the skill '{rec['name']}' yet - nothing has "
-                    "happened. Do its first step now with a tool."})
+                    protocol.note(f"You haven't done any step of the skill '{rec['name']}' yet - nothing has "
+                                  "happened. Do its first step now with a tool.")})
                 continue
             task_log(f"HALLUCINATED DONE: skill '{rec['name']}' handed over, no tool called after it")
             text = f"I didn't actually run my '{rec['name']}' skill - nothing happened. Want me to try again?"
@@ -1634,9 +1631,9 @@ def _agent_loop(activity):
                 claim_nudged = True
                 think("🙈 I said it was done but I haven't done anything - doing it properly now.")
                 state["messages"].append({"role": "user", "content":
-                    "[note from Nova's system] You said it is done, but you have not called any tool, so nothing "
-                    "happened. If the request needs an action, do it now with the right tool (or run_skill for a "
-                    "skill). If you can't, say honestly that you didn't do it."})
+                    protocol.note("You said it is done, but you have not called any tool, so nothing "
+                                  "happened. If the request needs an action, do it now with the right tool (or run_skill for a "
+                                  "skill). If you can't, say honestly that you didn't do it.")})
                 continue
             task_log(f"HALLUCINATED DONE: '{(text or '')[:120]}' with no tool called")
             text = "I haven't actually done that yet - tell me again and I'll do it properly."
@@ -1655,21 +1652,20 @@ def _agent_loop(activity):
             task["nudged"] = True
             think("🔁 My check says part of it isn't done yet - going back to finish it.")
             state["messages"].append({"role": "user", "content":
-                "[note from Nova's system] Your last look at the screen says the task is not finished yet:\n"
-                f"{task['screen']}\nThe task: {task['goal']}\nThe only steps you have really done so far:\n- "
-                + "\n- ".join(task["did"]) + "\nWork out which part of the task has no step yet and do it now with "
-                "a tool. You may not say the task is done until a check says TASK DONE: yes. If you are truly "
-                "stuck, tell the user honestly in one sentence what is left."})
+                protocol.note("Your last look at the screen says the task is not finished yet:\n"
+                              f"{task['screen']}\nThe task: {task['goal']}\nThe only steps you have really done so far:\n- "
+                              + "\n- ".join(task["did"]) + "\nWork out which part of the task has no step yet and do it now with "
+                              "a tool. You may not say the task is done until a check says TASK DONE: yes. If you are truly "
+                              "stuck, tell the user honestly in one sentence what is left.")})
             continue
         if not calls and task and task["nudged"] and task["done"] is False and not cloud.parse(model):
             # (A cloud brain has seen the checker's verdict and decided anyway - the small checker can be wrong,
             # e.g. it called a written-but-unsent email "not done". Only the small local brain gets overruled.)
             # Pushed once and still stopping with the task unfinished: say so plainly instead of claiming success.
-            seen = re.search(r"SCREEN:\s*(.+)", task["screen"])
+            seen = protocol.SCREEN_RE.search(task["screen"])
             text = ("I don't think I finished that. " + (f"Here's where I got to: {seen.group(1).strip()} " if seen else "")
                     + "Want me to try again?")
-        text = re.split(r"\[(?:check|spoken)[^\]]*\]", INFO_ECHO.sub("", text or "").split("[open windows")[0])
-        text = (text[0].strip() or " ".join(t.strip() for t in text[1:]).strip()) if text else ""
+        text = protocol.strip_meta(text)
         if text:
             spoken.append(text)
             if calls:
@@ -1712,15 +1708,15 @@ def _agent_loop(activity):
             unsaid.append(final)
             return result(final)
         # Compare only what the tool itself said: the "[check after step N]" note added to it changes every step.
-        outs = json.dumps([str(o).split("\n[check after step")[0] for o in state.get("last_outs") or []])
+        outs = json.dumps([str(o).split(protocol.CHECK_NOTE_START)[0] for o in state.get("last_outs") or []])
         same = sig == last_calls and outs == last_outs and not repeatable
         same_calls, last_calls, last_outs = (same_calls + 1 if same else 1), sig, outs
         if same_calls == REPEAT_LIMIT and not repeatable:
             think("🔁 I've done that same step a few times now - time to use what I've got.")
             state["messages"].append({"role": "user", "content":
-                f"[note from Nova's system] You have now called {calls[0]['name']} {same_calls} times in a row with "
-                "the same arguments, and it won't give anything new. Don't call it again. Answer the user now with "
-                "what you already know, or do a different step if one is really needed."})
+                protocol.note(f"You have now called {calls[0]['name']} {same_calls} times in a row with "
+                              "the same arguments, and it won't give anything new. Don't call it again. Answer the user now with "
+                              "what you already know, or do a different step if one is really needed.")})
     if task is not None:
         task["paused"] = True               # "keep going" now carries on with this task
     think("🛑 That's a lot of steps - pausing here.")
@@ -2351,7 +2347,7 @@ def body_command(text):
             task = state.get("task")
             if task and task.get("tools") and "new_move" not in task["tools"]:
                 task["tools"] = list(task["tools"]) + ["new_move"]
-            state["messages"][-1]["content"] += (f"\n[note from Nova's system: they want you to invent the move "
+            state["messages"][-1]["content"] += (f"\n{protocol.NOTE_START}: they want you to invent the move "
                                                  f"'{asked['what']}' now with new_move, then say one short line]")
             state["invent"] = asked["what"]
             try:        # designing the poses takes the brain ~20 s: say something at once instead of going quiet
@@ -2483,7 +2479,7 @@ def answer(text, quiet=False, remote=False):
         # (Tried also passing the time and battery here to save a tool call: the small model then read the line
         # out loud and stopped calling tools for other facts. Only the window list is passed.)
         state["messages"].append({"role": "user", "content":
-                                  text + resume + (f"\n[open windows, front first: {screen}]" if screen else "")})
+                                  text + resume + (protocol.windows_note(screen) if screen else "")})
         try:
             out = look_first(text, activity)
             if out:     # done without the brain (reading out selected text)
@@ -2691,12 +2687,12 @@ The conversation (oldest first):
 def _transcript(messages, limit=10):
     lines = []
     for m in messages[-limit:]:
-        content = INFO_ECHO.sub("", str(m.get("content") or "")).strip()
-        if m["role"] == "user" and content.startswith("[note from Nova"):
+        content = protocol.INFO_ECHO_RE.sub("", str(m.get("content") or "")).strip()
+        if m["role"] == "user" and content.startswith(protocol.NOTE_START):
             lines.append("SYSTEM NOTE: " + content[:300])
         elif m["role"] == "user":
             lines.append("USER: " + content[:400])
-        elif m["role"] == "tool" or content.startswith("TOOL RESULT"):
+        elif m["role"] == "tool" or content.startswith(protocol.TOOL_RESULT_START):
             lines.append("  RESULT: " + content[:350].replace("\n", " | "))
         else:
             for c in m.get("tool_calls") or []:
@@ -3178,7 +3174,7 @@ def heard(text, via="bubble"):
         if state["pending"] and (YES_RE.search(text) or NO_RE.search(text)):
             out, status = confirm_pending(bool(YES_RE.search(text)))
         else:
-            out, status = answer(f"[spoken; speech recognition may have misheard words] {text}")
+            out, status = answer(f"{protocol.SPOKEN} {text}")
     finally:
         convo["thinking"] = False
     convo["asked"] = time.time() if str(out.get("say") or out.get("reply") or "").rstrip().endswith("?") else 0.0
@@ -3603,8 +3599,7 @@ notif_watcher = notifications.Watcher(on_notifications, every=1, on_note=lambda 
 # Answers go back as text (she doesn't speak them on the empty laptop), and every action that changes something asks
 # first with Yes / No buttons, whatever the autonomy setting.
 
-PHONE_TAG = ("[from the user's phone via Telegram; they are away from the laptop and read your answer as a text "
-             "message, so keep it short and don't describe things only visible on the screen]")
+PHONE_TAG = protocol.PHONE_TAG
 AWAY_IDLE = 300          # no keyboard / mouse for 5 minutes = the user is probably away (presence.py knows better)
 
 
@@ -3666,8 +3661,7 @@ phone = phone_link.Phone(on_message=phone_message, on_confirm=phone_confirm, on_
 # The page is installed from Safari ("Add to Home Screen"); every request is paired and answered like the Telegram
 # remote: short text answers, and anything that changes something asks first with Yes / No, whatever the autonomy.
 
-MOBILE_TAG = ("[from the user's phone app (the Nova web app on their iPhone); they may be away from the laptop and read "
-              "your answer as a short text message, so keep it brief and don't describe things only visible on the screen]")
+MOBILE_TAG = protocol.MOBILE_TAG
 
 
 def mobile_message(text):
