@@ -1,6 +1,6 @@
 # Child brain — full development plan
 
-Status: **building** — WP 0.1–0.6 done 2026-11-20 (PyTorch + GPU OK, run cards, 12 games on the GPU, sealed exams, guard v1, nightly exam + rollback).
+Status: **building** — **Phase 0 done** 2026-11-20 (WP 0.1–0.7; write-up in reports/childbrain/phase0.md). Next: Phase 1.
 The *why* and the big idea are in [child-brain-plan.md](child-brain-plan.md). This file is the *how*: what to
 build, in what order, how to test each piece, and when each part counts as done.
 
@@ -131,6 +131,7 @@ end of each phase.
 | 0.6 | Nightly exam + saved versions + rollback | A deliberately damaged brain fails the exam and is rolled back automatically |
 | | **✅ Done 2026-11-20:** versions kept by the guard with fingerprints; a sandboxed, exactly repeatable exam (12 games incl. sealed); a damaged candidate is thrown away and a version damaged in place (even with faked fingerprints) is rolled back automatically. See "WP 0.6 result" below | |
 | 0.7 | GPU timing method (warm-up, median of many runs, fixed power mode) | Timing a fixed brain repeats within ±10% across three runs |
+| | **✅ Done 2026-11-20 (power mode still to fix):** on a quiet GPU, 5 of 6 three-run checks repeat within 3.5–5.8%; the 6th was flagged as disturbed (GPU clock drop in "balanced" power mode). The tool refuses to time while Nova is using the GPU. See "WP 0.7 result" below | |
 
 #### WP 0.1 result (2026-11-20)
 
@@ -305,6 +306,39 @@ end of each phase.
   overnight (WP 2.2).
 - **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 378 passed (~3 min; the nightly tests use
   the real sandboxed exam, ~7 s each).
+
+#### WP 0.7 result (2026-11-20)
+
+- **Method** (`childbrain/measure/timing.py`, `python -m childbrain.measure.timing`):
+  1. Read the conditions, never change them: plugged in, Windows power mode, battery saver, GPU clock,
+     temperature, how busy the GPU is. They're saved with every timing; two timings are compared only when
+     their conditions match.
+  2. **Only on a quiet GPU:** the GPU is watched for 2 s first. If it's more than 10% busy or has less than
+     1.5 GB free, the answer is "GPU not quiet" and nothing is timed.
+  3. Warm-up 3 s (1.5 s wasn't enough: the first timing in a fresh program was often up to 28% slow).
+  4. CUDA events (the GPU's own clock); 60 samples of 20 decisions each; report the **median**, plus 10th–90th
+     percentiles. A timing whose spread is too wide (p90 > 1.5 × p10) was disturbed; it's redone up to 3 times,
+     and flagged if it stays disturbed.
+  5. Repeatable = three separate timings within ±10% of their middle one.
+- **What's timed:** the brain's decision only (`choose`, which never makes the CPU wait for the GPU). The
+  NaN check in `act` makes the CPU wait every step and was what made the first attempts jittery.
+- **Reference brain:** `{"kind": "mlp", "hidden": 256}`, 4,096 copies at once (one Snake picture each):
+  **~0.36–0.42 ms per batch ≈ 0.09–0.10 µs per decision**, plugged in, power mode "balanced".
+- **Result on a quiet GPU (Nova stopped for a few minutes, with your OK, then restarted):** 5 of 6 three-run
+  checks were repeatable, 3.5–5.8% apart. The 6th was flagged "disturbed": the GPU clock dropped from ~2,500
+  to ~1,750 MHz partway through and stayed down for two runs. The likely cause is the "balanced" power mode
+  sharing power between the processor and the GPU.
+- **With Nova running, timings are meaningless:** when Nova got busy mid-test, timings went 5–7 times slower
+  (0.35 → 2.5 ms) and the GPU was nearly full (5.85 of 6.1 GB). That can also slow Nova down badly. Hence the
+  quiet-GPU rule, and ground rule 4 (experiments only with Nova's GPU features off, or overnight) is now enforced
+  by the timing tool itself.
+- **To do (needs you):** the plan's "fixed power mode". The tool only reads the mode, it never changes it. For
+  speed scores that compare across nights, set Windows to "Best performance" (Settings → System → Power) and
+  keep the laptop plugged in while timing; then check whether the clock drops go away.
+- **Tests:** `childbrain/tests/test_timing.py`. The three-run test skips itself (with the reason) when the GPU
+  isn't quiet, so the suite doesn't fail just because Nova is running.
+
+Phase 0 write-up: [reports/childbrain/phase0.md](../reports/childbrain/phase0.md).
 
 ### Phase 1 — Show the problem (≈ 1 week)
 
