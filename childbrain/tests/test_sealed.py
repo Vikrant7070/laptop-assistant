@@ -7,7 +7,8 @@ import pytest
 torch = pytest.importorskip("torch")  # skipped under Nova's Python
 
 from childbrain.runcard import run
-from childbrain.worlds import PRACTICE, SEALED, make, sealed
+from childbrain.guard import seals as sealed
+from childbrain.worlds import PRACTICE, SEALED, make
 from childbrain.worlds.key_door import KeyDoor
 
 
@@ -31,7 +32,7 @@ def test_run_cards_cant_practice_on_sealed_games(tmp_path):
 
 
 def test_fingerprints_match_the_seal():
-    assert sealed.verify() == [], "run `python -m childbrain verify`; re-seal only after checking the change"
+    assert sealed.verify() == [], "run `python -m childbrain.guard check`; re-seal only after checking the change"
 
 
 def test_a_changed_rule_breaks_the_seal(monkeypatch):

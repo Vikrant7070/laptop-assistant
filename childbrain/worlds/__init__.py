@@ -4,7 +4,7 @@ All games share one format (see base.py), so one brain can play them all.
 
   PRACTICE  games for learning and evolution
   SEALED    exam-only games: they refuse to be built for practice, and their code and exam content are
-            fingerprinted in sealed.json (see sealed.py)
+            fingerprinted by the guard (childbrain/guard/seals.json)
 
 make(name, change=...) builds any game, optionally look-changed or rules-changed.
 """
