@@ -368,6 +368,21 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
       <label class="mood" style="display:block;margin:4px 0 0 22px"><input type="checkbox" id="presenceLock"> 🔒 …and lock the laptop when I walk away (she warns first - move the mouse to stop her)</label>
       <p class="mood" style="margin:10px 0 2px">🎙 When I talk to her, she stops listening after <input type="number" id="listenPause" min="0.3" max="2" step="0.1" style="width:60px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> seconds of quiet
         (shorter = she answers sooner; longer = she waits if you pause mid-sentence) and listens at most <input type="number" id="listenMax" min="4" max="30" step="1" style="width:56px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> seconds per request.</p>
+      <div id="micBox" style="margin:10px 0 2px">
+        <p class="mood" style="margin:0 0 2px">🎙 How loud I must be before she starts listening: <b id="micLevelNum">5</b>
+          <span id="micLevelWord" class="mood"></span></p>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px" class="mood">
+          <span>soft voice</span>
+          <input type="range" id="micLevel" min="1" max="10" step="1" value="5" style="flex:1;margin:0;padding:0" aria-label="How loud I must be before she starts listening">
+          <span>loud voice only</span>
+        </div>
+        <div id="micMeter" title="Green bar: how loud the mic hears the room right now. White line: the loudness that makes her start listening."
+             style="position:relative;height:8px;border-radius:4px;background:var(--panel2);border:1px solid var(--line);margin:6px 0 2px;overflow:hidden">
+          <div id="micBar" style="position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent2);transition:width .15s"></div>
+          <div id="micMark" style="position:absolute;top:-1px;bottom:-1px;width:2px;left:0;background:var(--text)"></div>
+        </div>
+        <p id="micNote" class="mood" style="margin:0;font-size:12px">Talk and watch the bar: when it crosses the line, she starts listening. Applies right away.</p>
+      </div>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="bargeIn"> ✋ Let me interrupt her by voice: say her name, “stop”, “wait” or “ruko” while she talks and she stops and listens (needs 👂 ears on and her natural voice; the mic is on only while she speaks, nothing is saved)</label>
 </div>
 <div class="pane" data-pane="nova">
@@ -467,6 +482,35 @@ document.querySelectorAll("#setupTabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll("#setupTabs button").forEach(x => x.classList.toggle("on", x === b));
   document.querySelectorAll("#pick .pane").forEach(p => p.classList.toggle("on", p.dataset.pane === b.dataset.tab));
 });
+
+/* ---------------- 🎙 mic loudness slider + live meter (⚙ Senses) ---------------- */
+const MIC_WORDS = {1: "(catches whispers - may wake on room noise)", 3: "(catches soft speech)", 5: "(normal)",
+                   7: "(ignores quiet sounds far away)", 9: "(only a clearly loud voice)"};
+function showMicLevel() {
+  const v = +$("#micLevel").value;
+  $("#micLevelNum").textContent = v;
+  $("#micLevelWord").textContent = MIC_WORDS[v] || MIC_WORDS[v - 1] || "";
+}
+let micSend = null;
+$("#micLevel").oninput = () => {
+  showMicLevel();
+  clearTimeout(micSend);       // apply right away (after the drag settles), so the meter's line moves with it
+  micSend = setTimeout(() => api("/api/setup", {mic_level: +$("#micLevel").value}).catch(() => {}), 250);
+};
+// Meter scale: decibels from 0.00003 (silent) to 0.03 RMS (shouting close up) - mic loudness is far from linear.
+const micPos = r => Math.max(0, Math.min(100, (20 * Math.log10(Math.max(r, 3e-5) / 3e-5)) / 60 * 100));
+setInterval(async () => {
+  const open = $("#setup")?.classList.contains("show") && $('#pick .pane[data-pane="senses"]')?.classList.contains("on");
+  if (!open) return;
+  try {
+    const m = await (await fetch("/api/mic_level")).json();
+    $("#micBar").style.width = micPos(m.rms) + "%";
+    if (m.start) $("#micMark").style.left = micPos(m.start) + "%";
+    $("#micBar").style.background = m.live && m.rms > m.start ? "var(--good, #3c9)" : "var(--accent2)";
+    $("#micNote").textContent = m.live ? "Talk and watch the bar: when it crosses the line, she starts listening. Applies right away."
+      : `Meter paused: ${m.why}. Turn 👂 ears on to see it.`;
+  } catch (e) {}
+}, 200);
 
 /* ---------------- capabilities panel ---------------- */
 const CAPS = [
@@ -820,7 +864,7 @@ function openSetup(s) {
       : `<option value="">No models yet - run: ollama pull ${esc(s.default_model)}</option>`;
     $("#toolNote").textContent = s.ready ? (s.tools ? "✓ This model supports tool calling." : "This model has no native tool calling - I'll use a text-based fallback (works, but less reliably).") : "";
     $("#think").checked = s.think; $("#autostart").checked = s.autostart; $("#camera").checked = s.camera; $("#screen").checked = s.screen;
-    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep; $("#deepSleep").checked = s.deep_sleep !== false; $("#listenPause").value = s.listen_pause ?? 0.7; $("#listenMax").value = s.listen_max ?? 10; $("#phoneCalls").checked = s.phone_calls !== false; $("#phoneQuiet").checked = s.phone_quiet !== false;$("#phoneCloud").checked = !!s.phone_notes_cloud; $("#emailCloud").checked = !!s.email_cloud;
+    $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep; $("#deepSleep").checked = s.deep_sleep !== false; $("#listenPause").value = s.listen_pause ?? 0.7; $("#listenMax").value = s.listen_max ?? 10; $("#micLevel").value = s.mic_level ?? 5; showMicLevel(); $("#phoneCalls").checked = s.phone_calls !== false; $("#phoneQuiet").checked = s.phone_quiet !== false;$("#phoneCloud").checked = !!s.phone_notes_cloud; $("#emailCloud").checked = !!s.email_cloud;
     $("#errorHelp").checked = s.error_help !== false; $("#bargeIn").checked = s.barge_in !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
     $("#visionNote").innerHTML = s.vision_model ? `Eyes: <b>${esc(s.vision_model)}</b> ✓`
       : `She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`;
@@ -937,7 +981,7 @@ $("#saveModel").onclick = async () => {
       provider: p, cloud_model: p !== "ollama" ? $("#cloudModel").value : undefined,
       autonomy: document.querySelector("[name=aut]:checked")?.value, autostart: $("#autostart").checked,
       camera: $("#camera").checked, screen: $("#screen").checked,
-      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, deep_sleep: $("#deepSleep").checked, listen_pause: +$("#listenPause").value || 0.7, listen_max: +$("#listenMax").value || 10, phone_calls: $("#phoneCalls").checked, phone_quiet: $("#phoneQuiet").checked,phone_notes_cloud: $("#phoneCloud").checked, email_cloud: $("#emailCloud").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
+      suggest: $("#suggest").checked, notifications: $("#notifications").checked, notif_sleep: $("#notifSleep").checked, deep_sleep: $("#deepSleep").checked, listen_pause: +$("#listenPause").value || 0.7, listen_max: +$("#listenMax").value || 10, mic_level: +$("#micLevel").value || 5, phone_calls: $("#phoneCalls").checked, phone_quiet: $("#phoneQuiet").checked,phone_notes_cloud: $("#phoneCloud").checked, email_cloud: $("#emailCloud").checked, reaction_sounds: $("#sounds").checked, power_ok: $("#powerOk").checked,
       avatar_roam: $("#avatarRoam").value, character: $("#character").value !== $("#character").dataset.was ? $("#character").value : undefined,
       routing: {auto_route: $("#autoRoute").checked, coder_model: $("#coderModel").value, deep_model: $("#deepModel").value,
         heavy_model: $("#heavyModel").value, heavy_steps: +$("#heavySteps").value || 6},
