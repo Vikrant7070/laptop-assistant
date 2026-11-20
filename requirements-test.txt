@@ -1,0 +1,16 @@
+# Dependencies needed to run the test suite, and nothing else.
+#
+# Module-level third-party imports across nova/ are only: flask, psutil, keyboard,
+# pyperclip, pillow (PIL) and numpy. pystray/webview/werkzeug are used by
+# nova/core/desktop.py, which no test imports. Whisper, Kokoro, OpenCV, uiautomation,
+# comtypes, sounddevice and the cloud SDKs are imported lazily and are not needed here.
+#
+# Keep these pins in step with requirements.txt.
+flask==3.1.3
+psutil==7.2.2
+keyboard==0.13.5
+pyperclip==1.11.0
+pillow==13.0.0
+numpy==2.5.4
+pytest==9.2.0
+ruff==0.17.6
