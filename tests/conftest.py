@@ -70,6 +70,8 @@ from nova.core import app  # noqa: E402
 from nova.actions import skills  # noqa: E402
 from nova.actions import checks  # noqa: E402
 from nova.actions import recorder  # noqa: E402
+from nova.actions import learner  # noqa: E402
+from nova.actions import questions  # noqa: E402
 
 recorder.ENABLED = False          # never install real mouse/keyboard hooks in tests (tests patch recorder's functions)
 
@@ -90,6 +92,10 @@ def _point_data_at(folder):
     router._cache.update(key=None, conf=None)
     skills.DIR = folder / "skills"
     skills._cache.update(key=None, skills=[])
+    learner.EPISODES = folder / "episodes.jsonl"
+    learner.FACTS = folder / "facts.json"
+    questions.FILE = folder / "questions.json"
+    app.learn_state.update(last=0.0)
 
 
 @pytest.fixture(autouse=True)

@@ -34,6 +34,8 @@ from nova.audio import sfx
 from nova.actions import skills
 from nova.actions import checks
 from nova.actions import judge
+from nova.actions import learner
+from nova.actions import questions
 from nova.actions import recorder
 from nova.brain import toolpick
 from nova.brain import router
@@ -655,6 +657,8 @@ def new_task(goal):
     last = state.get("task") or {}
     if any(x.get("ok") and x["tool"] not in skills.SKIP_IN_TRACE for x in last.get("trace", [])):   # for "remember that"
         state["last_trace"] = {"goal": last.get("goal", ""), "trace": list(last["trace"])}
+    if not last.get("paused"):
+        record_episode(last)                 # the last task is over: one line in the episode log (learner.py)
     if last.get("paused") and CONTINUE_RE.search(clean):
         last["paused"] = False
         task_log(f"RESUMING paused task: {last['goal'][:200]}")
@@ -681,7 +685,8 @@ def new_task(goal):
         task_log(f"PICK failed: {type(e).__name__}: {e}")
         skill = how = None
         picked, facts = None, knowledge.prompt_block()
-    state["task"] = {"goal": clean, "start": len(state["messages"]), "steps": 0, "did": [], "done": None,
+    state["task"] = {"id": f"{time.time():.3f}", "started": time.time(),
+                     "goal": clean, "start": len(state["messages"]), "steps": 0, "did": [], "done": None,
                      "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": [],
                      "skill": skill["name"] if skill else "", "skill_how": how or "",
                      "app": tools.named_app(clean)}      # "type hello in notepad": keys and typing go only there
@@ -917,6 +922,8 @@ def run_skill(args, approved, activity, model):
     if s["kind"] == "broken":
         return f"The skill '{s['name']}' can't run: {s['error']}. Its file is {s['file']}."
     task = state.get("task")
+    if task is not None:
+        task["ran_skill"] = s["name"]        # the episode log: this task used a skill, so it isn't offered as a new one
     activity.append(FRIENDLY["run_skill"])
     if s["kind"] == "recipe":
         think(f"📜 Following my '{s['name']}' skill.")
@@ -1319,8 +1326,10 @@ def final_judge(task, text, activity, model):
 def execute(calls, approved, activity, model):
     outs = []
     for c in calls:
+        state.pop("ran_as", None)
         try:
             out = _execute_one(c, approved, activity, model)
+            c = state.pop("ran_as", None) or c   # the call that really ran (web_research may become a background job)
         except Stopped:      # every call still gets a result, so the history stays valid for the next request
             out = "The user pressed Stop before this step finished. It was not done (or only partly)."
         task_log(f"TOOL {c['name']} {json.dumps(c['args'], ensure_ascii=False)[:300]}\n   -> " + out.replace("\n", "\n      "))
@@ -1382,6 +1391,118 @@ def save_task_as_skill_now(args):
     return msg
 
 
+# ------------------------------------------------------------------ the episode log, the Learner and the daily
+# question list (manager plan phase 2: learner.py, questions.py). Episodes are written when a task is over (the next
+# request starts, or she has been idle a while); the Learner runs only at idle time and never calls a brain.
+
+LEARN_IDLE, LEARN_EVERY = 60, 300      # seconds quiet before the Learner runs / between its runs
+QUESTION_SECS = 600                     # a question she asked waits this long for a yes / no
+learn_state = {"last": 0.0}
+
+
+def record_episode(task):
+    """Write a finished task to the episode log (nothing for a chat with no steps). Never raises."""
+    if not task or not task.get("goal"):
+        return
+    try:
+        ep = learner.episode_from_task(task, brain=task.get("model") or brain())
+        if ep:
+            learner.record(ep)
+            task["recorded"] = len(task.get("trace") or [])
+    except Exception as e:
+        task_log(f"EPISODE not saved: {type(e).__name__}: {e}")
+
+
+def _covered_by_skill(goal):
+    try:
+        return skills.pick(goal)[1] == "exact"
+    except Exception:
+        return False
+
+
+def learn_due(now=None):
+    now = now or time.time()
+    return (now - nap["last_task"] >= LEARN_IDLE and now - learn_state["last"] >= LEARN_EVERY and not lock.locked()
+            and not convo["thinking"] and not mouth.busy() and not state.get("pending"))
+
+
+def learn_now():
+    """The idle-time pass: the current task goes to the episode log if it has new steps, then the Learner looks at
+    what's new (skill offers go on the daily question list; research site facts are learned as jobs finish)."""
+    learn_state["last"] = time.time()
+    task = state.get("task")
+    if task and not task.get("paused") and len(task.get("trace") or []) != task.get("recorded"):
+        record_episode(task)
+    made = learner.learn(is_skill=_covered_by_skill)
+    if made:
+        task_log(f"LEARNER queued {len(made)} question(s) for the daily list: {made}")
+    return made
+
+
+def question_line(now=None):
+    """The question to ask at the end of this answer (the daily list, one at a time, with its reason), or ""."""
+    if state.get("question") or state.get("pending") or (offer["job"] and offer["until"] > time.time()):
+        return ""
+    q = questions.due(now)
+    if not q:
+        return ""
+    questions.mark_asked(q["id"], now)
+    state["question"] = {"id": q["id"], "until": (now or time.time()) + QUESTION_SECS}
+    task_log(f"QUESTION #{q['id']} asked: {q['text'][:200]}")
+    lead = "One question from my learning" if not q["urgent"] else "I need you for one thing"
+    return f"{lead}: {q['text']} (I'm asking because {q['why']}.)"
+
+
+ANSWER_YES_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|do it|go ahead|please( do)?|save it|haan?|han|ji|"
+                           r"of course)\b", re.I)
+
+
+def take_question(text, force=None):
+    """'yes' / 'no' right after her question from the daily list. Returns her answer, or None if this isn't one."""
+    pend = state.get("question")
+    if not pend:
+        return None
+    if time.time() > pend["until"]:
+        state.pop("question", None)
+        return None
+    clean = _unspoken(text).strip()
+    short = len(clean.split()) <= 8
+    yes = force is True or (force is None and short and bool(ANSWER_YES_RE.search(clean)))
+    no = force is False or (force is None and short and bool(NO_RE.search(clean)) and not yes)
+    if not (yes or no):
+        return None             # something else: the question stays on the list for another day
+    state.pop("question", None)
+    q = questions.get(pend["id"])
+    if not q:
+        return None
+    questions.answer(q["id"], "yes" if yes else "no", clean)
+    task_log(f"QUESTION #{q['id']} answered {'yes' if yes else 'no'}")
+    note_task()
+    if not yes:
+        line = "Okay, I won't." if q["kind"] == "save_skill" else "Okay."
+    elif q["kind"] == "save_skill":
+        line = save_offered_skill(q["data"])
+    else:
+        line = "Thanks - noted."
+    nxt = question_line()
+    return line + (" " + nxt if nxt else "")
+
+
+def save_offered_skill(data):
+    """A yes to "save it as a skill?": the Learner's steps become a draft skill (the normal skills v2 path - it
+    becomes a real skill after it has worked twice)."""
+    base = data.get("name") or "saved-task"
+    name = base
+    for n in range(2, 9):
+        if not (skills.DIR / f"{name}.md").exists():
+            break
+        name = f"{base}-{n}"
+    msg = skills.draft_from_steps(name, "", data.get("examples") or [], [dict(st) for st in data.get("steps") or []],
+                                  {}, data.get("goal", ""))
+    task_log(f"SKILL FROM LEARNER: {msg[:200]}")
+    return msg
+
+
 RESEARCH_CUE = re.compile(
     r"\b(research|look (it |that |this )?up|look into|find out|search|google|investigate|dig (in|into)|compare|"
     r"comparison|versus|vs\.?|latest|news|current|today'?s|prices?|reviews?|best|top \d+|sources?|report|"
@@ -1431,6 +1552,7 @@ def _execute_one(c, approved, activity, model):
         # (it never reads a page). Plain research belongs in the background job, which really reads sources.
         q = (c.get("args") or {}).get("query") or ""
         c = {**c, "name": "research_in_background", "args": {"topic": q}}
+        state["ran_as"] = c                  # traced as what ran, so a skill saved from it does the same
     if is_risky(c) and not approved:
         out = "The user declined this action. Do not do it."
         activity.append(f"Skipped: {FRIENDLY.get(c['name'], ask_label(c['name']))}")
@@ -1590,6 +1712,8 @@ def agent_loop(activity):
             msgs.append({"role": "assistant", "content": STOPPED_REPLY})
         think("🛑 Stopped.", cloud_too=False)
         activity.append("Stopped")
+        if state.get("task") is not None:
+            state["task"]["stopped"] = True      # the episode log: a stopped task never counts as one that worked
         out = {"reply": STOPPED_REPLY, "activity": activity, "say": STOPPED_REPLY, "stopped": True}
     nap["last_task"] = time.time()          # the 5-minute nap clock counts from when she finished, not from the ask
     out["images"] = state.pop("images", [])
@@ -2630,6 +2754,11 @@ def answer(text, quiet=False, remote=False):
             return {"error": f"Something went wrong inside Nova ({type(e).__name__}: {e})."}, 500
         _cap_history()
     thoughts_done()
+    if not (quiet or remote or out.get("pending") or out.get("stopped") or state.get("sleep_after")):
+        asked = question_line()
+        if asked:                            # the daily list: asked at the laptop, after her answer, one at a time
+            out["reply"] = (out.get("reply") or "").rstrip() + "\n\n" + asked
+            out["say"] = ((out.get("say") or "").rstrip() + " " + asked).strip()
     if quiet:
         out.pop("say", None)
     else:
@@ -2931,8 +3060,14 @@ def knowledge_page():
 @app.get("/api/knowledge")
 def knowledge_get():
     k = knowledge.load()
+    facts = [{"id": f["id"], "text": learner.describe_fact(f), "confirmed": f.get("confirmed", False),
+              "when": time.strftime("%d %b %Y", time.localtime(f.get("last", f.get("learned", 0))))}
+             for f in sorted(learner.load_facts()["facts"], key=lambda f: -f.get("last", 0))]
+    asks = [{"id": q["id"], "text": q["text"], "why": q["why"], "asked": q["asked"], "urgent": q["urgent"]}
+            for q in questions.open_questions()]
     return jsonify(profile=k["profile"], lessons=sorted(k["lessons"], key=lambda l: -l.get("last", 0)),
-                   labels=knowledge.LABELS, one=knowledge.ONE, many=knowledge.MANY, file=str(knowledge.FILE))
+                   labels=knowledge.LABELS, one=knowledge.ONE, many=knowledge.MANY, file=str(knowledge.FILE),
+                   facts=facts, questions=asks, facts_file=str(learner.FACTS), questions_file=str(questions.FILE))
 
 
 @app.post("/api/knowledge")
@@ -2950,6 +3085,16 @@ def knowledge_edit():
         if not isinstance(b.get("id"), int) or isinstance(b.get("id"), bool):
             return jsonify(error="id must be a number"), 400
         msg = f"Deleted {knowledge.delete_lesson(b['id'])} lesson(s)."
+    elif do in ("fact_delete", "fact_confirm", "question_drop"):
+        if not isinstance(b.get("id"), int) or isinstance(b.get("id"), bool):
+            return jsonify(error="id must be a number"), 400
+        if do == "fact_delete":
+            msg = f"Forgot {learner.delete_fact(b['id'])} fact(s)."
+        elif do == "fact_confirm":
+            msg = "Marked as right." if learner.confirm_fact(b["id"]) else "That fact isn't there any more."
+        else:
+            msg = "Okay, she won't ask that." if questions.answer(b["id"], "dropped", "dropped on the page") else \
+                "That question isn't there any more."
     else:
         return jsonify(error="unknown action"), 400
     return jsonify(ok=True, message=msg)
@@ -3297,7 +3442,9 @@ def heard(text, via="bubble"):
             if via != "silent":
                 ear_listen_after_speech() if convo["on"] else ear_close()
             return
-    said = take_offer(text)            # "yes" right after "your email is ready - want to see it?"
+    said = take_question(text)         # "yes" right after "save it as a skill?" (the daily list)
+    if said is None:
+        said = take_offer(text)        # "yes" right after "your email is ready - want to see it?"
     if said is not None:
         push_event({"reply": said})
         announce(said)
@@ -3482,6 +3629,8 @@ def idle_watch():
                 go_to_sleep("idle")
             elif deep_sleep_due():
                 go_deep()
+            if learn_due():
+                learn_now()
         except Exception as e:
             task_log(f"idle watch: {type(e).__name__}: {e}")
 
@@ -3505,6 +3654,10 @@ def write_text(prompt, max_tokens=700):
 
 def job_done(job):
     nap["last_task"] = time.time()
+    try:
+        learner.job_finished(job)            # the episode that started it, and the sites research really used
+    except Exception as e:
+        task_log(f"LEARNER job note failed: {type(e).__name__}: {e}")
     if job["status"] == "stopped":                  # the user stopped it - stop_background_job already said so
         return
     if job["status"] != "done":
@@ -3568,7 +3721,8 @@ def take_offer(text, force=None, job_id=None):
     return "Okay! It's waiting for you whenever you want it." + _next_offer()
 
 
-coworker.configure(write=write_text, on_done=job_done, on_note=lambda t: think(t, cloud_too=False))
+coworker.configure(write=write_text, on_done=job_done, on_note=lambda t: think(t, cloud_too=False),
+                   sites=lambda topic: learner.sites_for(topic)[:2])
 
 
 # ------------------------------------------------------------------ notifications (notifications.py): she reads new ones out
@@ -4320,7 +4474,9 @@ def chat():
         helped = take_help(text)
         if helped is not None:
             return jsonify(helped)
-    said = take_offer(text)
+    said = take_question(text)
+    if said is None:
+        said = take_offer(text)
     if said is not None:
         announce(said)
         return jsonify(reply=said, activity=[])
