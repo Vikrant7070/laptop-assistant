@@ -34,7 +34,7 @@ def test_parse_and_describe():
 
 
 def test_tool_respects_the_switch(monkeypatch):
-    monkeypatch.setattr(notifications, "latest", lambda count=5: [N1])
+    monkeypatch.setattr(notifications, "latest", lambda count=5: [dict(N1, time=time.time())])
     assert "switched off" in tools.read_notifications()
     set_settings(notifications=True)
     out = tools.read_notifications()

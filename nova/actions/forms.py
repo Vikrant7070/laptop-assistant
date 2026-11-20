@@ -13,7 +13,6 @@ Passwords, OTPs, card / bank numbers and government IDs are never saved here and
 import json
 import re
 import threading
-import time
 
 from nova.shared import DATA
 

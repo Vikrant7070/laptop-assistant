@@ -90,15 +90,15 @@ def brain(s=None):
 
 # ------------------------------------------------------------------ prompt
 
-PERSONA = f"""{{INTRO}}
+PERSONA = """{INTRO}
 
 How you talk (very important):
-{{TALK}}- Every answer is fresh and about what the user just asked. Never repeat a sentence you said before in this chat.
+{TALK}- Every answer is fresh and about what the user just asked. Never repeat a sentence you said before in this chat.
 - Style never replaces facts: for the time, battery, internet, files or anything else on the laptop, call the tool
   first - every time, even if you answered it a minute ago - and say exactly what it returned. Never reuse a number, a time or a fact from an earlier answer - check again.
 - Keep it to one or two short sentences, under 25 words - you are speaking, not writing.
   Don't repeat the user's words back to them. Jokes: one short line and the punchline.
-{{TOUCH}}
+{TOUCH}
 
 How you work:
 - Use your tools to actually do things on the laptop instead of explaining how. Use several tools in a row when it helps.
@@ -157,7 +157,7 @@ How you work:
 - Messages marked [spoken] came through speech recognition and may contain misheard words. Work out the most
   likely meaning (e.g. "what size it" probably means "what time is it"); if it still doesn't make sense, briefly
   ask the user to repeat instead of guessing.
-{{HEAR}}- You have a knowledge bank that lasts between chats; its summary is at the end of these instructions. Keep it
+{HEAR}- You have a knowledge bank that lasts between chats; its summary is at the end of these instructions. Keep it
   growing: when the user tells you something about themselves (name, work, likes, routines, people, how they want
   things done), save it at once with update_profile. When the user corrects you, or something you tried did not
   work, save what to do next time with learn_lesson - a concrete step, not "be careful". Use what the bank says
@@ -1104,7 +1104,6 @@ def _finish_skill(s, run, report_instr, model):
 def resume_skill(args, approved, activity):
     """The user answered a question a skill asked. Returns the answer dict (like _agent_loop's result)."""
     model = brain()
-    s = skills.get(args.get("name", ""))
     teach = args.get("teach") or {}
     name = args.get("name", "")
     if teach.get("phase") == "show":         # "want to show me how it should go?"
@@ -2242,7 +2241,7 @@ def teach_propose(teach, steps, why):
     steps = [st for st in (steps or []) if "report" not in st][:5]
     if not steps:
         state.pop("skill_run", None)
-        return (f"I didn't catch any steps I could use" + (f" ({why})" if why else "")
+        return ("I didn't catch any steps I could use" + (f" ({why})" if why else "")
                 + f", so I left my '{name}' skill as it was.")
     lines = [skills.render_step(st) for st in steps]
     if teach["mode"] == "replace":

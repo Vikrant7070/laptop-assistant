@@ -119,6 +119,7 @@ def test_bubbles_off_shows_nothing(monkeypatch):
     m, got = bare_mouth(monkeypatch)
     m.bubbles = False
     m._bubble("hi", 1, m.gen)
+    assert m.tells.empty()          # nothing was even queued for the teller
     time.sleep(0.1)
     assert got == []
 
