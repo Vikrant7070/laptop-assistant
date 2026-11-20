@@ -1,0 +1,14 @@
+{
+  "key-door": {
+    "code": "a282e63cbbd99b3d616836d88167d1869399a2b24ce23b772d229e245fb1323f",
+    "exam": "fc316f9ec1759acead50928edbafdd81bda53f74bb673ca4e968f32869d4cfb3"
+  },
+  "maze-enemy": {
+    "code": "28009cfb7c007fc55b77fc8c608580f04a283a4728ee6f280bdcc1765ce2d2ee",
+    "exam": "b278409f07dca42f4cf1b5cec34283cee7eef0117571499cddb3134e0944461d"
+  },
+  "pong-lite": {
+    "code": "9153a00e19189517384463234eb8ca6caff696358c2c95a569871c4bae45f436",
+    "exam": "6eec3286e435438c26d52de957116cee65119a0cbb8df4f6c29f805368008fb4"
+  }
+}

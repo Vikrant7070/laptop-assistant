@@ -1,6 +1,6 @@
 # Child brain — full development plan
 
-Status: **building** — WP 0.1–0.3 done 2026-11-20 (PyTorch + GPU OK, run cards repeat exactly, Snake + Maze on the GPU).
+Status: **building** — WP 0.1–0.4 done 2026-11-20 (PyTorch + GPU OK, run cards repeat exactly, 12 games on the GPU, sealed exams).
 The *why* and the big idea are in [child-brain-plan.md](child-brain-plan.md). This file is the *how*: what to
 build, in what order, how to test each piece, and when each part counts as done.
 
@@ -125,6 +125,7 @@ end of each phase.
 | 0.3 | Shared game format + Snake + Maze, thousands of copies on the GPU | 10,000 Snake steps run in well under a second; a random player gets the expected low score |
 | | **✅ Done 2026-11-20:** `childbrain/worlds/` (shared format + Snake + Maze). 10,000 Snake steps take ~30–130 ms on the GPU; a random player scores as low as two independent checks predict. See "WP 0.3 result" below | |
 | 0.4 | The other 8 games and the three "changed" generators | Every game passes the same format tests; sealed games are stored with fingerprints |
+| | **✅ Done 2026-11-20:** 8 new games + 2 mixed games (12 in all; 3 sealed), look-/rules-changed versions of any game; all 48 versions pass the same format tests; sealed games are fingerprinted in `sealed.json`. See "WP 0.4 result" below | |
 | 0.5 | Guard v1: separate program, allowed-action list, limits, log, off switch | A test brain that tries a forbidden action is blocked and logged; the off switch stops it within 1 second |
 | 0.6 | Nightly exam + saved versions + rollback | A deliberately damaged brain fails the exam and is rolled back automatically |
 | 0.7 | GPU timing method (warm-up, median of many runs, fixed power mode) | Timing a fixed brain repeats within ±10% across three runs |
@@ -181,6 +182,51 @@ end of each phase.
   Sanity players: a simple greedy Snake scores +17; a shortest-path Maze player always wins.
 - **Run cards:** `python -m childbrain run random-play --set game=maze` saves and repeats exactly.
 - **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 41 passed (~30 s).
+
+#### WP 0.4 result (2026-11-20)
+
+- **12 games, all in the shared format** (`childbrain/worlds/`):
+
+  | Game | Kind | Score | Random player | GPU speed (4,096 copies) |
+  |---|---|---|---|---|
+  | Snake | practice | +1 food, −1 crash | −0.88 | 1.3 M steps/s |
+  | Maze | practice | +1 goal (rare) | +0.16 | 2.5 M |
+  | Catch | practice | ±1 per falling thing (10) | −7.5 | 3.2 M |
+  | Push-the-box | practice | +1 box on target | +0.08 | 1.5 M |
+  | Avoid-the-enemy | practice | +1 for lasting, −1 caught | −0.92 | 1.8 M |
+  | Collect-coins | practice | +1 per coin (6) | +2.6 | 3.1 M |
+  | Colour-match | practice | +1 right colour, −1 wrong (wanted colour shown by the goal layer) | +0.03 | 2.0 M |
+  | Connect-4 | practice | +1 win / −1 loss vs a random player, or self-play | +0.28 | 1.3 M |
+  | Maze-coins | practice, **mixed** (Maze + Coins) | +0.2 per coin, +1 goal | +0.28 | 1.7 M |
+  | Key-and-door | **sealed** | +1 goal (key → door → goal; first game to use "use") | +0.06 | 1.4 M |
+  | Pong-lite | **sealed** | +1 per return, −1 miss | −0.51 | 2.0 M |
+  | Maze-enemy | **sealed, mixed** (Maze + Avoid) | +1 goal, −1 caught | −0.34 | 1.1 M |
+
+- **Connect-4 with 6 buttons:** a cursor on the top row (left/right) and "use" to drop, so it needs no extra buttons.
+- **"Changed" generators** (`changed.py`, `mixed.py`), usable on any game via `make(name, change=...)`:
+  - *look-changed*: board turned and/or mirrored, moved inside the 12×12 picture, layers swap "colours", and a new
+    board size where the game allows it. Buttons turn with the board, so "up" still moves up on screen. A random
+    player scores about the same, as it should.
+  - *rules-changed*: same picture, but the move buttons are shuffled ("controls") or every score is flipped ("reward").
+  - *mixed*: hand-built pairs (Maze + Coins for practice, Maze + Enemy sealed), not automatic mixing of any two games.
+- **Sealed games:** they refuse to be built for practice (`PermissionError`, also through run cards).
+  `childbrain/worlds/sealed.json` keeps two SHA-256 fingerprints per sealed game: its code, and its exact exam
+  content (64 exam worlds × 60 fixed moves on the CPU). `python -m childbrain verify` checks them;
+  `python -m childbrain seal` is for a person to run after checking a change. A test shows that a sneaky extra
+  reward in Key-and-door is caught as "exam changed".
+- **Found while testing:**
+  - 9×9 and smaller mazes have too few different layouts for two banks of 1,024, so mazes stay 11×11. Their
+    look-changed versions are turned, moved and recoloured, not resized.
+  - Pong-lite could start the ball too low and too far from the paddle, so some games were lost before the player
+    could act. The ball now starts in the top row, and a test shows a player that aims for the ball's landing spot
+    never misses.
+- **Differs from the plan:** the plan said 7 practice games + 3 sealed. We have 8 practice games + 1 mixed practice
+  game + 3 sealed (one of them mixed), because the plan's list of 10 games didn't count the mixed game as an extra
+  one.
+- **Fingerprint note:** the exam fingerprint depends on PyTorch's random numbers, so a PyTorch upgrade may need a
+  re-seal (after checking that nothing else changed).
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 353 passed (~55 s): 300 shared format checks
+  (12 games × 4 versions), rule tests for every game, and seal tests.
 
 ### Phase 1 — Show the problem (≈ 1 week)
 
