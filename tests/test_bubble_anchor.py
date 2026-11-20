@@ -7,7 +7,7 @@ from nova.avatar import avatar
 
 
 def bubble(head, monkeypatch, fw=260, fh=340):
-    monkeypatch.setattr(avatar, "work_area", lambda: (0, 0, 4000, 3000))
+    monkeypatch.setattr(avatar, "stand_area", lambda: (0, 0, 4000, 3000))
     ns = types.SimpleNamespace(font=ImageFont.load_default())
     return avatar.Nova.compose_bubble(ns, Image.new("RGBA", (fw, fh)), "Hello there", False, 1000, head)
 
@@ -38,9 +38,9 @@ def test_no_head_known_keeps_the_old_place(monkeypatch):
 def test_anchor_glides_and_jumps(monkeypatch):
     n = types.SimpleNamespace(live_head=(130, 80), head_s=None)
     img = Image.new("RGBA", (260, 340))
-    assert avatar.Nova.bubble_anchor(n, img, True) == (130, 80)
+    assert avatar.Nova.bubble_anchor(n, img) == (130, 80)
     n.live_head = (130, 90)
-    x, y = avatar.Nova.bubble_anchor(n, img, True)
+    x, y = avatar.Nova.bubble_anchor(n, img)
     assert 80 < y < 90                                             # small moves are smoothed
     n.live_head = (40, 250)                                        # lying down: straight there
-    assert avatar.Nova.bubble_anchor(n, img, True) == (40, 250)
+    assert avatar.Nova.bubble_anchor(n, img) == (40, 250)

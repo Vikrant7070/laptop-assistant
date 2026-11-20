@@ -1,5 +1,5 @@
 """💻 While she works on something (and isn't listening) 3D Nova sits at her desk typing on a laptop."""
-import json
+import re
 import types
 
 from nova.avatar import avatar, body
@@ -10,7 +10,7 @@ from nova.shared import ROOT
 def fake_nova(**over):
     """Just the bits of avatar.Nova that at_desk() looks at - no window, no renderer."""
     n = types.SimpleNamespace(working=True, working_since=0.0, working_end=0.0, asleep=False, listen_until=0.0, target=None, drag=None,
-                              last_errand=0.0, live_now=lambda: True, sp=types.SimpleNamespace(images={}))
+                              last_errand=0.0, live_now=lambda: True, sp=avatar.Rig())
     n.WORK_AFTER, n.WORK_HOLD = avatar.Nova.WORK_AFTER, avatar.Nova.WORK_HOLD
     for k, v in over.items():
         setattr(n, k, v)
@@ -37,17 +37,22 @@ def test_no_desk_while_listening_napping_walking_or_on_an_errand():
     assert not at_desk(fake_nova(working=False))
 
 
-def test_sprites_only_when_exported():
+def test_no_desk_until_the_renderer_draws_her():
     assert not at_desk(fake_nova(live_now=lambda: False))
-    assert at_desk(fake_nova(live_now=lambda: False, sp=types.SimpleNamespace(images={"work": []})))
 
 
-def test_work_animation_exists_in_3d_page_and_sprites():
+def test_work_animation_exists_in_3d_page():
     page = (ROOT / "static" / "nova3d.html").read_text(encoding="utf-8")
     assert "work: 24" in page and 'name === "work"' in page
-    meta = avatar.FRAMES / "meta.json"
-    if meta.exists():
-        assert "work" in json.loads(meta.read_text(encoding="utf-8"))["anims"]
+
+
+def test_rig_matches_the_3d_page():
+    """avatar.Rig's frame size and animation lengths are the 3D page's own (W, H, ANIMS)."""
+    page = (ROOT / "static" / "nova3d.html").read_text(encoding="utf-8")
+    anims = re.search(r"const ANIMS = \{(.*?)\};", page, re.S).group(1)
+    assert dict((k, int(v)) for k, v in re.findall(r"(\w+): (\d+)", anims)) == avatar.Rig.anims
+    assert f"const W = {avatar.Rig.w}, H = {avatar.Rig.h};" in page
+    assert not (ROOT / "static" / "nova3d").exists()        # no saved sprite frames any more
 
 
 def test_app_tells_her_body_when_busy(monkeypatch):
@@ -72,7 +77,7 @@ def test_busy_while_a_request_runs():
 def test_long_bubble_stays_on_screen_at_the_right_edge(monkeypatch):
     """She lives in the bottom-right corner: a long bubble slides left instead of running off the screen."""
     from PIL import Image, ImageFont
-    monkeypatch.setattr(avatar, "work_area", lambda: (0, 0, 1536, 960))
+    monkeypatch.setattr(avatar, "stand_area", lambda: (0, 0, 1536, 960))
     ns = types.SimpleNamespace(font=ImageFont.load_default())
     frame = Image.new("RGBA", (208, 272))
     text = "Battery is full, RAM is at 77% and you have 72 GB free on the disk, so all is well boss " * 2

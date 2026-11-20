@@ -65,13 +65,6 @@ def test_cloud_key_unknown_provider(client):
     assert client.post("/api/cloud/key", json={"provider": "x", "key": "k"}).status_code == 400
 
 
-def test_save_frames_rejects_path_tricks(client, tmp_path, monkeypatch):
-    monkeypatch.setattr(app, "ROOT", tmp_path)          # never overwrite the real sprite folder
-    (tmp_path / "static").mkdir()
-    r =client.post("/api/dev/save_frames", json={"frames": {"../evil": ["data:image/png;base64,AA=="]}, "meta": {}})
-    assert r.json.get("count", 0) == 0
-
-
 def test_events_queue_bounded():
     for i in range(1000):
         app.push_event({"me": str(i)})

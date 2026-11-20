@@ -1,8 +1,8 @@
 """3D Nova's body when she is rendered live: the moves she has invented and how she looks.
 
 Live rendering: static/nova3d.html?live=1 runs in a hidden browser window (desktop.py), poses her 3D model each
-frame and sends the pixels to her desktop window (avatar.py, POST /frame). The saved sprite frames are only the
-fallback for when that window isn't running. Because the model is posed live, she can:
+frame and sends the pixels to her desktop window (avatar.py, POST /frame) - the only way she is drawn. Because the
+model is posed live, she can:
   - play moves nobody animated before: the brain writes keyframes (new_move tool), checked and stored here in
     data/moves.json so she can do them again by name;
   - change her look: colours and accessories (change_look tool), stored in data/look.json.
@@ -14,6 +14,16 @@ Angles are in degrees from her own point of view, so a brain can write them with
   head_nod (+ looks down, - up), head_turn (+ to her left = the viewer's right), head_tilt (+ to her left shoulder)
   lean_forward (+ bows), lean_side (+ to her left), turn (whole body; + to her left), jump (0..100 = how high)
   right_leg_lift / left_leg_lift        0 = standing, 60 = knee-high kick forward
+  right_elbow / left_elbow              0 = straight arm, 90 = forearm at a right angle, 150 = fully bent
+                                        (left out: a natural bend from how far the arm comes forward)
+  right_elbow_side / left_elbow_side    the forearm curls sideways: + up/out (towards her head when the arm is
+                                        raised), - in across her body (behind her back with the arm back)
+  right_wrist / left_wrist              + bends the hand towards the palm, - opens it back (an open palm)
+  right_wrist_side / left_wrist_side    the hand swings sideways from the wrist (a small wave)
+  right_hand / left_hand                her fingers: relaxed, open, fist, point, hold, soft
+  hands_behind, right_hand_behind, left_hand_behind, right_hand_on_hip, left_hand_on_hip
+                                        holds, 0..1: the arm goes there in a natural order (back/out first, then
+                                        the forearm curls), measured on the models by the 3D page's joint check
   eyes, mouth, blush (0..1), symbol     her face and the little sign beside her head
 """
 import json
@@ -41,17 +51,17 @@ def roam_mode(settings=None):
     return mode if mode in ROAM_MODES else ROAM_DEFAULT
 
 
-def roam_spot(mode, area, sprite_w, sprite_h, rnd):
+def roam_spot(mode, area, frame_w, frame_h, rnd):
     """Where her feet go for an idle stroll. area = (left, top, right, bottom) of the usable screen, rnd = random.uniform."""
     left, top, right, bottom = area
-    home = (right - sprite_w * .42, bottom)                 # the nap corner: hair and "z" stay on screen
+    home = (right - frame_w * .42, bottom)                 # the nap corner: hair and "z" stay on screen
     if mode == "corner":
         return home
     if mode == "edge":                                      # the right fifth of the bottom edge: never over the work
-        return rnd(max(left + 150, right - max(sprite_w * 1.6, (right - left) * .2)), home[0]), bottom
+        return rnd(max(left + 150, right - max(frame_w * 1.6, (right - left) * .2)), home[0]), bottom
     if rnd(0, 1) < .7:                                      # free: along the bottom ...
         return rnd(left + 150, right - 150), bottom
-    return rnd(left + 150, right - 150), rnd(top + sprite_h, bottom)      # ... or anywhere
+    return rnd(left + 150, right - 150), rnd(top + frame_h, bottom)      # ... or anywhere
 
 
 MOVES_FILE = DATA / "moves.json"
@@ -63,10 +73,19 @@ ANGLES = {   # name: (lowest, highest)
     "head_nod": (-40, 40), "head_turn": (-70, 70), "head_tilt": (-35, 35),
     "lean_forward": (-20, 30), "lean_side": (-25, 25), "turn": (-360, 360), "jump": (0, 100),
     "right_leg_lift": (-30, 90), "left_leg_lift": (-30, 90),
+    "right_elbow": (0, 150), "left_elbow": (0, 150),
+    "right_elbow_side": (-80, 90), "left_elbow_side": (-80, 90),
+    "right_wrist": (-70, 75), "left_wrist": (-70, 75), "right_wrist_side": (-50, 50), "left_wrist_side": (-50, 50),
+    # holds, 0..1 (how far into it): both hands clasped behind her back, one hand behind, a hand on her hip
+    "hands_behind": (0, 1), "right_hand_behind": (0, 1), "left_hand_behind": (0, 1),
+    "right_hand_on_hip": (0, 1), "left_hand_on_hip": (0, 1),
+    # a hand resting on her own body (the 3D page fits these to each model): right_hand_on_chest, left_hand_on_chin...
+    **{f"{side}_hand_on_{spot}": (0, 1) for side in ("right", "left") for spot in ("chest", "tummy", "chin", "mouth", "forehead")},
 }
-EYES = ("open", "closed", "happy", "half", "up", "wide", "sad", "side_left", "side_right")
+EYES = ("open", "closed", "happy", "half", "up", "wide", "sad", "angry", "side_left", "side_right")
 MOUTHS = ("smile", "open", "grin", "frown", "o")
 SYMBOLS = ("none", "question", "exclaim", "note", "heart", "z", "drop")
+HANDS = ("relaxed", "open", "fist", "point", "hold", "soft")     # finger shapes: right_hand / left_hand
 MAX_KEYS = 24
 BUILT_IN = ("idle", "walk", "talk", "think", "point", "happy", "wave", "sleepy", "laugh", "dance", "spin", "clap",
             "surprised", "sad", "confused", "nod", "shake", "facepalm", "bow", "love", "carry", "yawn", "look", "wakeup", "nap", "liedown")
@@ -132,7 +151,8 @@ def clean_move(name, duration, keys, loop=False):
                 v = _num(k[joint], lo, hi)
                 if v is not None:
                     pose[joint] = round(v, 1)
-        for field, allowed in (("eyes", EYES), ("mouth", MOUTHS), ("symbol", SYMBOLS)):
+        for field, allowed in (("eyes", EYES), ("mouth", MOUTHS), ("symbol", SYMBOLS), ("right_hand", HANDS),
+                               ("left_hand", HANDS)):
             if field in k:
                 v = str(k[field]).lower().strip()
                 if v not in allowed:
@@ -143,7 +163,7 @@ def clean_move(name, duration, keys, loop=False):
             if v is not None:
                 pose["blush"] = v
         if len(pose) == 1:
-            known = ", ".join(list(ANGLES) + ["eyes", "mouth", "blush", "symbol"])
+            known = ", ".join(list(ANGLES) + ["eyes", "mouth", "blush", "symbol", "right_hand", "left_hand"])
             return None, f"pose {i + 1} sets nothing I know. Use: {known}."
         out.append(pose)
     out.sort(key=lambda p: p["at"])
@@ -256,24 +276,30 @@ SPEECH_RULES = [
 SPEECH_REACTIONS = ("laugh", "facepalm", "bow", "love", "surprised", "confused", "shake", "nod")
 
 
-def speech_gesture(words, secs, n=0):
+def speech_gesture(words, secs, n=0, hands=2 / 3, gestures=None):
     """What her body does while she says this sentence: a gesture move, a built-in reaction name, or None.
-    n = how many sentences she has said in this reply (plain sentences alternate explaining hands and stillness)."""
+    n = how many sentences she has said in this reply; hands = her style's talk_hands (how many plain sentences get
+    explaining hands, the others stay still)."""
     text = " ".join(str(words or "").lower().split())
     if not text or secs < 0.5:
         return None
     for pattern, g in SPEECH_RULES:
         if re.search(pattern, text):
-            return g if g in SPEECH_REACTIONS else gesture_move(g, secs)
-    if secs >= 1.2 and n % 3 != 2:         # most plain sentences get talking hands, every third one stays calm
-        return gesture_move("explain" if n % 2 == 0 else "explain_one", secs)
+            if g in SPEECH_REACTIONS:
+                return g
+            # a calm character (talk_hands under 0.5) keeps her hands still on her quiet sentences, even for "you"
+            return gesture_move(g, secs, gestures) if hands >= .5 or talk_hands(n, hands) else None
+    if secs >= 1.2 and talk_hands(n, hands):   # some plain sentences get talking hands (her style), the rest stay calm
+        return gesture_move("explain" if n % 2 == 0 else "explain_one", secs, gestures)
     return None
 
 
-def gesture_move(name, secs):
-    """A speech gesture as a playable move, stretched to fit the sentence."""
+def gesture_move(name, secs, gestures=None):
+    """A speech gesture as a playable move, stretched to fit the sentence. gestures = her character's own versions
+    (style "gestures"), else the shared ones."""
+    keys = ((gestures or {}).get(name) or {}).get("keys") or GESTURES[name]
     return {"name": "gesture_" + name, "duration": round(max(1.0, min(3.2, secs * 0.9)), 2), "loop": False,
-            "keys": GESTURES[name]}
+            "keys": keys}
 
 
 # ------------------------------------------------------------------ sounds for her invented moves
@@ -337,3 +363,151 @@ def clean_sound(sound):
             note["vowel"] = n.get("vowel") if n.get("vowel") in ("a", "e", "o", "u", "m") else "a"
         out.append(note)
     return {"notes": out}, None
+
+
+# ------------------------------------------------------------------ each character's own way of moving
+# characters/<id>/character.json "style" says how SHE reacts; the code only reads it (characters/README.md):
+#   size, speed   how big her gestures and head moves are, how fast she plays reactions (1 = Nova's)
+#   talk_hands    how many plain sentences get talking hands (0..1)
+#   swap          her own version of a reaction: {"laugh": "quiet_chuckle"} (a built-in name or one of her moves)
+#   fidgets       what she does by herself when idle, with weights: {"look": 30, "fold_hands": 20}
+#   faces         which VRM expressions she shows per feeling (happy/sad/surprised/angry); nova3d.html reads it
+#   touch         click / right_click (a list: one at random) / poke (clicked again and again) / picked_up
+#                 (dragged); pokes = how many quick clicks make a poke; poke_say = her bubble then; greeting
+#   moves         her own moves, in the new_move format (keys with angles, eyes, mouth...); "dance" in swap
+#                 is also what she dances to music on the laptop (a 2-second move = 4 beats at 120 BPM)
+#   walk          how she walks: stride, swing, bounce, sway, lean, head, hands (swing/behind/hips), pace
+#   gestures      her own talking hands: {"explain": {"keys": [...]}, "point_you": ...} (names as in GESTURES)
+FEELINGS = ("happy", "sad", "surprised", "angry")
+VRM_FACES = ("happy", "angry", "sad", "relaxed", "surprised")
+FIDGETS_DEFAULT = {"look": 75, "spin": 10, "nod": 8, "yawn": 7}
+TOUCH_DEFAULT = {"click": "wave", "right_click": ["laugh", "dance", "spin", "love", "clap", "wave"],
+                 "poke": "facepalm", "pokes": 4, "poke_say": "", "picked_up": "surprised",
+                 "greeting": "Hi! I'm {NAME}. I'll be right here on your screen ✨"}
+STYLE_NUMBERS = {"size": (1.0, 0.4, 1.6), "speed": (1.0, 0.5, 1.6), "talk_hands": (0.67, 0.0, 1.0)}
+WALK_DEFAULT = {"stride": 0.6, "swing": 0.5, "bounce": 0.06, "sway": 0.0, "lean": 0.0, "head": 0.0, "pace": 1.0,
+                "hands": "swing"}
+WALK_LIMITS = {"stride": (0, 1), "swing": (0, 1.2), "bounce": (0, 0.25), "sway": (0, 0.2), "lean": (-0.15, 0.25),
+               "head": (-0.3, 0.3), "pace": (0.5, 1.6)}
+WALK_HANDS = ("swing", "behind", "hips")
+
+
+def clean_style(raw, name="Nova"):
+    """A character's "style" -> (style with every key filled in, list of problems). Unknown reactions are dropped,
+    so a typo in character.json never breaks her; the tests report the problems instead."""
+    raw = raw if isinstance(raw, dict) else {}
+    problems, moves = [], {}
+    for mname, m in (raw.get("moves") or {}).items():
+        m = m if isinstance(m, dict) else {}
+        move, err = clean_move(mname, m.get("duration"), m.get("keys"), m.get("loop", False))
+        if err:
+            problems.append(f"move {mname}: {err}")
+        else:
+            moves[move["name"]] = move
+    known = set(BUILT_IN) | set(moves)
+
+    def ok(r, where):
+        if r in known:
+            return True
+        problems.append(f"{where}: '{r}' is neither a built-in reaction nor one of her moves")
+        return False
+
+    out = {}
+    for k, (default, lo, hi) in STYLE_NUMBERS.items():
+        v = _num(raw.get(k, default), lo, hi)
+        out[k] = default if v is None else v
+    out["swap"] = {a: b for a, b in (raw.get("swap") or {}).items() if ok(a, "swap") and ok(b, f"swap {a}")}
+    fidgets = {r: w for r, w in (raw.get("fidgets") or FIDGETS_DEFAULT).items()
+               if ok(r, "fidgets") and (_num(w, 0, 1000) or 0) > 0}
+    out["fidgets"] = fidgets or dict(FIDGETS_DEFAULT)
+    faces = {}
+    for feel, mix in (raw.get("faces") or {}).items():
+        if feel not in FEELINGS or not isinstance(mix, dict):
+            problems.append(f"faces: '{feel}' should be one of {', '.join(FEELINGS)} with {{expression: weight}}")
+            continue
+        faces[feel] = {e: _num(w, 0, 1) or 0 for e, w in mix.items() if e in VRM_FACES}
+        problems += [f"faces {feel}: '{e}' is not a VRM expression ({', '.join(VRM_FACES)})"
+                     for e in mix if e not in VRM_FACES]
+    out["faces"] = faces
+    t_raw = raw.get("touch") if isinstance(raw.get("touch"), dict) else {}
+    touch = {}
+    for k in ("click", "poke", "picked_up"):
+        r = t_raw.get(k, TOUCH_DEFAULT[k])
+        touch[k] = r if ok(r, f"touch {k}") else TOUCH_DEFAULT[k]
+    rc = t_raw.get("right_click", TOUCH_DEFAULT["right_click"])
+    rc = [rc] if isinstance(rc, str) else rc if isinstance(rc, list) else []
+    touch["right_click"] = [r for r in rc if ok(r, "touch right_click")] or list(TOUCH_DEFAULT["right_click"])
+    touch["pokes"] = int(_num(t_raw.get("pokes", TOUCH_DEFAULT["pokes"]), 2, 10) or TOUCH_DEFAULT["pokes"])
+    for k in ("poke_say", "greeting"):
+        touch[k] = str(t_raw.get(k, TOUCH_DEFAULT[k]) or "").replace("{NAME}", name)[:120]
+    out["touch"] = touch
+    out["moves"] = moves
+    w_raw = raw.get("walk") if isinstance(raw.get("walk"), dict) else {}
+    walk = dict(WALK_DEFAULT)
+    for k, (lo, hi) in WALK_LIMITS.items():
+        if k in w_raw:
+            v = _num(w_raw[k], lo, hi)
+            if v is None:
+                problems.append(f"walk {k}: must be a number")
+            else:
+                walk[k] = v
+    if "hands" in w_raw:
+        if w_raw["hands"] in WALK_HANDS:
+            walk["hands"] = w_raw["hands"]
+        else:
+            problems.append(f"walk hands: '{w_raw['hands']}' should be one of {', '.join(WALK_HANDS)}")
+    out["walk"] = walk
+    gestures = {}
+    for gname, g in (raw.get("gestures") or {}).items():
+        if gname not in GESTURES:
+            problems.append(f"gestures: '{gname}' is not a talking gesture ({', '.join(GESTURES)})")
+            continue
+        move, err = clean_move("g_" + gname, 1, (g or {}).get("keys") if isinstance(g, dict) else None)
+        if err:
+            problems.append(f"gesture {gname}: {err}")
+        else:
+            gestures[gname] = {"keys": move["keys"]}
+    out["gestures"] = gestures
+    return out, problems
+
+
+def character_style(cid=None):
+    """The chosen character's style (settings "character" when cid is None), read fresh from her folder, so an
+    edit to character.json shows without restarting Nova."""
+    if cid is None:
+        try:
+            cid = json.loads((DATA / "settings.json").read_text(encoding="utf-8")).get("character")
+        except (OSError, ValueError):
+            cid = None
+    ch = characters.get(cid)
+    try:
+        raw = json.loads((ch["folder"] / "character.json").read_text(encoding="utf-8")).get("style")
+    except (OSError, ValueError, KeyError):
+        raw = ch.get("style")
+    style, _ = clean_style(raw, ch["name"])
+    style["id"] = ch["id"]
+    return style
+
+
+def styled(style, name):
+    """Her own version of a reaction (style "swap"), else the reaction itself."""
+    return style["swap"].get(name, name)
+
+
+def pick_fidget(style, rnd, sleepy=False):
+    """One of her idle habits, picked by weight (rnd = random.random). Late at night anyone yawns now and then."""
+    if sleepy and rnd() < .45:
+        return "yawn"
+    items = list(style["fidgets"].items())
+    x = rnd() * sum(w for _, w in items)
+    for name, w in items:
+        x -= w
+        if x < 0:
+            return name
+    return items[-1][0]
+
+
+def talk_hands(n, share):
+    """Does plain sentence n (0, 1, 2...) of a reply get talking hands? share = her style's talk_hands, spread
+    evenly: 0.67 is two sentences out of three, 0.3 about one in three, 0 never, 1 always."""
+    return int((n + 2) * share + 1e-9) > int((n + 1) * share + 1e-9)

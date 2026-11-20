@@ -11,7 +11,29 @@
   "look": {},
   "model": {
     "file": "model.vrm",
-    "fit": {"top": 4.25, "spread": 0.3, "accessories": 0.92, "reach": 0.65,
-            "work": {"upper": 0.2, "inward": 0.35, "bend": 0.0, "seat": -0.1, "desk": 1.3}}
+    "fit": {"top": 4.25, "floor": 0.35, "spread": 0.3, "accessories": 0.92, "reach": 0.65,
+            "work": {"upper": 0.2, "inward": 0.2, "bend": 0.0, "seat": 0.0, "desk": 1.3}}
+  },
+  "style": {
+    "note": "How she moves and reacts (characters/README.md). Nova is the lively original: full-size moves.",
+    "size": 1.0, "speed": 1.0, "talk_hands": 0.67,
+    "faces": {"happy": {"happy": 1}, "sad": {"sad": 1}, "surprised": {"surprised": 1}, "angry": {"angry": 0.7}},
+    "walk": {"stride": 0.6, "swing": 0.5, "bounce": 0.06, "sway": 0.0, "hands": "swing", "pace": 1.0},
+    "swap": {},
+    "fidgets": {"look": 50, "chai_sip": 15, "spin": 10, "filmy_pose": 8, "nod": 8, "yawn": 7},
+    "touch": {"click": "wave", "right_click": ["laugh", "dance", "spin", "love", "clap", "filmy_pose"],
+              "poke": "laugh", "pokes": 4, "poke_say": "Arre, gudgudi ho rahi hai! 😆", "picked_up": "surprised",
+              "greeting": "Hi! I'm Nova. I'll be right here on your screen ✨"},
+    "moves": {
+      "chai_sip": {"duration": 2.6, "keys": [
+        {"at": 0.2, "head_nod": -4, "eyes": "open", "right_hand_on_mouth": 1},
+        {"at": 0.45, "head_nod": -10, "eyes": "closed", "blush": 0.6, "right_hand_on_mouth": 1},
+        {"at": 0.7, "head_nod": 0, "eyes": "happy", "mouth": "grin", "blush": 0.8, "right_hand_on_mouth": 1}]},
+      "filmy_pose": {"duration": 2.4, "keys": [
+        {"at": 0.25, "right_arm_out": 110, "right_arm_forward": 30, "right_elbow": 20, "left_arm_out": 25, "left_arm_forward": -10, "left_elbow": 110,
+         "lean_side": 8, "head_tilt": 12, "eyes": "happy", "mouth": "grin", "symbol": "note"},
+        {"at": 0.75, "right_arm_out": 115, "right_arm_forward": 35, "right_elbow": 15, "left_arm_out": 25, "left_arm_forward": -10, "left_elbow": 110,
+         "lean_side": 10, "head_tilt": 14, "eyes": "happy", "mouth": "grin"}]}
+    }
   }
 }

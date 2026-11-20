@@ -20,7 +20,7 @@
 <body>
 <canvas id="stage" width="520" height="680"></canvas>
 <div class="row" id="anims"></div>
-<div class="row"><button id="spin">Spin 360°</button><button id="export">Export frames for desktop Nova</button></div>
+<div class="row"><button id="spin">Spin 360°</button></div>
 <div id="msg">Drag left/right on Nova to turn her around.</div>
 <script type="module">
 import * as THREE from "three";
@@ -70,15 +70,17 @@ function eyeTex(kind, lx = 0, ly = 0) {
     g.fillStyle = "#fff"; g.beginPath(); g.arc(82 + lx, 72 + ly, 13, 0, 7); g.fill();
     g.globalAlpha = .85; g.beginPath(); g.arc(48 + lx, 116 + ly, 6, 0, 7); g.fill(); g.globalAlpha = 1;
     if (kind === "half") { g.fillStyle = EYE.skin; g.fillRect(0, 0, 128, 92); }
-    if (kind === "sadL" || kind === "sadR") {   // sad: the upper lid slopes down towards the outside of the face
-      const hi = 62, lo = 100, a = kind === "sadL" ? [lo, hi] : [hi, lo];
+    if (kind === "sadL" || kind === "sadR" || kind === "angryL" || kind === "angryR") {
+      // sad: the upper lid slopes down towards the outside of the face; angry (a pout): down towards the nose
+      const hi = 62, lo = 100, a = kind === "sadL" || kind === "angryR" ? [lo, hi] : [hi, lo];
       g.fillStyle = EYE.skin; g.beginPath(); g.moveTo(0, 0); g.lineTo(128, 0); g.lineTo(128, a[1]); g.lineTo(0, a[0]); g.closePath(); g.fill();
     }
     g.restore();
     g.lineWidth = 11; g.beginPath();
     if (kind === "half") { g.moveTo(12, 92); g.lineTo(116, 92); }
     else if (kind === "sadL") { g.moveTo(10, 100); g.lineTo(118, 62); }
-    else if (kind === "sadR") { g.moveTo(10, 62); g.lineTo(118, 100); }
+    else if (kind === "sadR" || kind === "angryL") { g.moveTo(10, 62); g.lineTo(118, 100); }
+    else if (kind === "angryR") { g.moveTo(10, 100); g.lineTo(118, 62); }
     else { g.moveTo(10, 62); g.quadraticCurveTo(64, 4, 118, 60); g.moveTo(112, 54); g.lineTo(124, 44); }
     g.stroke();
   });
@@ -92,7 +94,7 @@ const mouthTex = kind => canvasTex(64, 48, g => {
   else { g.fillStyle = "#8f2f48"; g.beginPath(); g.moveTo(12, 14); g.quadraticCurveTo(32, 46, 52, 14); g.closePath(); g.fill(); g.fillStyle = "#ff8fa6"; g.beginPath(); g.ellipse(32, 30, 9, 5, 0, 0, 7); g.fill(); }
 });
 const makeEyes = () => ({open: eyeTex("open"), closed: eyeTex("closed"), happy: eyeTex("happy"), half: eyeTex("half"), up: eyeTex("open", 9, -14),
-        wide: eyeTex("wide"), sadL: eyeTex("sadL"), sadR: eyeTex("sadR"), side: eyeTex("open", 14, 0), sideB: eyeTex("open", -14, 0),
+        wide: eyeTex("wide"), sadL: eyeTex("sadL"), sadR: eyeTex("sadR"), angryL: eyeTex("angryL"), angryR: eyeTex("angryR"), side: eyeTex("open", 14, 0), sideB: eyeTex("open", -14, 0),
         down: eyeTex("open", 0, 13)});
 const TEX = {
   eye: makeEyes(),
@@ -125,6 +127,7 @@ function starShape(R, r) {
 
 /* ------------------------------------------------------------------ build Nova */
 const nova = new THREE.Group();
+nova.visible = false;      // drawn only once her character's VRM model has loaded (there is no other body to show)
 const body = new THREE.Group(); nova.add(body);
 
 // legs
@@ -262,6 +265,7 @@ function napPose(k, breathe = 0) {
   legs[0].rotation.x = -1.1 * e; legs[1].rotation.x = -.85 * e;
   arms[0].rotation.set(-2.3 * e, 0, .12 + .5 * e);         // the arm under her head, like a pillow
   arms[1].rotation.set(-.9 * e, 0, -.12 - .25 * e);        // the other one draped in front
+  elb(0, .25 + 1.2 * e); elb(1, .25 + .7 * e);
   head.rotation.z = -.2 * e; head.rotation.x = .1 * e + .015 * breathe * e;
   body.rotation.x = .12 * e;
   locks.forEach(l => l.rotation.z = -.5 * e); longHair.rotation.z = -.35 * e;
@@ -272,7 +276,203 @@ const TAU = Math.PI * 2, ease = x => x < .5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 
 const ANIMS = {idle: 24, walk: 16, talk: 12, think: 12, point: 14, happy: 12, wave: 16, sleepy: 12,
                laugh: 12, dance: 24, spin: 16, clap: 12, surprised: 12, sad: 16, confused: 16, nod: 12, shake: 12,
                facepalm: 18, bow: 16, love: 16, carry: 16, yawn: 18, look: 20, work: 24, wakeup: 40, nap: 24, liedown: 14};
+// The toon's arms are one piece (no elbow), so each animation also says how her elbows bend on the VRM:
+// fwd = forearm forward/up in front of her (radians, 0 = straight arm), up = forearm curling towards her head when the
+// arm is raised (outwards when it hangs). elbows[0] is her right arm, like arms[0].
+const elbows = [{fwd: .25, up: 0}, {fwd: .25, up: 0}];
+const elb = (i, fwd, up = 0) => { elbows[i].fwd = fwd; elbows[i].up = up; };
+// ...and her wrists: flex = the hand bends towards the palm (+) or back (- : an open, "here you go" palm), side = the
+// hand swings sideways (a wave from the wrist). Radians.
+const wrists = [{flex: .2, side: 0}, {flex: .2, side: 0}];
+const wri = (i, flex, side = 0) => { wrists[i].flex = flex; wrists[i].side = side; };
+// ...and her fingers: grip 0 = flat open hand .. 1 = fist; point = the index finger stays straight. Shapes by name
+// (moves use "right_hand": "open" etc.); each built-in animation picks its own in HANDS_OF below.
+const GRIPS = {relaxed: {grip: .32, point: 0}, open: {grip: .06, point: 0}, fist: {grip: 1, point: 0},
+               point: {grip: 1, point: 1}, hold: {grip: .7, point: 0}, soft: {grip: .5, point: 0}};
+const fingers = [{...GRIPS.relaxed}, {...GRIPS.relaxed}];
+// Two holds she uses a lot, measured on the models with the joint check (jointCheck): hands clasped behind her back,
+// and a hand on her hip. The arm gets there in a natural order: first back (or out), then the forearm curls in -
+// curling first would sweep the hand through her hip. Radians; w = 0..1 how far into the hold.
+const BEHIND = {back: .35, inward: -.05, fwd: .15, curl: -.9, wrist: .35};
+const ON_HIP = {out: .55, back: 0, fwd: .3, curl: -1.15, wrist: -.55};
+window.BEHIND = BEHIND; window.ON_HIP = ON_HIP;
+const lerp = (a, b, k) => a + (b - a) * k, phase = (w, a, b) => smooth(Math.max(0, Math.min(1, (w - a) / (b - a))));
+function holdBehind(i, w) {           // i: 0 her right arm, 1 her left
+  if (w <= 0) return;
+  const s = i ? -1 : 1, r = arms[i].rotation, a = phase(w, 0, .5), c = phase(w, .5, 1), [x, z, fwd, up, wr, tw] = TOUCH.back;
+  // (on the way the arm swings a little out, so the hand goes round her hip instead of through it)
+  r.x = lerp(r.x, x, a); r.z = lerp(r.z, s * z, a) - s * .22 * Math.sin(Math.PI * Math.min(1, w)); r.y = lerp(r.y, s * tw, a);
+  elb(i, lerp(elbows[i].fwd, fwd, a), lerp(elbows[i].up, up, c));
+  wri(i, lerp(wrists[i].flex, wr, c), wrists[i].side * (1 - c)); if (c > .5) hnd(i, "soft");
+}
+// Touching her own body: palm on her chest, tummy, chin, mouth or forehead. The angles are fitted to each model when
+// it loads (fitTouches: a short search that puts the palm on the spot without passing through her), starting here.
+// upper arm x (forward -), z (in +), elbow fwd, elbow up, wrist, upper arm twist (inward +: turns the forearm across her)
+const TOUCH_SEED = {chest: [-.5, .3, 1.9, 0, .3, .6], tummy: [-.3, .25, 1.6, 0, .3, .5], chin: [-.9, .35, 2.3, 0, .6, 0],
+                    mouth: [-.95, .3, 2.4, 0, .3, 0], forehead: [-1.6, .3, 2.3, 0, .2, 0],
+                    back: [.35, .07, .15, -.9, .35, 0], hip: [0, -.43, .3, -1.15, -.55, 0]};
+const TOUCH = JSON.parse(JSON.stringify(TOUCH_SEED)), FRONT_SPOTS = ["chest", "tummy", "chin", "mouth", "forehead"];
+const exact = [0, 0];      // how much each arm follows a fitted hold exactly (no face-reach adjustment in driveVRM)
+window.TOUCH = TOUCH;
+function holdTo(i, spot, w) {
+  if (w <= 0 || !TOUCH[spot]) return;
+  const s = i ? -1 : 1, r = arms[i].rotation, [x, z, fwd, up, wr, tw = 0] = TOUCH[spot], a = smooth(Math.min(1, w));
+  r.x = lerp(r.x, x, a); r.z = lerp(r.z, s * z, a); r.y = lerp(r.y, s * tw, a);
+  elb(i, lerp(elbows[i].fwd, fwd, a), lerp(elbows[i].up, up, a)); wri(i, lerp(wrists[i].flex, wr, a), wrists[i].side * (1 - a));
+  exact[i] = Math.max(exact[i], a); if (a > .5) hnd(i, spot === "chest" || spot === "tummy" ? "open" : "soft");
+}
+// Her real body shape, measured on the mesh when a model loads (rays from the front, back and sides at 14 heights
+// along her spine, in her rest pose, hair left out): how far her surface is from the spine line, in shoulder widths.
+// The touch fit and the joint check use it, so "on her chest" and "inside her body" mean this body, not a guess.
+const BODY_LEVELS = [-.3, -.2, -.1, 0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1];
+let BODYP = null;
+window.bodyProfile = () => BODYP;
+function measureBody() {
+  // her rest pose (T-pose: arms straight out, so they are not mistaken for her waist), then every vertex of her
+  // body and clothes (skinned), sorted by height along her spine: the furthest one in front, behind and to the side
+  reset(); nova.updateMatrixWorld(true);
+  vrm.humanoid.resetNormalizedPose(); vrm.humanoid.update(); vrm.scene.updateMatrixWorld(true);
+  const B = n => vrm.humanoid.getRawBoneNode(n).getWorldPosition(new THREE.Vector3());
+  const hips = B("hips"), neckP = B("neck"), ab = neckP.clone().sub(hips), up = ab.clone().normalize();
+  const front = B("leftUpperLeg").sub(B("rightUpperLeg")).cross(up).normalize(), left = up.clone().cross(front).normalize();
+  const sw = B("leftUpperArm").distanceTo(B("rightUpperArm")), n = BODY_LEVELS.length;
+  const out = {front: Array(n).fill(0), back: Array(n).fill(0), side: Array(n).fill(0)}, v = new THREE.Vector3();
+  // her skin (Body_00_SKIN), plus her top only over her chest front (a shirt over her bust); loose cloth - skirts,
+  // coat tails, drapes, bell sleeves - is not solid, so a hand may brush it
+  vrm.scene.traverse(o => {
+    if (!o.isMesh) return;
+    const names = [].concat(o.material).map(m => m.name).join(" "), skin = /Body_\d+_SKIN/i.test(names), top = /Tops_/i.test(names);
+    if (!skin && !top) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i += 2) {         // every other vertex is plenty
+      o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld);
+      const rel = v.sub(hips), lv = rel.dot(ab) / ab.lengthSq(), li = Math.round((lv + .3) / .1);
+      if (li < 0 || li >= n || Math.abs(lv - BODY_LEVELS[li]) > .05) continue;
+      const off = rel.addScaledVector(ab, -lv), dep = off.dot(front) / sw, lat = Math.abs(off.dot(left)) / sw;
+      if (lat < .2 && (skin || lv >= .45)) out.front[li] = Math.max(out.front[li], dep);
+      if (!skin) continue;
+      if (lat < .2) out.back[li] = Math.max(out.back[li], -dep);
+      if (Math.abs(dep) < .3 && lat < (lv > .6 ? .6 : 1.2)) out.side[li] = Math.max(out.side[li], lat);   // (no arms)
+    }
+  });
+  // VRoid deletes skin hidden under clothes, so a gap or a too-thin spot gets a body's least thickness
+  for (const [k, d, least] of [["front", .4, .3], ["back", .4, .22], ["side", .6, .4]]) {
+    const a = out[k]; for (let i = 0; i < n; i++) { if (a[i] <= .02) a[i] = a[i - 1] || a.find(x => x > .02) || d; a[i] = Math.max(least, a[i]); }
+  }
+  BODYP = out;
+  pose("idle", 0); driveVRM(1 / 30);     // back to a normal pose
+}
+// How far inside (<1) or outside (>1) her body a point is, and at which height (0 = hips, 1 = neck).
+function bodyAt(p, hips, ab, front, left, sw) {
+  const rel = p.clone().sub(hips), lv = rel.dot(ab) / ab.lengthSq(), k = Math.max(-.3, Math.min(1, lv));
+  const off = p.clone().sub(hips.clone().addScaledVector(ab, k)), dep = off.dot(front), lat = off.dot(left);
+  const P = BODYP || {front: BODY_LEVELS.map(() => .4), back: BODY_LEVELS.map(() => .4), side: BODY_LEVELS.map(() => .6)};
+  const f = (k + .3) / .1, i = Math.max(0, Math.min(BODY_LEVELS.length - 2, Math.floor(f))), u = Math.min(1, Math.max(0, f - i));
+  const at = a => (a[i] + (a[i + 1] - a[i]) * u) * sw;
+  return {body: Math.hypot(lat / at(P.side), dep / (dep >= 0 ? at(P.front) : at(P.back))), level: lv, facing: rel.dot(front)};
+}
+// Fit the touch holds to this model: a short search (coordinate descent from TOUCH_SEED) that puts her right palm
+// on each spot without her elbow or forearm passing through her body or head. The left arm mirrors it. ~0.1 s.
+const TOUCH_STARTS = {tummy: [[-.2, .15, 1.4, 0, .3, .9], [-.45, .35, 1.9, -.3, .2, 1.1], [0, .1, 1.5, 0, .3, 1.5],
+                              [-.15, .2, 1.7, -.2, .2, 1.7], [0, .1, 1.57, 0, .1, .6], [.15, .1, 1.75, 0, .1, .85]],
+                      chest: [[-.7, .45, 2.2, 0, .3, .9]]};
+const SPOT_LEVEL = {chest: .8, tummy: .42, back: .12, hip: 0}, SPOT_SIDE = {chest: .28, tummy: .2, back: .1, hip: .62}, HEAD_SPOT = {chin: -.75, mouth: -.5, forehead: .35}, TOUCH_FIT = {};
+window.TOUCH_FIT = TOUCH_FIT; window.fitTouches = (fresh) => { if (fresh) try { localStorage.removeItem(`touchfit:${FIT_VERSION}:${vrmFile}`); } catch (e) {} const a = performance.now(); fitTouches(); return Math.round(performance.now() - a); };
+window.touchTry = (spot, v) => { const was = TOUCH[spot]; TOUCH[spot] = v; still = true; pose("idle", 0); holdTo(0, spot, 1); driveVRM(1 / 30);
+  nova.updateMatrixWorld(true); const f = bodyNow(), wr = f.B("rightHand"), palm = wr.clone().lerp(f.B("rightMiddleProximal") || wr, .5), a = f.at(palm);
+  const out = {score: touchScore(spot), body: a.body, level: a.level, side: -palm.clone().sub(f.hips).dot(f.leftDir) / f.sw,
+    elbow: f.at(f.B("rightLowerArm")).body, fore: f.at(f.B("rightLowerArm").lerp(wr, .5)).body}; TOUCH[spot] = was; still = false; return out; };
+function bodyNow() {        // her body's directions and sizes right now (the joint check measures the same way)
+  const B = n => { const b = vrm.humanoid.getRawBoneNode(n); return b && b.getWorldPosition(new THREE.Vector3()); };
+  const hips = B("hips"), neckP = B("neck"), up = neckP.clone().sub(hips).normalize();
+  const front = B("leftUpperLeg").sub(B("rightUpperLeg")).cross(up).normalize(), leftDir = up.clone().cross(front).normalize();
+  const sw = B("leftUpperArm").distanceTo(B("rightUpperArm")), ab = neckP.clone().sub(hips);
+  const headH = vrmFit.headH * vrm.scene.scale.x / vrmFit.k, headC = B("head").addScaledVector(up, headH * .45), headR = headH * .42;
+  const at = p => bodyAt(p, hips, ab, front, leftDir, sw);
+  return {B, up, front, leftDir, sw, headC, headR, at, hips};
+}
+function touchScore(spot) {
+  const f = bodyNow(), wr = f.B("rightHand"), palm = wr.clone().lerp(f.B("rightMiddleProximal") || wr, .5), el = f.B("rightLowerArm");
+  let sc;
+  // both arms are in the hold (mirrored): their forearms may not cross; behind her back the hands just meet
+  const le = f.B("leftLowerArm"), lw = f.B("leftHand"), segD = (p, a, b) => { const ab = b.clone().sub(a);
+    return p.distanceTo(a.clone().addScaledVector(ab, Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / ab.lengthSq())))); };
+  let cross = 1e9; for (let i = 0; i <= 6; i++) cross = Math.min(cross, segD(el.clone().lerp(wr, i / 6 * .75), le, le.clone().lerp(lw, .75)));
+  const clash = cross / f.sw < .14 ? 4 * (.14 - cross / f.sw) : 0;
+  if (spot in HEAD_SPOT) {
+    const tgt = f.headC.clone().addScaledVector(f.up, HEAD_SPOT[spot] * f.headR).addScaledVector(f.front, .8 * f.headR);
+    sc = palm.distanceTo(tgt) / f.headR;
+  } else {      // on the surface, at the right height, on her own (right) side of the middle, in front (or behind)
+    const a = f.at(palm), side = -palm.clone().sub(f.hips).dot(f.leftDir) / f.sw, behind = spot === "back";
+    sc = Math.abs(a.body - 1.08) + 2 * Math.abs(a.level - SPOT_LEVEL[spot]) + Math.abs(side - SPOT_SIDE[spot])
+       + (behind ? (a.facing > 0 ? 2 : 0) : spot === "hip" ? 2 * Math.abs(a.facing) / f.sw : (a.facing < 0 ? 2 : 0));
+    if (behind) sc += 2 * Math.abs(wr.distanceTo(lw) / f.sw - .18);          // the hands meet behind her
+    if (spot === "hip") sc += Math.max(0, .95 - f.at(el).body);                // the elbow stays out to the side
+  }
+  sc += clash;
+  for (const [q, lim] of [[el, .85], [el.clone().lerp(wr, .5), .95]]) { const b = f.at(q).body; if (b < lim) sc += 4 * (lim - b); }
+  for (const q of [wr, palm]) { const dh = q.distanceTo(f.headC) / f.headR; if (dh < .97) sc += 4 * (.97 - dh); }
+  return sc;
+}
+const FIT_VERSION = 9;       // bump when the scoring changes: cached fits are redone
+function fitTouches() {
+  const key = `touchfit:${FIT_VERSION}:${vrmFile}`;
+  try { const c = JSON.parse(localStorage.getItem(key)); if (c && c.TOUCH && c.BODYP) { Object.assign(TOUCH, c.TOUCH); Object.assign(TOUCH_FIT, c.FIT); BODYP = c.BODYP; return; } } catch (e) {}
+  measureBody();
+  const was = still; still = true;
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;   // the same search every time
+  for (const spot of Object.keys(TOUCH_SEED)) {
+    // the range each angle may take for this hold (arm x, z, elbow fwd, elbow up, wrist, twist)
+    const L = spot === "back" ? [[0, .9], [-.4, .4], [0, 1.6], [-1.5, .3], [-.5, .9], [-.6, 1]]
+            : spot === "hip" ? [[-.4, .5], [-.9, .1], [0, 2], [-1.5, .3], [-.8, .4], [-.6, 1]]
+            : [[-1.9, .4], [-.2, 1.1], [.4, 2.4], [-.8, .8], [-.8, .9], [-.4, 1.8]];
+    const clampTo = y => y.forEach((v, j) => y[j] = Math.max(L[j][0], Math.min(L[j][1], v)));
+    const tryIt = v => { TOUCH[spot] = v; pose("idle", 0); holdAt(0, spot, 1); holdAt(1, spot, 1); driveVRM(1 / 30);
+      nova.updateMatrixWorld(true); return touchScore(spot); };
+    // a few starting points (the search only finds the nearest good pose); the best one wins
+    const starts = [TOUCH_SEED[spot], ...(TOUCH_STARTS[spot] || [])];
+    let x = null, best = 1e9;
+    for (const st of starts) { const sc = tryIt(st.slice()); if (sc < best) { best = sc; x = st.slice(); } }
+    let step = .3;
+    for (let round = 0; round < 10 && step > .01; round++) {
+      let better = false;
+      for (let j = 0; j < 6; j++) for (const d of [-step, step]) {
+        const y = x.slice(); y[j] += d; clampTo(y);
+        const sc = tryIt(y); if (sc < best - 1e-4) { best = sc; x = y; better = true; }
+      }
+      if (!better) step /= 2;
+    }
+    if (best > .15) {         // stuck far from the spot: look around the whole range, then refine the best find
+      for (let i = 0; i < 600; i++) { const y = L.map(([a, b]) => a + rnd() * (b - a)), sc = tryIt(y); if (sc < best) { best = sc; x = y; } }
+      for (let round = 0, step = .1; round < 8 && step > .01; round++) {
+        let better = false;
+        for (let j = 0; j < 6; j++) for (const d of [-step, step]) { const y = x.slice(); y[j] += d; clampTo(y); const sc = tryIt(y); if (sc < best - 1e-4) { best = sc; x = y; better = true; } }
+        if (!better) step /= 2;
+      }
+    }
+    TOUCH[spot] = x; TOUCH_FIT[spot] = +best.toFixed(3);
+  }
+  still = was;
+  try { localStorage.setItem(key, JSON.stringify({TOUCH, FIT: TOUCH_FIT, BODYP})); } catch (e) {}
+}
+function holdHip(i, w) {
+  if (w <= 0) return;
+  const s = i ? -1 : 1, r = arms[i].rotation, a = phase(w, 0, .6), c = phase(w, .3, 1), [x, z, fwd, up, wr, tw] = TOUCH.hip;
+  r.x = lerp(r.x, x, a); r.z = lerp(r.z, s * z, a); r.y = lerp(r.y, s * tw, a);
+  elb(i, lerp(elbows[i].fwd, fwd, a), lerp(elbows[i].up, up, c));
+  wri(i, lerp(wrists[i].flex, wr, c), wrists[i].side * (1 - c)); if (c > .5) hnd(i, "open");
+}
+const holdAt = (i, spot, w) => spot === "back" ? holdBehind(i, w) : spot === "hip" ? holdHip(i, w) : holdTo(i, spot, w);
+const hnd = (i, shape) => Object.assign(fingers[i], GRIPS[shape] || GRIPS.relaxed);
+const HANDS_OF = {wave: ["open", "relaxed"], point: ["point", "relaxed"], happy: ["fist", "fist"], clap: ["open", "open"],
+  talk: ["relaxed", "open"], dance: ["soft", "soft"], spin: ["open", "open"], surprised: ["open", "open"],
+  confused: ["open", "open"], love: ["soft", "soft"], carry: ["hold", "relaxed"], yawn: ["open", "open"],
+  work: ["soft", "soft"], laugh: ["relaxed", "soft"], think: ["relaxed", "relaxed"], facepalm: ["open", "relaxed"]};
 function reset() {
+  elb(0, .25); elb(1, .25);                 // relaxed arms are never quite straight
+  exact[0] = exact[1] = 0;
+  wri(0, .2); wri(1, .2);                   // ... and relaxed hands curl in a little
+  hnd(0, "relaxed"); hnd(1, "relaxed");
   fx.forEach(d => d.visible = false); mouth.scale.set(1, 1, 1); desk.visible = false;
   nova.rotation.set(0, 0, 0); nova.position.set(0, 0, 0); body.position.set(0, 0, 0); body.rotation.set(0, 0, 0);
   head.rotation.set(0, 0, 0); neckTop.rotation.set(0, 0, 0);
@@ -289,27 +489,38 @@ function pose(name, t) {
   if (name === "idle") {
     body.position.y = .025 * s; head.rotation.z = .05 * s; head.rotation.x = .02 * c;
     arms[0].rotation.z = .12 + .04 * s; arms[1].rotation.z = -.12 - .04 * s;
+    elb(0, .3 + .04 * s); elb(1, .3 - .04 * s); wri(0, .22 + .05 * c); wri(1, .22 - .05 * c);
     locks.forEach(l => l.rotation.z = .04 * c); ahoge.rotation.z = .4 + .12 * s;
     if (t > .46 && t < .55) eyes.forEach(e => e.material.map = TEX.eye.closed);
   } else if (name === "walk") {
-    nova.rotation.y = .55; body.position.y = .06 * Math.abs(Math.sin(TAU * t));
-    legs[0].rotation.x = .6 * s; legs[1].rotation.x = -.6 * s;
-    arms[0].rotation.x = -.5 * s; arms[1].rotation.x = .5 * s;
+    // her own walk (STYLE.walk, from character.json): stride, arm swing, bounce, hip sway, where her hands go
+    const WK = STYLE.walk;
+    nova.rotation.y = .55; body.position.y = WK.bounce * Math.abs(Math.sin(TAU * t));
+    body.position.x = WK.sway * .6 * s; body.rotation.z = -WK.sway * s; body.rotation.x = WK.lean;
+    legs[0].rotation.x = WK.stride * s; legs[1].rotation.x = -WK.stride * s;
+    if (WK.hands === "behind") { holdBehind(0, 1); holdBehind(1, 1); }      // hands clasped behind her back
+    else if (WK.hands === "hips") { holdHip(0, 1); holdHip(1, 1); }        // hands on her hips
+    else {
+      arms[0].rotation.x = -WK.swing * s; arms[1].rotation.x = WK.swing * s;
+      elb(0, .3 + .9 * WK.swing * Math.max(0, s)); elb(1, .3 + .9 * WK.swing * Math.max(0, -s));   // forward arm bends more
+      wri(0, .2 + .15 * Math.max(0, s)); wri(1, .2 + .15 * Math.max(0, -s));
+    }
     longHair.rotation.x = .12 + .05 * Math.abs(s); locks.forEach(l => l.rotation.x = .15);
-    ahoge.rotation.z = .4 + .2 * s; head.rotation.z = .03 * s;
+    ahoge.rotation.z = .4 + .2 * s; head.rotation.z = .03 * s + WK.sway * .5 * s; head.rotation.x = WK.head;
   } else if (name === "talk") {
     const open = Math.abs(Math.sin(TAU * t * 2));
     mouth.material.map = open > .55 ? TEX.mouth.open : open > .25 ? TEX.mouth.grin : TEX.mouth.smile;
     head.rotation.x = .06 * Math.sin(TAU * t * 2); head.rotation.z = .04 * s;
-    arms[1].rotation.set(-.5 - .15 * s, 0, -.5 - .1 * c); body.position.y = .015 * s;
+    arms[1].rotation.set(-.5 - .15 * s, 0, -.22 - .08 * c); body.position.y = .015 * s; elb(1, 1.1 + .2 * s, .15); wri(1, -.35 - .15 * c);   // an open palm
   } else if (name === "think") {
-    arms[0].rotation.set(-2.25, 0, .5); head.rotation.z = .14; head.rotation.x = -.06;
+    arms[0].rotation.set(-2.25, 0, .5); head.rotation.z = .14; head.rotation.x = -.06; holdTo(0, "chin", 1);
     eyes.forEach(e => e.material.map = TEX.eye.up); mouth.material.map = TEX.mouth.smile;
-    arms[1].rotation.z = -.15 - .03 * s; body.position.y = .015 * s;
+    arms[1].rotation.z = -.15 - .03 * s; body.position.y = .015 * s; elb(1, .35); wri(0, .7);   // chin on her hand
   } else if (name === "point") {
     nova.rotation.y = -.35;
     const raise = ease(Math.min(1, t / .45)), poke = t > .45 && t < .75 ? Math.sin((t - .45) / .3 * Math.PI) : 0;
     arms[0].rotation.set(-.75 * raise - poke * .25, 0, .12 - raise * 1.55 - poke * .1);
+    elb(0, .25 - .17 * raise + .3 * poke); wri(0, -.1 * raise);      // straight to point, a little jab on the poke
     locks[0].rotation.x = .35 * raise; locks[0].rotation.z = -.25 * raise;
     body.rotation.z = -.06 * raise - .04 * poke; head.rotation.z = -.08 * raise;
     eyes.forEach(e => e.material.map = TEX.eye.open);
@@ -317,12 +528,15 @@ function pose(name, t) {
   } else if (name === "happy") {
     const j = Math.max(0, Math.sin(TAU * t)); body.position.y = .3 * j;
     arms[0].rotation.set(-.6, 0, -2.0 - .2 * s); arms[1].rotation.set(-.6, 0, 2.0 + .2 * s);
+    elb(0, .35, .55 + .25 * s); elb(1, .35, .55 + .25 * s); wri(0, -.3, .2 * s); wri(1, -.3, .2 * s);   // hands up, cheering
     locks.forEach(l => l.rotation.x = .3);
     legs[0].rotation.x = -.3 * j; legs[1].rotation.x = .2 * j;
     eyes.forEach(e => e.material.map = TEX.eye.happy); mouth.material.map = TEX.mouth.grin;
     blushes.forEach(b => b.material.opacity = 1); ahoge.rotation.z = .4 + .3 * s;
   } else if (name === "wave") {
-    arms[0].rotation.set(0, 0, -2.5 + .35 * Math.sin(TAU * t * 2)); head.rotation.z = -.08;
+    // the upper arm stays up and the forearm does the waving (from the elbow, like a real wave)
+    arms[0].rotation.set(0, 0, -2.3 + .1 * Math.sin(TAU * t * 2)); head.rotation.z = -.08;
+    elb(0, .3, .5 + .38 * Math.sin(TAU * t * 2)); wri(0, -.25, .45 * Math.sin(TAU * t * 2 - .8));   // the hand flaps a beat behind
     mouth.material.map = TEX.mouth.grin; body.position.y = .02 * s;
     if (t > .3 && t < .7) eyes.forEach(e => e.material.map = TEX.eye.happy);
   } else if (name === "sleepy") {
@@ -335,6 +549,8 @@ function pose(name, t) {
     body.position.y = .05 * k; body.rotation.z = .03 * Math.sin(TAU * t * 4);
     head.rotation.x = -.2 + .07 * k; head.rotation.z = .06 * s;
     arms[1].rotation.set(-.95, 0, -.85); arms[0].rotation.set(-.3, 0, .1 - .15 * k);
+    elb(1, 1.55); elb(0, .55 + .2 * k); wri(1, .5); wri(0, .35);       // a hand on her tummy, the other one loose
+    holdTo(1, "tummy", 1);
     eyes.forEach(e => e.material.map = TEX.eye.happy); mouth.material.map = TEX.mouth.grin; mouth.scale.set(1.5, 1.5 + .3 * k, 1);
     blushes.forEach(b => b.material.opacity = 1); ahoge.rotation.z = .4 + .3 * Math.sin(TAU * t * 4);
     locks.forEach(l => l.rotation.z = .06 * Math.sin(TAU * t * 4));
@@ -342,6 +558,8 @@ function pose(name, t) {
     const beat = Math.abs(Math.sin(TAU * t * 2));
     nova.rotation.y = .4 * s; body.position.x = .14 * s; body.position.y = .09 * beat; body.rotation.z = -.09 * s;
     arms[0].rotation.set(-.35, 0, -1.4 - 1.0 * s); arms[1].rotation.set(-.35, 0, 1.4 - 1.0 * s);
+    elb(0, .9 + .45 * s, .35 + .3 * s); elb(1, .9 - .45 * s, .35 - .3 * s);      // forearms pumping with the beat
+    wri(0, .3 + .35 * s, .2 * c); wri(1, .3 - .35 * s, -.2 * c);
     legs[0].rotation.x = -.4 * Math.max(0, s); legs[1].rotation.x = -.4 * Math.max(0, -s);
     legs[0].rotation.z = -.08 * s; legs[1].rotation.z = -.08 * s;
     head.rotation.z = .14 * s; head.rotation.x = .05 * c;
@@ -351,13 +569,14 @@ function pose(name, t) {
     sym(0, SYM.note, 1.25 + .1 * s, 3.9 + .25 * beat, .6, .95, .25 * s); sym(1, SYM.note, -1.3 - .1 * c, 3.3 + .25 * (1 - beat), .45, .8, -.25 * c);
   } else if (name === "spin") {             // a full twirl with her arms out
     const e = ease(t); nova.rotation.y = TAU * e; body.position.y = .12 * Math.sin(Math.PI * t);
-    arms[0].rotation.set(0, 0, -1.35); arms[1].rotation.set(0, 0, 1.35);
+    arms[0].rotation.set(0, 0, -1.35); arms[1].rotation.set(0, 0, 1.35); elb(0, .15, .2); elb(1, .15, .2);
     locks.forEach((l, i) => l.rotation.z = (i ? -.5 : .5) * Math.sin(Math.PI * t)); longHair.rotation.x = .35 * Math.sin(Math.PI * t);
     eyes.forEach(e2 => e2.material.map = TEX.eye.happy); mouth.material.map = TEX.mouth.grin; blushes.forEach(b => b.material.opacity = 1);
     sym(0, SYM.note, 1.3, 3.7 + .4 * t, .55, 1 - t * .6, .2);
   } else if (name === "clap") {             // hands meeting in front of her chest
     const k = Math.abs(Math.sin(TAU * t * 2));
-    arms[0].rotation.set(-1.25, 0, .3 + .38 * k); arms[1].rotation.set(-1.25, 0, -.3 - .38 * k);
+    arms[0].rotation.set(-1.1, 0, .2 + .28 * k); arms[1].rotation.set(-1.1, 0, -.2 - .28 * k);
+    elb(0, .85 + .3 * k); elb(1, .85 + .3 * k); wri(0, .1, .3 * k); wri(1, .1, .3 * k);   // hands meet in front of her chest
     body.position.y = .035 * k; head.rotation.z = .05 * s;
     eyes.forEach(e => e.material.map = TEX.eye.happy); mouth.material.map = TEX.mouth.grin; blushes.forEach(b => b.material.opacity = 1);
     ahoge.rotation.z = .4 + .2 * s;
@@ -365,6 +584,7 @@ function pose(name, t) {
     const hop = Math.sin(Math.PI * Math.min(1, t / .5)), sh = t < .6 ? Math.sin(TAU * t * 5) * .05 : 0;
     body.position.y = .16 * hop; body.rotation.x = -.07; head.rotation.x = -.1;
     arms[0].rotation.set(-.2, 0, -.95 + sh); arms[1].rotation.set(-.2, 0, .95 - sh);
+    elb(0, .8 * hop + .5, .5); elb(1, .8 * hop + .5, .5); wri(0, -.6); wri(1, -.6);   // hands fly up, palms out: "whoa"
     eyes.forEach(e => e.material.map = TEX.eye.wide); mouth.material.map = TEX.mouth.o; mouth.scale.set(1.2, 1.2, 1);
     ahoge.rotation.z = 1.0; locks.forEach(l => l.rotation.x = .15 * hop);
     sym(0, SYM.bang, 1.2, 4.0 + .15 * hop, .75, t < .85 ? 1 : (1 - t) / .15);
@@ -378,6 +598,7 @@ function pose(name, t) {
     const k = ease(Math.min(1, t / .25)) * (t > .85 ? (1 - t) / .15 : 1), sh = Math.max(0, Math.sin(TAU * t * 1.5));
     head.rotation.z = .26 * k; head.rotation.x = -.04 * k;
     arms[0].rotation.set(-.35 * k, 0, .12 - .75 * k - .12 * sh); arms[1].rotation.set(-.35 * k, 0, -.12 + .75 * k + .12 * sh);
+    elb(0, .25 + 1.1 * k, .2 * k); elb(1, .25 + 1.1 * k, .2 * k); wri(0, -.7 * k); wri(1, -.7 * k);   // a shrug: palms up
     body.position.y = .03 * sh; eyes.forEach(e => e.material.map = TEX.eye.up); mouth.material.map = TEX.mouth.o;
     ahoge.rotation.z = .4 + .3 * Math.sin(TAU * t * 2);
     sym(0, SYM.q, 1.15, 4.0 + .08 * s, .8, k, .15 * s);
@@ -390,8 +611,9 @@ function pose(name, t) {
     head.rotation.y = .42 * k; locks.forEach(l => l.rotation.z = -.12 * k); ahoge.rotation.z = .4 - .3 * k;
     eyes.forEach(e => e.material.map = TEX.eye.closed); mouth.material.map = TEX.mouth.frown;
   } else if (name === "facepalm") {         // "oops, my mistake": hand to her forehead
-    const k = ease(Math.min(1, t / .3)) * (t > .8 ? ease((1 - t) / .2) : 1);
+    const k = ease(Math.min(1, t / .3)) * (t > .68 ? ease((1 - t) / .32) : 1);   // (a slower return: no popping)
     arms[0].rotation.set(-2.2 * k, 0, .12 + .5 * k); head.rotation.x = .24 * k; head.rotation.z = .06 * k;
+    holdTo(0, "forehead", k);
     body.position.y = -.02 * k; eyes.forEach(e => e.material.map = k > .4 ? TEX.eye.closed : TEX.eye.open);
     mouth.material.map = k > .4 ? TEX.mouth.frown : TEX.mouth.smile; ahoge.rotation.z = .4 - .4 * k;
     if (k > .5) sym(0, SYM.drop, 1.0, 3.75 - .25 * Math.max(0, t - .3), .42, .95);
@@ -399,11 +621,14 @@ function pose(name, t) {
     const k = Math.sin(Math.PI * ease(t));
     body.rotation.x = .16 * k; head.rotation.x = .5 * k; body.position.z = -.12 * k;
     arms[0].rotation.set(-.25 * k, 0, .1); arms[1].rotation.set(-.25 * k, 0, -.1);
+    elb(0, .25 + .35 * k); elb(1, .25 + .35 * k);     // hands folded in front as she bows
     longHair.rotation.x = -.2 * k; locks.forEach(l => l.rotation.x = -.3 * k);
     eyes.forEach(e => e.material.map = k > .3 ? TEX.eye.closed : TEX.eye.open); mouth.material.map = TEX.mouth.smile;
   } else if (name === "love") {             // hands to her heart, hearts floating up
-    const k = ease(Math.min(1, t / .25));
+    const k = ease(Math.min(1, t / .35));
     arms[0].rotation.set(-1.15 * k, 0, .12 + .5 * k); arms[1].rotation.set(-1.15 * k, 0, -.12 - .5 * k);
+    elb(0, .25 + 1.25 * k); elb(1, .25 + 1.25 * k); wri(0, .55 * k); wri(1, .55 * k);   // hands on her heart
+    holdTo(0, "chest", k); holdTo(1, "chest", k);
     body.position.y = .03 * Math.abs(s); head.rotation.z = .1 * s; body.rotation.z = .04 * s;
     eyes.forEach(e => e.material.map = TEX.eye.happy); mouth.material.map = TEX.mouth.smile; blushes.forEach(b => b.material.opacity = 1);
     sym(0, SYM.heart, 1.1 + .1 * s, 3.5 + .9 * t, .5 + .25 * t, 1 - t * t); sym(1, SYM.heart, -1.15, 3.2 + .9 * ((t + .5) % 1), .4, 1 - ((t + .5) % 1));
@@ -411,11 +636,13 @@ function pose(name, t) {
     nova.rotation.y = -.2; body.position.y = .05 * Math.abs(Math.sin(TAU * t));
     legs[0].rotation.x = .5 * s; legs[1].rotation.x = -.5 * s;
     arms[0].rotation.set(-.75, 0, -1.43 + .04 * s); arms[1].rotation.x = .35 * s;
+    elb(0, .3, .7); elb(1, .3 + .4 * Math.max(0, -s));     // holding it up from a bent elbow
     locks[0].rotation.x = .35; locks[0].rotation.z = -.25; body.rotation.z = -.06; head.rotation.z = -.08;
     mouth.material.map = TEX.mouth.grin; ahoge.rotation.z = .4 + .15 * s;
   } else if (name === "yawn") {             // a big stretch
     const k = Math.sin(Math.PI * ease(t));
     arms[0].rotation.set(-.55 * k, 0, .12 - 2.15 * k); arms[1].rotation.set(-.55 * k, 0, -.12 + 2.15 * k);
+    elb(0, .25 - .1 * k, .25 * k); elb(1, .25 - .1 * k, .25 * k); wri(0, -.5 * k); wri(1, -.5 * k);   // a stretch
     head.rotation.x = -.22 * k; body.position.y = .05 * k; body.rotation.x = -.05 * k;
     eyes.forEach(e => e.material.map = k > .25 ? TEX.eye.closed : TEX.eye.half);
     mouth.material.map = k > .25 ? TEX.mouth.o : TEX.mouth.smile; mouth.scale.set(1 + .6 * k, 1 + 1.0 * k, 1);
@@ -437,6 +664,7 @@ function pose(name, t) {
     body.rotation.x = -.05 * str;
     arms[0].rotation.set(-2.4 * rub - .55 * str - .6 * hop, 0, .12 + .25 * rub - 2.15 * str - 1.9 * hop + .03 * Math.sin(TAU * t * 8) * rub);
     arms[1].rotation.set(-.55 * str - .6 * hop, 0, -.12 + 2.15 * str + 1.9 * hop);
+    elb(0, .25 + .4 * hop, .3 * str + .5 * hop); elb(1, .25 + .4 * hop, .3 * str + .5 * hop);
     legs[0].rotation.x = -.35 * hop; legs[1].rotation.x = .2 * hop;
     locks.forEach(l => l.rotation.x = .3 * hop); longHair.rotation.x = .15 * hop;
     ahoge.rotation.z = .4 + .5 * Math.sin(TAU * t * 4) * Math.max(lift - settle, hop);   // her hair tuft springs up
@@ -468,17 +696,13 @@ function pose(name, t) {
   } else if (name === "look") {             // glancing around the screen
     const k = Math.sin(TAU * t);
     head.rotation.y = .5 * k; head.rotation.z = .04 * k; body.rotation.y = .12 * k; body.position.y = .02 * c;
+    elb(0, .3 + .05 * k); elb(1, .3 - .05 * k);
     eyes.forEach(e => e.material.map = k > .3 ? TEX.eye.side : k < -.3 ? TEX.eye.sideB : TEX.eye.open);
     locks.forEach(l => l.rotation.z = -.08 * k); ahoge.rotation.z = .4 + .15 * c;
   }
+  if (HANDS_OF[name]) { hnd(0, HANDS_OF[name][0]); hnd(1, HANDS_OF[name][1]); }
   nova.updateMatrixWorld(true);
 }
-function handPixel() {
-  const v = new THREE.Vector3(), vh = vrm && vrm.humanoid.getRawBoneNode("rightHand");
-  (vh || arms[0].userData.hand).getWorldPosition(v); v.project(camera);
-  return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * H)];
-}
-function feetPixel() { const v = new THREE.Vector3(0, 0, 0).project(camera); return [Math.round((v.x + 1) / 2 * W), Math.round((1 - v.y) / 2 * H)]; }
 
 /* ------------------------------------------------------------------ her look (nova/avatar/body.py DEFAULT_LOOK) */
 const shade = (c, k) => new THREE.Color(c).multiplyScalar(k);
@@ -518,16 +742,35 @@ function track(keys, j, t) {       // a joint's value at t: smooth between the p
 function latest(keys, f, t) { let v; for (const k of keys) if (f in k && k.at <= t + 1e-6) v = k[f]; return v; }
 function poseMove(move, t) {
   reset(); posing = "move";
-  const k = move.keys, v = j => track(k, j, t) * RAD;
-  arms[0].rotation.set(-v("right_arm_forward"), 0, .12 - v("right_arm_out"));
-  arms[1].rotation.set(-v("left_arm_forward"), 0, -.12 + v("left_arm_out"));
-  head.rotation.set(v("head_nod"), v("head_turn"), -v("head_tilt"));
+  // her character's size (STYLE.size): a calm one talks with smaller hands, a lively one with bigger ones
+  const k = move.keys, big = move.name && move.name.startsWith("gesture_") ? STYLE.size : 1;
+  const v = j => track(k, j, t) * RAD, va = j => v(j) * big;
+  arms[0].rotation.set(-va("right_arm_forward"), 0, .12 - va("right_arm_out"));
+  arms[1].rotation.set(-va("left_arm_forward"), 0, -.12 + va("left_arm_out"));
+  // elbows: the move's own right_elbow / left_elbow (0 = straight, 150 = fully bent), else a natural bend: more as the
+  // arm comes forward to gesture (up to ~60 degrees), straighter again when it points ahead or up; curled in when raised
+  ["right", "left"].forEach((side, i) => {
+    const f = track(k, side + "_arm_forward", t) * big, o = track(k, side + "_arm_out", t) * big;
+    const auto = f <= 60 ? .3 + .9 * Math.max(0, f) / 60 : Math.max(.3, 1.2 - (f - 60) / 40 * .9);
+    const own = k.some(p => side + "_elbow" in p), curl = k.some(p => side + "_elbow_side" in p);
+    elb(i, own ? v(side + "_elbow") : auto, curl ? v(side + "_elbow_side") : o > 80 ? .6 * Math.min(1, (o - 80) / 50) : 0);
+    // wrist: the move's own right_wrist / left_wrist (+ bends the hand towards the palm, - opens it back), else relaxed;
+    // right_wrist_side / left_wrist_side swing it sideways (a little wave from the wrist)
+    wri(i, k.some(p => side + "_wrist" in p) ? v(side + "_wrist") : .2, v(side + "_wrist_side"));
+    hnd(i, latest(k, side + "_hand", t) || (o > 80 ? "open" : "relaxed"));   // a raised arm opens its hand
+    // the two holds (hands_behind = both hands behind her back; right_hand_on_hip / left_hand_on_hip), 0..1
+    holdBehind(i, Math.max(track(k, "hands_behind", t), track(k, side + "_hand_behind", t)));
+    holdHip(i, track(k, side + "_hand_on_hip", t));
+    for (const spot of FRONT_SPOTS) holdTo(i, spot, track(k, side + "_hand_on_" + spot, t));
+  });
+  head.rotation.set(v("head_nod") * STYLE.size, v("head_turn"), -v("head_tilt") * STYLE.size);
   body.rotation.set(v("lean_forward"), 0, -v("lean_side"));
   nova.rotation.y = v("turn"); body.position.y = track(k, "jump", t) / 100 * .5;
   legs[0].rotation.x = -v("right_leg_lift"); legs[1].rotation.x = -v("left_leg_lift");
   locks.forEach(l => l.rotation.x = .3 * Math.abs(v("lean_forward"))); ahoge.rotation.z = .4 + .1 * Math.sin(TAU * t * 2);
   const e = latest(k, "eyes", t);
   if (e === "sad") { eyes[0].material.map = TEX.eye.sadL; eyes[1].material.map = TEX.eye.sadR; }
+  else if (e === "angry") { eyes[0].material.map = TEX.eye.angryL; eyes[1].material.map = TEX.eye.angryR; }
   else if (e) eyes.forEach(x => x.material.map = TEX.eye[EYE_OF[e]] || TEX.eye.open);
   const m = latest(k, "mouth", t); if (m) mouth.material.map = TEX.mouth[m] || TEX.mouth.smile;
   if (k.some(p => "blush" in p)) blushes.forEach(b => b.material.opacity = track(k, "blush", t));
@@ -536,19 +779,34 @@ function poseMove(move, t) {
 }
 
 /* ------------------------------------------------------------------ her real 3D model (VRM made in VRoid Studio) */
-// The toon rig above still does all the posing: each frame its joints are copied onto the VRM's bones and its face
-// pictures become VRM expressions, so every built-in and invented move plays on the real model too. Which model:
-// /api/model (the chosen character, characters.py). No model file, a load error, or ?toon in the URL: the toon body.
-const NO_VRM = new URLSearchParams(location.search).has("toon");
+// The rig above is never shown: it only does the posing. Each frame its joints are copied onto the VRM's bones and
+// its face pictures become VRM expressions, so every built-in and invented move plays on the real model. Which model:
+// /api/model (the chosen character, characters.py). No model file or a load error: nothing is drawn.
 // Her real proportions are slimmer than the round toon, so she is drawn taller (top of her hair at this height; the
 // toon's is 3.55) to stay easy to see in the small desktop window.
 let VRM_TOP = 4.25;     // (each character's own: characters/<id>/character.json model.fit.top)
+// Desktop Nova stands on the bottom of the screen (avatar.py puts y = 0 there): her soles are lifted this much above it,
+// so shoes, heels and boots always show with a little space under them (fit.floor; scene units, ~60 px per unit
+// at avatar.py SCALE 1; the camera looks down a little, so .35 leaves ~16 px under her toes).
+const FLOOR_DEFAULT = .35;
+let FLOOR = FLOOR_DEFAULT;
+// How she moves and shows feelings (characters/<id>/character.json "style"): size = how big her talking hands and
+// head moves are; faces = which VRM expressions (and how strongly) she shows for happy / sad / surprised / angry.
+const FACES_DEFAULT = {happy: {happy: 1}, sad: {sad: 1}, surprised: {surprised: 1}, angry: {angry: .8}};
+// walk: stride / swing (radians of leg and arm swing), bounce (up and down), sway (hips and shoulders side to side),
+// lean (forward), head (nod), hands: "swing" (natural), "behind" (clasped behind her back) or "hips" (on her hips)
+const WALK_DEFAULT = {stride: .6, swing: .5, bounce: .06, sway: 0, lean: 0, head: 0, hands: "swing"};
+let STYLE = {size: 1, faces: FACES_DEFAULT, walk: WALK_DEFAULT};
+function applyStyle(st = {}) {
+  STYLE = {size: Math.max(.4, Math.min(1.6, +st.size || 1)), faces: {...FACES_DEFAULT, ...(st.faces || {})},
+           walk: {...WALK_DEFAULT, ...(st.walk || {})}};
+  window.STYLE = STYLE;
+}
 let vrm = null, vrmFile = null, vrmBase = null, lastLook = null, vrmFit = null, talkLevel = null, modelBusy = null;
 let nextBlink = 0, blinkAt = -1e9, lastDraw = performance.now();
 const acc = new THREE.Group();                 // headphones, hair clip, glasses... re-hung on the VRM's head bone
 const ACCESSORIES = [...phones, ...earWaves, clip, glasses, catEars, beanie, bow];
 ACCESSORIES.forEach(o => o.traverse(c => c.userData.acc = true));
-const toonParent = new Map(ACCESSORIES.map(o => [o, o.parent]));
 const qTarget = new THREE.Quaternion(), eu = new THREE.Euler(), axis = (x, y, z) => new THREE.Vector3(x, y, z);
 let SPREAD = .3;
 // Sitting at her desk on the VRM (the toon's numbers would put her hands in front of her face): arm angles in
@@ -559,6 +817,9 @@ let REACH = .65;         // how much a hand-to-face arm is lowered towards her c
 window.WORK = WORK;     // the toon's arms hang a little inwards (a round body); the slim VRM's would go into her hips
 // The toon's arms hang down at rest; the VRM's point sideways (T-pose): turn them down first, then pose like the toon.
 const ARM_DOWN = [new THREE.Quaternion(), new THREE.Quaternion()];     // her right arm, her left arm
+const FINGERS = ["Index", "Middle", "Ring", "Little"];
+const THUMB = {y: -.6, z: .5};     // which way her thumb folds in (measured on the VRoid models)
+window.THUMB = THUMB;
 function setSpread(sp) {
   SPREAD = sp;
   ARM_DOWN[0].setFromAxisAngle(axis(0, 0, 1), Math.PI / 2 - sp); ARM_DOWN[1].setFromAxisAngle(axis(0, 0, 1), -Math.PI / 2 + sp);
@@ -567,18 +828,16 @@ setSpread(SPREAD);
 // Her body's own numbers (characters/<id>/character.json "model": "fit"): every model has other proportions.
 function applyFit(f = {}) {
   if (f.top) VRM_TOP = f.top;
+  FLOOR = f.floor !== undefined ? Math.max(0, Math.min(.6, +f.floor || 0)) : FLOOR_DEFAULT;
   if (f.spread !== undefined) setSpread(f.spread);
   if (f.accessories) ACC_SIZE = f.accessories;
   if (f.reach !== undefined) REACH = f.reach;
-  window.FIT = {top: VRM_TOP, spread: SPREAD, accessories: ACC_SIZE, reach: REACH, work: {...WORK}};   // dev: see it
   Object.assign(WORK, f.work || {});
+  window.FIT = {top: VRM_TOP, floor: FLOOR, spread: SPREAD, accessories: ACC_SIZE, reach: REACH, work: {...WORK}};   // dev: see it
 }
 
-function showToon(on) {     // the toon's meshes (not the accessories, which both bodies wear)
-  body.traverse(o => { if (o.isMesh && !o.userData.acc && !o.userData.vrm) o.visible = on; });
-}
-function hangAccessories(onVrm) {
-  ACCESSORIES.forEach(o => (onVrm ? acc : toonParent.get(o)).add(o));
+function hideRig() {     // the rig's own meshes (not the accessories, which she wears on the VRM's head)
+  body.traverse(o => { if (o.isMesh && !o.userData.acc && !o.userData.vrm) o.visible = false; });
 }
 async function loadVRM(file) {
   const [{GLTFLoader}, {VRMLoaderPlugin, VRMUtils}] = await Promise.all([
@@ -589,53 +848,59 @@ async function loadVRM(file) {
   VRMUtils.removeUnnecessaryVertices(gltf.scene); VRMUtils.removeUnnecessaryJoints(gltf.scene); VRMUtils.rotateVRM0(v);
   v.scene.traverse(o => { o.userData.vrm = true; if (o.isMesh) o.frustumCulled = false; });
   v.scene.updateMatrixWorld(true);
-  // Same height on screen as the toon: the top of her hair at y = 3.55 (VRoid puts her feet at 0).
-  const box = new THREE.Box3().setFromObject(v.scene), k = VRM_TOP / box.max.y;
-  v.scene.scale.setScalar(k); v.scene.updateMatrixWorld(true);
+  // The top of her hair at VRM_TOP and the lowest point of her shoes FLOOR above the bottom of the screen (VRoid puts
+  // the feet near 0, but soles, heels and boots can reach below it).
+  const box = new THREE.Box3().setFromObject(v.scene), k = (VRM_TOP - FLOOR) / (box.max.y - box.min.y);
+  v.scene.scale.setScalar(k); v.scene.position.y = FLOOR - box.min.y * k; v.scene.updateMatrixWorld(true);
   const wp = n => v.humanoid.getRawBoneNode(n).getWorldPosition(new THREE.Vector3());
   const headY = wp("head").y, top = VRM_TOP, faceBox = new THREE.Box3();
   v.scene.traverse(o => { if (o.isMesh && /face/i.test(o.name)) faceBox.expandByObject(o); });
   // The toon's head is ~1.85 tall with its middle 0.9 above the neck; size and place the accessories to match hers.
   const s = ACC_SIZE * (top - headY) / 1.85, front = faceBox.isEmpty() ? wp("head").z + .35 * s : faceBox.max.z;
   acc.scale.setScalar(s / k); acc.position.set(0, .9 * s / k, (front - .86 * s - wp("head").z) / k);
-  vrmFit = {k, headH: top - headY, upLeg: wp("rightUpperLeg").distanceTo(wp("rightLowerLeg"))};
+  vrmFit = {k, lift: v.scene.position.y, sole: box.min.y * k, headH: top - headY,
+            upLeg: wp("rightUpperLeg").distanceTo(wp("rightLowerLeg"))};
   v.scene.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => m.userData.orig = {
     color: m.color && m.color.clone(), shade: m.shadeColorFactor && m.shadeColorFactor.clone()}); });
   if (vrm) { body.remove(vrm.scene); VRMUtils.deepDispose(vrm.scene); }
   vrm = v; body.add(v.scene); v.humanoid.getRawBoneNode("head").add(acc);
   if (v.lookAt) { v.lookAt.target = null; v.lookAt.autoUpdate = false; }
-  hangAccessories(true); showToon(false); vrmLights(true);
+  ACCESSORIES.forEach(o => acc.add(o)); hideRig(); vrmLights(); nova.visible = true;
+  fitTouches();        // her body's shape, then her hands find her own chest, chin, forehead... on it
 }
-// The toon's bright lights wash out the VRM's anime shading (MToon): softer ones while she wears the VRM.
-function vrmLights(on) { hemi.intensity = on ? VRM_LIGHT.hemi : 1.0; sun.intensity = on ? VRM_LIGHT.sun : 1.5; rim.intensity = on ? VRM_LIGHT.rim : 1.2; }
+// Soft lights, so the VRM's anime shading (MToon) isn't washed out.
+function vrmLights() { hemi.intensity = VRM_LIGHT.hemi; sun.intensity = VRM_LIGHT.sun; rim.intensity = VRM_LIGHT.rim; }
 const VRM_LIGHT = {hemi: .55, sun: 1.3, rim: 1.1};
 window.VRM_LIGHT = VRM_LIGHT; window.vrmLights = vrmLights;
 function unloadVRM() {
   if (!vrm) return;
   desk.scale.setScalar(1);
-  body.remove(vrm.scene); vrm = null; vrmFile = null; hangAccessories(false); showToon(true); vrmLights(false);
-  if (lastLook) applyLook(lastLook);
+  body.remove(vrm.scene); vrm = null; vrmFile = null; nova.visible = false;
 }
+let CHECKING = false;        // the joint check (?check=1) loads each character's model itself
 function checkModel() {      // the chosen character's model; reloaded when she switches characters
-  if (NO_VRM || modelBusy) return;
+  if (modelBusy || CHECKING) return;
   modelBusy = (async () => {
     try {
       // dev: ?character=makima shows another character's model (with her own fit) without switching to her
       const force = new URLSearchParams(location.search).get("character");
       const j = await (await fetch("/api/model" + (force ? `?character=${encodeURIComponent(force)}` : ""))).json();
       vrmBase = j.base;
+      applyStyle(j.style);
       if (j.vrm && j.vrm !== vrmFile) { vrmFile = j.vrm; applyFit(j.fit); await loadVRM(j.vrm); }
       else if (!j.vrm) unloadVRM();
       dressVRM();
-    } catch (e) { console.warn("No VRM model, keeping the toon body:", e); vrmFile = null; }
+    } catch (e) { console.warn("No VRM model, nothing to draw:", e); vrmFile = null; }
     modelBusy = null;
   })();
 }
+setInterval(checkModel, 5000);   // a switched character or a newly exported model.vrm shows within seconds
+
 // change_look on the VRM: her hair and skin are tinted by how far the look is from her character's own colours
 // (the model's textures already have those). Her clothes are one texture, so outfit colours stay as made in VRoid.
 function dressVRM() {
   if (!vrm || !lastLook) return;
-  showToon(false);
+  hideRig();          // applyLook just switched some of the rig's hair pieces on
   const base = vrmBase || lastLook;      // no base colours known (?vrm= test): no tint
   const ratio = k => {
     const a = new THREE.Color(base[k] || "#ffffff"), b = a.clone();
@@ -658,21 +923,38 @@ function dressVRM() {
 function driveVRM(dt) {
   if (!vrm) return;
   // Each bone glides to its new angle (~80 ms) instead of snapping: pose changes and the toon's small jitters look
-  // smooth. Exports and snapshots (exporting) take the exact pose.
-  const glide = exporting ? 1 : 1 - Math.exp(-Math.max(0, dt) / .08);
+  // smooth. Dev snapshots (still) take the exact pose.
+  const glide = still ? 1 : 1 - Math.exp(-Math.max(0, dt) / .08);
   const h = vrm.humanoid, set = (n, x, y, z, post) => {
     const b = h.getNormalizedBoneNode(n); if (!b) return;
     qTarget.setFromEuler(eu.set(x, y, z)); if (post) qTarget.multiply(post);
     b.quaternion.slerp(qTarget, glide);
   };
   arms.forEach((a, i) => {          // arms[0] is her right arm
-    const side = i ? "left" : "right", r = a.rotation;
+    const side = i ? "left" : "right", r = a.rotation, s = i ? -1 : 1, el = elbows[i];
     // a straight toon arm reaching up to her face would miss on the VRM's smaller head: bend the elbow instead, and
     // lower the upper arm a little so the hand lands at her chin, not over her eyes (fit.reach scales that)
-    const reach = Math.max(0, -r.x - .8), bend = .12 + Math.min(1.9, reach * 1.2);
+    const reach = Math.max(0, -r.x - .8) * (1 - exact[i]), bend = .12 + Math.min(1.9, reach * 1.2);
     const lower = Math.min(1.2, reach * REACH * (posing === "facepalm" ? .5 : 1));   // facepalm: forehead, not chin
     set(side + "UpperArm", r.x + lower, r.y, r.z, ARM_DOWN[i]);
-    set(side + "LowerArm", 0, i ? -bend : bend, 0);
+    // the elbow: the animation's own bend (elbows[]), at least as much as reaching to her face needs. Rotating the
+    // forearm about y swings it forward (a hinge), about z curls it towards her head; capped like a real elbow.
+    const fwd = Math.min(2.6, Math.max(reach > 0 ? bend : 0, el.fwd)), up = Math.max(-1.5, Math.min(1.6, el.up));
+    set(side + "LowerArm", 0, s * fwd, -s * up);
+    // the wrist: bend towards the palm about z, swing sideways about y (both mirrored for her left hand)
+    const wr = wrists[i];
+    set(side + "Hand", 0, s * Math.max(-1.2, Math.min(1.2, wr.side)), s * Math.max(-1.2, Math.min(1.3, wr.flex)));
+    // fingers curl towards the palm (about z, like the wrist), the little finger a bit more than the index (a natural
+    // cascade); pointing keeps the index straight. The thumb folds across the palm.
+    const fg = fingers[i];
+    FINGERS.forEach((f, j) => {
+      const c = f === "Index" && fg.point ? .04 : fg.grip * 1.35 * (.85 + .1 * j) + .06;
+      set(side + f + "Proximal", 0, 0, s * c); set(side + f + "Intermediate", 0, 0, s * c * 1.15);
+      set(side + f + "Distal", 0, 0, s * c * .8);
+    });
+    const th = .15 + fg.grip * .55;
+    set(side + "ThumbMetacarpal", 0, s * THUMB.y * th, s * THUMB.z * th); set(side + "ThumbProximal", 0, s * THUMB.y * th * .8, s * THUMB.z * th * .8);
+    set(side + "ThumbDistal", 0, s * THUMB.y * th * .7, s * THUMB.z * th * .7);
   });
   legs.forEach((l, i) => {          // legs[0] is her right leg
     const side = i ? "left" : "right", r = l.rotation;
@@ -691,40 +973,45 @@ function driveVRM(dt) {
   set("head", .6 * hr.x, .6 * hr.y, .6 * hr.z);
   // sitting at her desk: her long legs need the seat lower than the toon's (shins straight down, feet on the floor)
   const sit = Math.min(-legs[0].rotation.x, -legs[1].rotation.x);
-  const seatY = sit > 1 ? .32 - vrmFit.upLeg * (1 - Math.cos(sit)) + WORK.seat : 0;
+  // (fit.work.seat was measured with her soles at 0: sitting ignores the floor margin, standing stands on it)
+  const seatY = sit > 1 ? .32 - vrmFit.upLeg * (1 - Math.cos(sit)) + WORK.seat - vrmFit.sole : vrmFit.lift;
   // lying on her side: she is slimmer than the toon, so lower her onto the floor (her sideways is up while lying)
   const lie = Math.max(0, nova.rotation.z / NAP.rz);
-  const lieX = -.3 * lie, p = vrm.scene.position, jump = Math.abs(seatY - p.y) + Math.abs(lieX - p.x);
-  p.y += (seatY - p.y) * glide; p.x += (lieX - p.x) * glide;
-  // a snapshot or export jumping straight between poses (seat -> standing): her hair springs would fling upwards
-  if (exporting && jump > .2 && vrm.springBoneManager) vrm.springBoneManager.reset();
+  const lieX = -.3 * lie, p = vrm.scene.position, seatTo = seatY * (1 - lie);
+  const jump = Math.abs(seatTo - p.y) + Math.abs(lieX - p.x);
+  p.y += (seatTo - p.y) * glide; p.x += (lieX - p.x) * glide;
+  // a snapshot jumping straight between poses (seat -> standing): her hair springs would fling upwards
+  if (still && jump > .2 && vrm.springBoneManager) vrm.springBoneManager.reset();
   // lying down she is as long as she is tall: back to the toon's size so she still fits across the frame
   vrm.scene.scale.setScalar(vrmFit.k * (1 - lie * (1 - 3.55 / VRM_TOP)));
   desk.scale.setScalar(WORK.desk);
 
   const em = vrm.expressionManager;
   if (em) {
-    const ex = {blink: 0, happy: 0, sad: 0, surprised: 0, relaxed: 0, aa: 0, ih: 0, ou: 0, ee: 0, oh: 0};
+    const ex = {blink: 0, happy: 0, angry: 0, sad: 0, surprised: 0, relaxed: 0, aa: 0, ih: 0, ou: 0, ee: 0, oh: 0};
     const nameOf = (set, m) => Object.keys(set).find(k => set[k] === m);
     const e = nameOf(TEX.eye, eyes[0].material.map), mo = nameOf(TEX.mouth, mouth.material.map), big = mouth.scale.y;
     let yaw = 0, pitch = 0;
-    if (e === "closed") ex.blink = 1; else if (e === "happy") ex.happy = 1; else if (e === "half") ex.blink = .55;
-    else if (e === "wide") ex.surprised = 1; else if (e === "sadL" || e === "sadR") ex.sad = 1;
+    // a feeling -> her character's own expressions (STYLE.faces), e.g. a calm one smiles "relaxed" instead of beaming
+    const feel = (f, w = 1) => { for (const [n, x] of Object.entries(STYLE.faces[f] || {})) ex[n] = Math.max(ex[n] || 0, Math.min(1, x * w)); };
+    if (e === "closed") ex.blink = 1; else if (e === "happy") feel("happy"); else if (e === "half") ex.blink = .55;
+    else if (e === "wide") feel("surprised"); else if (e === "sadL" || e === "sadR") feel("sad");
+    else if (e === "angryL" || e === "angryR") feel("angry");
     else if (e === "up") { pitch = 14; yaw = -8; } else if (e === "side") yaw = 22; else if (e === "sideB") yaw = -22;
     else if (e === "down") pitch = -18;
     if (talkLevel !== null && talkLevel !== undefined) {   // her real voice: the mouth follows its loudness
       const now = performance.now() / 1000;
       ex.aa = Math.min(1, talkLevel * 1.3); ex.oh = .35 * talkLevel * Math.max(0, Math.sin(now * 7));
     } else if (mo === "open") ex.aa = Math.min(1, .75 * big);
-    else if (mo === "grin") { ex.ih = .45; ex.happy = Math.max(ex.happy, .3); }
+    else if (mo === "grin") { ex.ih = .45 * STYLE.size; feel("happy", .3); }
     else if (mo === "o") ex.oh = Math.min(1, .6 * big);
-    else if (mo === "frown") ex.sad = Math.max(ex.sad, .4);
+    else if (mo === "frown") feel("sad", .4);
     // natural blinking on top of the moves' own blinks
     const now = performance.now();
     if (now > nextBlink) { blinkAt = now; nextBlink = now + 2200 + Math.random() * 3800; }
     const bk = (now - blinkAt) / 150;
-    if (bk < 1 && !ex.happy && !ex.surprised) ex.blink = Math.max(ex.blink, Math.sin(Math.PI * bk));
-    for (const [k, w] of Object.entries(ex)) em.setValue(k, w);
+    if (bk < 1 && ex.happy < .5 && ex.surprised < .5) ex.blink = Math.max(ex.blink, Math.sin(Math.PI * bk));
+    for (const [k, w] of Object.entries(ex)) if (em.getExpression(k)) em.setValue(k, w);
     if (vrm.lookAt) { vrm.lookAt.yaw = yaw; vrm.lookAt.pitch = pitch; }
   }
   vrm.update(Math.min(.05, Math.max(0, dt)));     // (pose() already updated the world matrices)
@@ -769,8 +1056,8 @@ function layers(w) {
 // The top of her head in frame pixels (x, y), so avatar.py can put the speech bubble's tail just above it.
 function headPixel(w, h) {
   const v = new THREE.Vector3();
-  if (vrm) { vrm.humanoid.getRawBoneNode("head").getWorldPosition(v); v.y += vrmFit.headH * vrm.scene.scale.x / vrmFit.k; }
-  else { head.getWorldPosition(v); v.y += .95; }
+  if (!vrm) return [-1, -1];
+  vrm.humanoid.getRawBoneNode("head").getWorldPosition(v); v.y += vrmFit.headH * vrm.scene.scale.x / vrmFit.k;
   v.project(camera);
   return [Math.round((v.x + 1) / 2 * w), Math.round((1 - v.y) / 2 * h)];
 }
@@ -811,10 +1098,10 @@ window.onpointerup = () => drag = null;
 window.onpointermove = e => { if (drag !== null) { spinY += (e.clientX - drag) * .012; drag = e.clientX; } };
 renderer.setPixelRatio(2); renderer.setSize(W, H, false);
 canvas.style.width = "390px"; canvas.style.height = "510px";
-let start = performance.now(), exporting = false;
+let start = performance.now(), still = false;
 function loop(now) {
   requestAnimationFrame(loop);
-  if (exporting) return;
+  if (still) return;
   const n = ANIMS[current], dur = n / 12;
   pose(current, ((now - start) / 1000 / dur) % 1);
   if (autoSpin) spinY += .02;
@@ -824,38 +1111,21 @@ function loop(now) {
 if (LIVE) liveLoop();
 else {
   requestAnimationFrame(loop);
-  fetch("/api/look").then(r => r.json()).then(applyLook).catch(() => {});    // preview + export show her current look
+  fetch("/api/look").then(r => r.json()).then(applyLook).catch(() => {});    // the preview shows her current look
 }
 
-/* ------------------------------------------------------------------ export sprite frames for the desktop overlay */
-async function exportFrames() {
-  exporting = true; renderer.setPixelRatio(1); renderer.setSize(W, H, false);
-  const frames = {}, meta = {size: [W, H], feet: feetPixel(), fps: 12, anims: {}};
-  for (const [name, n] of Object.entries(ANIMS)) {
-    frames[name] = []; meta.anims[name] = {frames: n, hand: []};
-    for (let i = 0; i < n; i++) {
-      pose(name, i / n); draw(1 / 12);
-      frames[name].push(canvas.toDataURL("image/png"));
-      meta.anims[name].hand.push(handPixel());
-    }
-  }
-  meta.anims.point.tap = Math.round(.6 * ANIMS.point);
-  const r = await fetch("/api/dev/save_frames", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({frames, meta})});
-  renderer.setPixelRatio(2); renderer.setSize(W, H, false); exporting = false;
-  const j = await r.json(); document.getElementById("msg").textContent = j.ok ? `Saved ${j.count} frames ✓` : "Export failed: " + j.error;
-  return j;
-}
-document.getElementById("export").onclick = exportFrames;
-window.exportFrames = exportFrames;
-window.applyLook = applyLook; window.poseMove = poseMove; window.applyFit = applyFit;   // applyFit: dev, try fit numbers live
+window.applyLook = applyLook; window.poseMove = poseMove; window.applyFit = applyFit; window.applyStyle = applyStyle;
+// Dev helper: the model's lowest and highest points now (scene units; the screen's bottom edge is y = 0).
+window.vrmBox = () => { if (!vrm) return null; nova.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(vrm.scene);
+  return {min: +b.min.y.toFixed(3), max: +b.max.y.toFixed(3), floor: FLOOR, lift: +vrmFit.lift.toFixed(3)}; };   // applyFit: dev, try fit numbers live
 // Dev helper: a picture of one invented-move moment (window.snapshot(move, t) -> PNG data URL), for checking poses.
 window.snapshot = (move, t) => {
-  exporting = true; poseMove(move, t); draw(1 / 12);
-  const url = canvas.toDataURL("image/png"); exporting = false; return url;
+  still = true; poseMove(move, t); draw(1 / 12);
+  const url = canvas.toDataURL("image/png"); still = false; return url;
 };
 // Dev helper: how long one live frame takes (pose + VRM + render + readPixels) at the desktop size, in ms.
 window.frameCost = (n = 120, w = 208, h = 272) => {
-  exporting = true; renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+  still = true; renderer.setPixelRatio(1); renderer.setSize(w, h, false);
   const gl = renderer.getContext(), px = new Uint8Array(w * h * 4), parts = {pose: 0, vrm: 0, render: 0, read: 0};
   for (let i = 0; i < n; i++) {
     let a = performance.now(); pose("idle", i / n); layers({talk: .3 + .3 * Math.sin(i)}); parts.pose += performance.now() - a;
@@ -863,22 +1133,238 @@ window.frameCost = (n = 120, w = 208, h = 272) => {
     a = performance.now(); renderer.render(scene, camera); parts.render += performance.now() - a;
     a = performance.now(); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); parts.read += performance.now() - a;
   }
-  renderer.setPixelRatio(2); renderer.setSize(W, H, false); exporting = false;
+  renderer.setPixelRatio(2); renderer.setSize(W, H, false); still = false;
   Object.keys(parts).forEach(k => parts[k] = +(parts[k] / n).toFixed(2));
   return {...parts, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, programs: renderer.info.programs.length};
 };
 // Dev helper: where her VRM bones are (scene units) in a pose, for fitting props like the desk.
 window.vrmBones = (name = "work", t = .2, bones = ["hips", "rightUpperArm", "rightHand", "head", "rightLowerLeg", "rightFoot"]) => {
-  if (!vrm) return null; pose(name, t); for (let i = 0; i < 6; i++) driveVRM(1 / 30); nova.updateMatrixWorld(true);
+  if (!vrm) return null;                 // name: a built-in animation, or a move object (new_move format)
+  const at = () => typeof name === "object" ? poseMove(name, t) : pose(name, t);
+  still = true; at(); driveVRM(1 / 30); still = false; nova.updateMatrixWorld(true);
   return Object.fromEntries(bones.map(b => { const p = vrm.humanoid.getRawBoneNode(b).getWorldPosition(new THREE.Vector3()); return [b, [p.x, p.y, p.z].map(v => +v.toFixed(2))]; }));
 };
 window.snapPose = (name, t) => {     // the same for a built-in animation
-  exporting = true; pose(name, t); for (let i = 0; i < 6; i++) driveVRM(1 / 30); draw(1 / 30);
-  const url = canvas.toDataURL("image/png"); exporting = false; return url;
+  still = true; pose(name, t); for (let i = 0; i < 6; i++) driveVRM(1 / 30); draw(1 / 30);
+  const url = canvas.toDataURL("image/png"); still = false; return url;
 };
+/* ------------------------------------------------------------------ joint check: does every pose look natural? */
+// Plays every built-in animation and each character's own moves and talking gestures frame by frame on her real
+// VRM bones and measures each joint against what a human body can do (JOINT_LIMITS). tests/test_joints.py reads the
+// report: open /static/nova3d.html?check=1 (or run scripts/joint_check.py) after changing poses or a model.
+const JOINT_LIMITS = {
+  elbow: 150,         // degrees an elbow can bend
+  elbowBack: -.6,     // a bent forearm may not point backwards more than this (dot with her front)
+  elbowOut: .75,      // ...or swing straight out sideways from a hanging upper arm
+  wrist: 80,          // degrees a wrist can bend
+  knee: 150,          // degrees a knee can bend
+  kneeForward: .35,   // a bent knee folds backwards: the shin may not point forwards more than this
+  neckYaw: 80, neckPitch: 55, neckRoll: 40,   // head against her body
+  torso: .85,         // hands, wrists and elbows stay outside her body (1 = its surface)
+  contact: 1.45,      // a hand meant to rest on her chest, tummy, hip or back is no further out than this
+  touchHead: .75,     // ...and one meant for her chin, mouth or forehead is this close (share of her head's radius)
+  head: .85,          // hands stay outside her head (share of its radius)
+  forearms: .1,       // her two forearms never pass through each other (share of shoulder width)
+  step: 40,           // degrees an arm bone may turn from one frame (1/24 s) to the next, as seen on screen: no popping
+  stepHand: 55,       // ...and a hand (wrists flick faster)
+  floor: -.02,        // feet never sink below the bottom of the screen (scene units; y = 0)
+};
+const LYING = new Set(["nap", "liedown"]);   // lying down: no floor, body or elbow-direction rules
+function jointSample(label, t, touches = []) {
+  const B = n => { const b = vrm.humanoid.getRawBoneNode(n); return b && b.getWorldPosition(new THREE.Vector3()); };
+  const Q = n => vrm.humanoid.getRawBoneNode(n).getWorldQuaternion(new THREE.Quaternion());
+  const hips = B("hips"), neckP = B("neck"), up = neckP.clone().sub(hips).normalize();
+  // her own directions from her body (not a bone's rotation, which differs between rigs): left = right hip -> left hip
+  const leftDir0 = B("leftUpperLeg").sub(B("rightUpperLeg"));
+  const front = leftDir0.clone().cross(up).normalize(), leftDir = up.clone().cross(front).normalize();
+  const sw = B("leftUpperArm").distanceTo(B("rightUpperArm"));
+  // her body as an elliptic cylinder along the spine: wide side to side, shallow front to back -> 1 = on its surface
+  // (radii measured on the models: her hips and chest are ~0.6 shoulder-widths to each side, ~0.4 front to back)
+  const inBody = p => bodyAt(p, hips, neckP.clone().sub(hips), front, leftDir, sw).body;     // her measured shape
+  // where on her body a point is: 0 = hips .. 1 = neck
+  const level = p => { const ab = neckP.clone().sub(hips); return p.clone().sub(hips).dot(ab) / ab.lengthSq(); };
+  const segDist = (p, a, b) => { const ab = b.clone().sub(a), k = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / ab.lengthSq()));
+    return p.distanceTo(a.clone().addScaledVector(ab, k)); };
+  const ang = (a, b) => THREE.MathUtils.radToDeg(a.angleTo(b));
+  const headC = B("head").addScaledVector(up, vrmFit.headH * vrm.scene.scale.x / vrmFit.k * .45);
+  const headR = vrmFit.headH * vrm.scene.scale.x / vrmFit.k * .42;
+  const lying = LYING.has(label) || (label === "wakeup" && t < .25);
+  const out = [], bad = (rule, value, limit, part) => out.push({pose: label, t: +t.toFixed(3), part, rule, value: +(+value).toFixed(2), limit});
+  const dirs = {}, m = {};     // m: the measured values (the report keeps each pose's extremes)
+  const keep = (k, v, hi = true) => { m[k] = m[k] === undefined ? v : hi ? Math.max(m[k], v) : Math.min(m[k], v); };
+  for (const side of ["right", "left"]) {
+    const sh = B(side + "UpperArm"), el = B(side + "LowerArm"), wr = B(side + "Hand"), fi = B(side + "MiddleProximal");
+    const upper = el.clone().sub(sh), fore = wr.clone().sub(el), hand = fi ? fi.clone().sub(wr) : fore.clone();
+    dirs[side + "UpperArm"] = upper.clone().normalize(); dirs[side + "LowerArm"] = fore.clone().normalize(); dirs[side + "Hand"] = hand.clone().normalize();
+    const e = ang(upper, fore); keep("elbow", e);
+    if (e > JOINT_LIMITS.elbow) bad("elbow bends too far", e, JOINT_LIMITS.elbow, side + " elbow");
+    if (e > 15) {
+      const u = upper.clone().normalize(), b = fore.clone().sub(u.clone().multiplyScalar(fore.dot(u))).normalize();
+      const outward = side === "right" ? -1 : 1;
+      if (b.dot(front) < JOINT_LIMITS.elbowBack && !lying) bad("forearm bends backwards", b.dot(front), JOINT_LIMITS.elbowBack, side + " elbow");
+      if (u.dot(up) < -.7 && b.dot(leftDir) * outward > JOINT_LIMITS.elbowOut) bad("forearm swings out sideways", b.dot(leftDir) * outward, JOINT_LIMITS.elbowOut, side + " elbow");
+    }
+    const w = ang(fore, hand); keep("wrist", w);
+    if (w > JOINT_LIMITS.wrist) bad("wrist bends too far", w, JOINT_LIMITS.wrist, side + " wrist");
+    if (!lying) {
+      for (const [p, what, k] of [[wr, "hand", 1], [el.clone().lerp(wr, .5), "forearm", 1], [el, "elbow", .94]]) {
+        const d = inBody(p); keep("body_" + what, d, false);
+        if (d < JOINT_LIMITS.torso * k) bad(`${what} goes into her body`, d, JOINT_LIMITS.torso * k, side + " " + what);
+      }
+      const dh = wr.distanceTo(headC) / headR; keep("head_hand", dh, false);
+      if (dh < JOINT_LIMITS.head) bad("hand goes into her head", dh, JOINT_LIMITS.head, side + " hand");
+    }
+  }
+  for (const {side, where} of touches) {      // a hand that should be touching her
+    const palm = B(side + "Hand").lerp(B(side + "MiddleProximal") || B(side + "Hand"), .5);
+    if (["chin", "mouth", "forehead"].includes(where)) {
+      const target = headC.clone().addScaledVector(up, {chin: -.75, mouth: -.5, forehead: .35}[where] * headR)
+        .addScaledVector(front, .8 * headR);
+      const d = palm.distanceTo(target) / headR; keep("touch_" + where, d);
+      if (d > JOINT_LIMITS.touchHead) bad(`hand misses her ${where}`, d, JOINT_LIMITS.touchHead, side + " hand");
+    } else {
+      const d = inBody(palm), lv = level(palm), want = {chest: [.55, 1.05], tummy: [.15, .6], hip: [-.25, .25], back: [-.3, .45]}[where];
+      keep("touch_" + where, d);
+      if (d > JOINT_LIMITS.contact) bad(`hand floats off her ${where}`, d, JOINT_LIMITS.contact, side + " hand");
+      if (lv < want[0] || lv > want[1]) bad(`hand is not at her ${where}`, lv, want.join(".."), side + " hand");
+      const facing = palm.clone().sub(hips).dot(front);
+      if (where === "back" ? facing > 0 : where !== "hip" && facing < 0) bad(`hand is on the wrong side for her ${where}`, facing, where === "back" ? "< 0" : "> 0", side + " hand");
+    }
+  }
+  { // forearms through each other (the parts near the hands may touch: clapping, folded hands)
+    const re = B("rightLowerArm"), rw = B("rightHand"), le = B("leftLowerArm"), lw = B("leftHand");
+    let fm = 1e9;
+    for (let i = 0; i <= 8; i++) { const a = re.clone().lerp(rw, i / 8 * .75); fm = Math.min(fm, segDist(a, le, le.clone().lerp(lw, .75))); }
+    keep("forearms", fm / sw, false);
+    if (fm / sw < JOINT_LIMITS.forearms && !lying) bad("forearms pass through each other", fm / sw, JOINT_LIMITS.forearms, "forearms");
+  }
+  for (const side of ["right", "left"]) {
+    const hp = B(side + "UpperLeg"), kn = B(side + "LowerLeg"), ft = B(side + "Foot"), toe = B(side + "Toes") || ft;
+    const thigh = kn.clone().sub(hp), shin = ft.clone().sub(kn);
+    dirs[side + "UpperLeg"] = thigh.clone().normalize(); dirs[side + "LowerLeg"] = shin.clone().normalize();
+    const k = ang(thigh, shin); keep("knee", k);
+    if (k > JOINT_LIMITS.knee) bad("knee bends too far", k, JOINT_LIMITS.knee, side + " knee");
+    if (k > 12) {
+      const u = thigh.clone().normalize(), b = shin.clone().sub(u.clone().multiplyScalar(shin.dot(u))).normalize();
+      if (b.dot(front) > JOINT_LIMITS.kneeForward) bad("knee bends forwards", b.dot(front), JOINT_LIMITS.kneeForward, side + " knee");
+    }
+    if (!lying && Math.min(ft.y, toe.y) < JOINT_LIMITS.floor) bad("foot below the screen", Math.min(ft.y, toe.y), JOINT_LIMITS.floor, side + " foot");
+  }
+  { // head against her chest
+    const rel = Q(vrm.humanoid.getRawBoneNode("upperChest") ? "upperChest" : "spine").invert().multiply(Q("head"));
+    const e = new THREE.Euler().setFromQuaternion(rel, "YXZ"), d = THREE.MathUtils.radToDeg;
+    keep("neck_yaw", Math.abs(d(e.y))); keep("neck_pitch", Math.abs(d(e.x))); keep("neck_roll", Math.abs(d(e.z)));
+    if (Math.abs(d(e.y)) > JOINT_LIMITS.neckYaw) bad("head turns too far", d(e.y), JOINT_LIMITS.neckYaw, "neck");
+    if (Math.abs(d(e.x)) > JOINT_LIMITS.neckPitch) bad("head nods too far", d(e.x), JOINT_LIMITS.neckPitch, "neck");
+    if (Math.abs(d(e.z)) > JOINT_LIMITS.neckRoll) bad("head tilts too far", d(e.z), JOINT_LIMITS.neckRoll, "neck");
+    dirs.head = new THREE.Vector3(0, 0, 1).applyQuaternion(Q("head"));
+  }
+  return {problems: out, dirs, m};
+}
+// One pose over its whole length, at 24 frames a second, from a standing start.
+function jointCheckPose(label, at, secs, touchesAt = () => []) {
+  const n = Math.max(8, Math.min(96, Math.round(secs * 24))), problems = [], worst = {};
+  let prev = null;
+  // the shape of each frame on the exact pose (what the animation asks for) ...
+  still = true;
+  for (let i = 0; i <= n; i++) {
+    const t = Math.min(1, i / n); at(t); driveVRM(1 / 24); nova.updateMatrixWorld(true);
+    const s = jointSample(label, t, touchesAt(t)); problems.push(...s.problems);
+    for (const [k, v] of Object.entries(s.m)) { const low = /^(body|head_hand|forearms)/.test(k);
+      worst[k] = worst[k] === undefined ? v : low ? Math.min(worst[k], v) : Math.max(worst[k], v); }
+  }
+  // ... and its speed as seen on screen (the bones glide ~80 ms behind the pose): no bone may pop
+  at(0); driveVRM(1 / 24); still = false;
+  for (let i = 0; i <= n; i++) {
+    const t = Math.min(1, i / n); at(t); driveVRM(1 / 24); nova.updateMatrixWorld(true);
+    const d = jointSample(label, t).dirs;
+    if (prev) for (const [bone, v] of Object.entries(d)) {
+      const turn = THREE.MathUtils.radToDeg(v.angleTo(prev[bone])), lim = /Hand$/.test(bone) ? JOINT_LIMITS.stepHand : JOINT_LIMITS.step;
+      if (turn > lim && label !== "spin")     // (a spin turns her whole body on purpose)
+        problems.push({pose: label, t: +t.toFixed(3), part: bone, rule: "jumps between frames", value: +turn.toFixed(1), limit: lim});
+      worst.step = Math.max(worst.step || 0, turn);
+    }
+    prev = d;
+  }
+  still = false;
+  for (const k in worst) worst[k] = +worst[k].toFixed(2);
+  problems.worst = worst;
+  return problems;
+}
+// Where a pose means her hand to rest (only while fully in the pose): built-in animations by name and time,
+// her own moves by their holds (hands_behind, *_hand_behind, *_hand_on_hip / _on_chest / _on_chin ...).
+const TOUCHES = {love: [[.36, 1, "right", "chest"], [.36, 1, "left", "chest"]], laugh: [[0, 1, "left", "tummy"]],
+                 think: [[0, 1, "right", "chin"]], facepalm: [[.32, .66, "right", "forehead"]]};
+function touchesOf(label, move) {
+  if (!move) return t => (TOUCHES[label] || []).filter(([a, b]) => t >= a && t <= b).map(([, , side, where]) => ({side, where}));
+  const k = move.keys;
+  return t => {
+    const out = [];
+    for (const side of ["right", "left"]) {
+      if (Math.max(track(k, "hands_behind", t), track(k, side + "_hand_behind", t)) > .99) out.push({side, where: "back"});
+      if (track(k, side + "_hand_on_hip", t) > .99) out.push({side, where: "hip"});
+      for (const spot of FRONT_SPOTS) if (track(k, side + "_hand_on_" + spot, t) > .99) out.push({side, where: spot});
+    }
+    return out;
+  };
+}
+// Every pose of the character on screen now -> {character, poses: [...], problems: [...]}
+function jointCheck(cid, style) {
+  const poses = [], problems = [], worst = {};
+  const run = (label, at, secs, move) => { poses.push(label); const p = jointCheckPose(label, at, secs, touchesOf(label, move));
+    problems.push(...p); worst[label] = p.worst; };
+  for (const [name, frames] of Object.entries(ANIMS)) run(name, t => pose(name, t), frames / 12);
+  for (const [name, m] of Object.entries((style && style.moves) || {})) run("move:" + name, t => poseMove(m, t), m.duration, m);
+  for (const [name, g] of Object.entries((style && style.gestures) || {})) {
+    const m = {name: "gesture_" + name, duration: 2, keys: g.keys};
+    run("gesture:" + name, t => poseMove(m, t), 2, m);
+  }
+  return {character: cid, poses, problems, worst};
+}
+// The checker's own test: poses that break a rule on purpose (set straight on the rig, past the limits the moves are
+// held to). Each must be caught, or the checker has gone blind - tests/test_joints.py checks that too.
+const SELF_TESTS = {
+  "goes into her body": () => { arms[0].rotation.set(-.15, 0, .95); elb(0, .3, 0); },
+  "head turns too far": () => { head.rotation.y = 2.6; },
+  "head tilts too far": () => { head.rotation.z = 1.6; },
+  "wrist bends too far": () => { wri(0, 1.3, 1.2); },
+  "foot below the screen": () => { body.position.y = -1; },
+  "forearms pass through each other": () => { arms[0].rotation.set(-.9, 0, .7); arms[1].rotation.set(-.9, 0, -.7); elb(0, 1.4, -1); elb(1, 1.4, -1); },
+  "forearm swings out sideways": () => { elb(0, 1.4, 1.5); },
+  "jumps between frames": t => { arms[0].rotation.z = t > .5 ? -2.4 : .12; },
+};
+function jointSelfTest() {
+  const out = {};
+  for (const [rule, bend] of Object.entries(SELF_TESTS))
+    out[rule] = jointCheckPose("self-test", t => { pose("idle", t); bend(t); nova.updateMatrixWorld(true); }, 1).some(p => p.rule.includes(rule));
+  return out;
+}
+window.jointSelfTest = jointSelfTest;
+window.RIG = {pose, poseMove, arms, legs, head, body, nova, elb, wri, hnd};   // dev: try a pose on the rig by hand
+// All characters, one after another, each on her own model; the report goes to data/joint_report.json.
+async function jointCheckAll(ids) {
+  const out = {when: Date.now() / 1000, limits: JOINT_LIMITS, characters: []};
+  for (const cid of ids) {
+    const j = await (await fetch(`/api/model?character=${encodeURIComponent(cid)}&full=1`)).json();
+    if (!j.vrm) continue;
+    vrmFile = j.vrm; applyFit(j.fit); applyStyle(j.style); await loadVRM(j.vrm);
+    out.characters.push({...jointCheck(cid, j.style), self_test: jointSelfTest()});
+  }
+  await fetch("/api/dev/joint_report", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(out)});
+  return {characters: out.characters.map(c => ({id: c.character, poses: c.poses.length, problems: c.problems.length}))};
+}
+window.jointCheck = jointCheck; window.jointCheckAll = jointCheckAll; window.jointCheckPose = jointCheckPose; window.JOINT_LIMITS = JOINT_LIMITS;
+if (new URLSearchParams(location.search).has("check")) (async () => {
+  await new Promise(r => setTimeout(r, 1500));
+  while (modelBusy) await modelBusy;
+  CHECKING = true;
+  const ids = (await (await fetch("/api/dev/character_ids")).json()).ids;
+  window.CHECK_DONE = await jointCheckAll(ids);
+  document.title = "joint check done";
+})();
 // Dev helper: a contact sheet of chosen animations at a few moments each, to check poses at a glance.
 window.contactSheet = async (names, phases = [.15, .4, .65, .9]) => {
-  exporting = true; renderer.setPixelRatio(1); renderer.setSize(W, H, false);
+  still = true; renderer.setPixelRatio(1); renderer.setSize(W, H, false);
   const sheet = document.getElementById("sheet") || Object.assign(document.createElement("canvas"), {id: "sheet"});
   sheet.width = phases.length * W * names.length / Math.ceil(names.length / 4); sheet.height = Math.ceil(names.length / 4) * (H + 22);
   sheet.width = 4 * phases.length * W / 2; sheet.height = Math.ceil(names.length / 2) * (H / 2 + 20) * 1;
@@ -893,7 +1379,7 @@ window.contactSheet = async (names, phases = [.15, .4, .65, .9]) => {
     }
   }
   sheet.style.cssText = "position:fixed;left:0;top:0;z-index:9;max-width:100vw"; document.body.appendChild(sheet);
-  renderer.setPixelRatio(2); renderer.setSize(W, H, false); exporting = false;
+  renderer.setPixelRatio(2); renderer.setSize(W, H, false); still = false;
   return [sheet.width, sheet.height];
 };
 </script>

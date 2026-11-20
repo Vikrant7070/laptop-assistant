@@ -13,7 +13,98 @@
            "headphones": false, "ahoge": false},
   "model": {
     "file": "model.vrm",
-    "fit": {"top": 4.25, "spread": 0.3, "accessories": 0.92, "reach": 0.9,
+    "fit": {"top": 4.25, "floor": 0.35, "spread": 0.3, "accessories": 0.92, "reach": 0.9,
             "work": {"upper": 0.35, "inward": 0.35, "bend": 0.0, "seat": 0.0, "desk": 1.4}}
+  },
+  "style": {
+    "note": "Big-hearted, vain in a cute way and quick-tempered: bouncy hip-swaying walk, big talking hands, hands on hips for her retorts, freaks out when startled, kicks when poked too much. Her dance: point-up poses, a cute clasp and a kick.",
+    "size": 1.2, "speed": 1.15, "talk_hands": 0.9,
+    "faces": {"happy": {"happy": 1}, "sad": {"sad": 1}, "surprised": {"surprised": 1}, "angry": {"angry": 1}},
+    "walk": {"stride": 0.7, "swing": 0.7, "bounce": 0.1, "sway": 0.07, "lean": 0.03, "head": 0.02, "hands": "swing",
+             "pace": 1.2},
+    "swap": {"happy": "cheer", "love": "starry_eyed", "dance": "lucy_dance", "surprised": "freak_out",
+             "facepalm": "exasperated", "wave": "big_wave", "laugh": "proud_laugh", "shake": "huff"},
+    "fidgets": {"read_book": 20, "look": 15, "check_keys": 15, "spin": 10, "cheer": 5, "big_wave": 5, "nod": 5, "yawn": 5},
+    "touch": {"click": "wave", "right_click": ["cheer", "proud_laugh", "lucy_dance", "starry_eyed", "clap"],
+              "poke": "lucy_kick", "pokes": 3, "poke_say": "Hey! I'm working here, you know!", "picked_up": "freak_out",
+              "greeting": "Hi, I'm Lucy! Let's get things done together!"},
+    "gestures": {
+      "explain": {"keys": [
+        {"at": 0.3, "right_arm_forward": 50, "right_arm_out": 30, "right_elbow": 60, "right_wrist": -30, "left_arm_forward": 40, "left_arm_out": 25, "left_elbow": 70, "left_wrist": -25},
+        {"at": 0.7, "right_arm_forward": 40, "right_arm_out": 40, "right_elbow": 70, "right_wrist": -40, "left_arm_forward": 55, "left_arm_out": 20, "left_elbow": 55, "left_wrist": -35}]},
+      "explain_one": {"keys": [
+        {"at": 0.3, "right_arm_forward": 60, "right_arm_out": 25, "right_elbow": 50, "right_wrist": -40, "head_tilt": 6, "left_hand_on_hip": 1},
+        {"at": 0.7, "right_arm_forward": 50, "right_arm_out": 35, "right_elbow": 60, "right_wrist": -30, "right_wrist_side": 15, "left_hand_on_hip": 1}]},
+      "point_you": {"keys": [
+        {"at": 0.3, "lean_forward": 10, "right_arm_forward": 85, "right_arm_out": 10, "right_elbow": 5, "eyes": "happy", "left_hand_on_hip": 1},
+        {"at": 0.7, "lean_forward": 8, "right_arm_forward": 82, "right_arm_out": 12, "right_elbow": 8, "eyes": "open", "left_hand_on_hip": 1}]},
+      "point_me": {"keys": [
+        {"at": 0.3, "head_tilt": 8, "head_nod": -8, "eyes": "happy", "right_hand_on_chest": 1},
+        {"at": 0.7, "head_tilt": 8, "head_nod": -8, "right_hand_on_chest": 1}]},
+      "ask": {"keys": [
+        {"at": 0.3, "lean_forward": 12, "head_tilt": 14, "eyes": "up", "right_hand_on_hip": 1, "left_hand_on_hip": 1},
+        {"at": 0.75, "lean_forward": 10, "head_tilt": 14, "eyes": "open", "right_hand_on_hip": 1, "left_hand_on_hip": 1}]},
+      "excited": {"keys": [
+        {"at": 0.25, "right_arm_out": 100, "left_arm_out": 100, "right_elbow": 100, "left_elbow": 100, "right_elbow_side": 40, "left_elbow_side": 40, "jump": 20, "eyes": "happy", "blush": 1},
+        {"at": 0.55, "right_arm_out": 90, "left_arm_out": 90, "right_elbow": 110, "left_elbow": 110, "right_elbow_side": 40, "left_elbow_side": 40, "jump": 0, "eyes": "happy"},
+        {"at": 0.8, "right_arm_out": 100, "left_arm_out": 100, "right_elbow": 100, "left_elbow": 100, "right_elbow_side": 40, "left_elbow_side": 40, "jump": 16, "eyes": "happy"}]},
+      "think": {"keys": [
+        {"at": 0.3, "head_tilt": 12, "eyes": "up", "right_hand_on_chin": 1},
+        {"at": 0.75, "head_tilt": 12, "eyes": "up", "right_hand_on_chin": 1}]},
+      "count": {"keys": [
+        {"at": 0.2, "right_arm_forward": 50, "right_arm_out": 20, "right_elbow": 70, "right_wrist": -30},
+        {"at": 0.4, "right_arm_forward": 50, "right_arm_out": 20, "right_elbow": 70, "right_wrist": -30, "right_wrist_side": 25},
+        {"at": 0.6, "right_arm_forward": 55, "right_arm_out": 25, "right_elbow": 65, "right_wrist": -30},
+        {"at": 0.8, "right_arm_forward": 50, "right_arm_out": 20, "right_elbow": 70, "right_wrist": -30, "right_wrist_side": -20}]}
+    },
+    "moves": {
+      "cheer": {"duration": 1.6, "keys": [
+        {"at": 0.25, "right_arm_out": 120, "right_arm_forward": 20, "right_elbow": 100, "right_wrist": 30, "left_arm_out": 20, "left_elbow": 60, "jump": 25, "eyes": "happy", "mouth": "grin", "blush": 0.8},
+        {"at": 0.5, "right_arm_out": 105, "right_arm_forward": 20, "right_elbow": 120, "right_wrist": 40, "jump": 0, "eyes": "happy", "mouth": "grin"},
+        {"at": 0.75, "right_arm_out": 125, "right_arm_forward": 20, "right_elbow": 95, "right_wrist": 30, "left_arm_out": 20, "left_elbow": 60, "jump": 20, "eyes": "happy", "blush": 0.8}]},
+      "huff": {"duration": 2.4, "keys": [
+        {"at": 0.2, "right_arm_forward": 25, "left_arm_forward": 22, "right_arm_out": -20, "left_arm_out": -20, "right_elbow": 75, "left_elbow": 80, "right_wrist": 20, "left_wrist": 20, "head_turn": 25, "head_tilt": -6, "head_nod": -5, "eyes": "angry", "mouth": "frown", "symbol": "exclaim"},
+        {"at": 0.8, "right_arm_forward": 25, "left_arm_forward": 22, "right_arm_out": -20, "left_arm_out": -20, "right_elbow": 75, "left_elbow": 80, "right_wrist": 20, "left_wrist": 20, "head_turn": 28, "head_tilt": -8, "head_nod": -6, "eyes": "angry", "mouth": "frown", "symbol": "none"}]},
+      "read_book": {"duration": 3.6, "keys": [
+        {"at": 0.2, "right_arm_forward": 25, "left_arm_forward": 25, "right_arm_out": -8, "left_arm_out": -8, "right_elbow": 85, "left_elbow": 85, "right_wrist": -30, "left_wrist": -30, "head_nod": 22, "eyes": "half", "mouth": "smile"},
+        {"at": 0.6, "right_arm_forward": 25, "left_arm_forward": 25, "right_arm_out": -8, "left_arm_out": -4, "right_elbow": 85, "left_elbow": 90, "right_wrist": -30, "left_wrist": -20, "left_wrist_side": 20, "head_nod": 24, "head_tilt": 4, "eyes": "half"},
+        {"at": 0.85, "right_arm_forward": 25, "left_arm_forward": 25, "right_arm_out": -8, "left_arm_out": -8, "right_elbow": 85, "left_elbow": 85, "right_wrist": -30, "left_wrist": -30, "head_nod": 20, "eyes": "happy"}]},
+      "check_keys": {"duration": 2.2, "keys": [
+        {"at": 0.3, "right_arm_out": 12, "right_arm_forward": 30, "right_elbow": 70, "right_wrist": -40, "head_nod": 15, "head_turn": -20, "eyes": "open", "left_hand_on_hip": 1},
+        {"at": 0.7, "right_arm_out": 12, "right_arm_forward": 30, "right_elbow": 70, "right_wrist": -40, "right_wrist_side": 20, "head_nod": 8, "head_turn": -10, "eyes": "happy", "mouth": "grin", "left_hand_on_hip": 1}]},
+      "starry_eyed": {"duration": 2.2, "keys": [
+        {"at": 0.25, "head_tilt": 15, "eyes": "happy", "mouth": "grin", "blush": 1, "symbol": "heart", "right_hand_on_chin": 1, "left_hand_on_chin": 1},
+        {"at": 0.75, "head_tilt": -12, "eyes": "happy", "blush": 1, "right_hand_on_chin": 1, "left_hand_on_chin": 1}]},
+      "freak_out": {"duration": 1.8, "keys": [
+        {"at": 0.22, "jump": 30, "lean_forward": -10, "eyes": "wide", "mouth": "o", "symbol": "exclaim", "right_hand_on_chin": 1, "left_hand_on_chin": 1},
+        {"at": 0.45, "jump": 0, "lean_forward": -6, "head_turn": 10, "eyes": "wide", "mouth": "o", "right_hand_on_chin": 1, "left_hand_on_chin": 1},
+        {"at": 0.6, "head_turn": -10, "eyes": "wide", "right_hand_on_chin": 1, "left_hand_on_chin": 1},
+        {"at": 0.85, "head_turn": 0, "eyes": "open", "mouth": "frown"}]},
+      "exasperated": {"duration": 2.2, "keys": [
+        {"at": 0.2, "head_turn": 15, "eyes": "angry", "mouth": "frown", "symbol": "drop", "right_hand_on_hip": 1, "left_hand_on_hip": 1},
+        {"at": 0.45, "head_turn": -15, "eyes": "angry", "right_hand_on_hip": 1, "left_hand_on_hip": 1},
+        {"at": 0.7, "head_turn": 10, "head_nod": 8, "eyes": "half", "mouth": "frown", "right_hand_on_hip": 1, "left_hand_on_hip": 1}]},
+      "big_wave": {"duration": 2.0, "keys": [
+        {"at": 0.15, "right_arm_out": 125, "right_arm_forward": 20, "right_elbow": 60, "right_elbow_side": 50, "right_wrist": -20, "right_wrist_side": 35, "lean_side": -6, "jump": 10, "eyes": "happy", "mouth": "grin", "left_hand_on_hip": 1},
+        {"at": 0.35, "right_arm_out": 125, "right_arm_forward": 20, "right_elbow": 60, "right_elbow_side": 50, "right_wrist": -20, "right_wrist_side": -35, "lean_side": -6, "jump": 0, "left_hand_on_hip": 1},
+        {"at": 0.55, "right_arm_out": 125, "right_arm_forward": 20, "right_elbow": 60, "right_elbow_side": 50, "right_wrist": -20, "right_wrist_side": 35, "lean_side": -6, "jump": 8, "left_hand_on_hip": 1},
+        {"at": 0.75, "right_arm_out": 125, "right_arm_forward": 20, "right_elbow": 60, "right_elbow_side": 50, "right_wrist": -20, "right_wrist_side": -35, "lean_side": -6, "jump": 0, "eyes": "happy", "left_hand_on_hip": 1}]},
+      "proud_laugh": {"duration": 2.0, "keys": [
+        {"at": 0.25, "head_nod": -12, "eyes": "happy", "mouth": "grin", "blush": 0.6, "left_hand_on_hip": 1, "right_hand_on_mouth": 1},
+        {"at": 0.5, "head_nod": -15, "head_tilt": 6, "eyes": "happy", "mouth": "open", "left_hand_on_hip": 1, "right_hand_on_mouth": 1},
+        {"at": 0.75, "head_nod": -12, "eyes": "happy", "mouth": "grin", "left_hand_on_hip": 1, "right_hand_on_mouth": 1}]},
+      "lucy_kick": {"duration": 1.4, "keys": [
+        {"at": 0.2, "right_leg_lift": -20, "lean_forward": 5, "right_arm_out": 40, "left_arm_out": 40, "right_elbow": 40, "left_elbow": 40, "eyes": "angry", "mouth": "frown"},
+        {"at": 0.45, "right_leg_lift": 85, "lean_side": -10, "lean_forward": -10, "right_arm_out": 60, "left_arm_out": 70, "right_elbow": 20, "left_elbow": 20, "right_wrist": -30, "left_wrist": -30, "eyes": "angry", "mouth": "open", "symbol": "exclaim"},
+        {"at": 0.75, "right_leg_lift": 10, "right_arm_out": 20, "left_arm_out": 20, "eyes": "angry", "mouth": "frown", "symbol": "none"}]},
+      "lucy_dance": {"duration": 2.0, "loop": true, "keys": [
+        {"at": 0.125, "lean_side": 10, "jump": 12, "head_tilt": 10, "right_arm_out": 130, "right_arm_forward": 20, "right_elbow": 10, "right_wrist": -10, "eyes": "happy", "mouth": "grin", "right_hand_on_hip": 0, "left_hand_on_hip": 1},
+        {"at": 0.25, "lean_side": 0, "jump": 0, "right_arm_out": 60, "left_arm_out": 50, "right_elbow": 60, "left_elbow": 60, "right_hand_on_hip": 0, "left_hand_on_hip": 0},
+        {"at": 0.375, "lean_side": -10, "jump": 12, "head_tilt": -10, "left_arm_out": 130, "left_arm_forward": 20, "left_elbow": 10, "left_wrist": -10, "eyes": "happy", "right_hand_on_hip": 1, "left_hand_on_hip": 0},
+        {"at": 0.5, "lean_side": 0, "jump": 0, "right_arm_out": 40, "left_arm_out": 40, "right_elbow": 60, "left_elbow": 60, "right_hand_on_hip": 0, "left_hand_on_hip": 0},
+        {"at": 0.625, "turn": 25, "head_tilt": 14, "right_arm_forward": 35, "left_arm_forward": 35, "right_arm_out": -18, "left_arm_out": -18, "right_elbow": 105, "left_elbow": 105, "right_wrist": 40, "left_wrist": 40, "blush": 1, "eyes": "happy", "right_hand_on_hip": 0, "left_hand_on_hip": 0},
+        {"at": 0.75, "turn": 0, "right_arm_out": 50, "left_arm_out": 50, "right_elbow": 40, "left_elbow": 40, "right_hand_on_hip": 0, "left_hand_on_hip": 0},
+        {"at": 0.875, "right_leg_lift": 45, "jump": 15, "right_arm_out": 90, "left_arm_out": 90, "right_elbow": 20, "left_elbow": 20, "right_wrist": -30, "left_wrist": -30, "eyes": "happy", "mouth": "grin", "symbol": "note", "right_hand_on_hip": 0, "left_hand_on_hip": 0}]}
+    }
   }
 }

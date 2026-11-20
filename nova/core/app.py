@@ -60,7 +60,7 @@ def _unspoken(text):
 def settings():
     s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
          "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "deep_sleep": True, "listen_pause": 0.7, "listen_max": 10, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_quiet": True, "phone_notes_cloud": False, "suggest": False,
-         "reaction_sounds": True, "power_ok": False, "reasoning": "auto", "live_3d": True,
+         "reaction_sounds": True, "power_ok": False, "reasoning": "auto",
          "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
          "skill_screen_checks": False, "skill_teach": True, "barge_in": True, "character": characters.DEFAULT}
     try:
@@ -217,7 +217,8 @@ def persona_text(cid=None):
     fill = lambda t: (t or "").replace("{NAME}", name).replace("{DESI_TALK}", (TALK_ENGLISH if voice.ENGLISH_ONLY else TALK_MIXED).strip())
     intro = fill(p.get("intro")) or f"You are {name}, who lives inside the user's Windows laptop and looks after it."
     intro += (f'\nYour name is {name} - always. When asked who you are, say "{name}". The user wakes you by '
-              f'saying "Hey {name}".')
+              f'saying "Hey {name}". {name} is YOUR name, not the user\'s: never greet or address the user as '
+              f'"{name}" (no "Hey {name}").')
     talk = fill(p.get("talk")).rstrip() + "\n" if p.get("talk") else ""
     return (PERSONA.replace("{INTRO}", intro).replace("{TALK}", talk).replace("{TOUCH}", fill(p.get("touch")))
             .replace("{HEAR}", "" if voice.ENGLISH_ONLY else HEAR_MIXED))
@@ -1413,6 +1414,14 @@ def trimmed_history():
 INFO_ECHO = re.compile(r"\(\s*laptop info[^)]*\)|\[\s*now:[^\]]*\]|\[\s*open windows[^\]]*\]", re.I)   # echoes of hidden context
 
 
+def no_self_greeting(text, name=None):
+    """'Hey Lucy! What's your vibe?' -> 'Hey! What's your vibe?': the small brain greets the user with HER OWN name
+    (seen 2 in 12 answers for Lucy and Nova, even when the prompt says not to)."""
+    name = name or characters.get(settings().get("character"))["name"]
+    return re.sub(rf"^(\s*(?:hey|hi|hello|hiya|good (?:morning|afternoon|evening)|morning|evening))[ \t,]+{re.escape(name)}\b",
+                  r"\1", text or "", flags=re.I)
+
+
 class SpeechStream:
     """Collects the reply as the model writes it and sends each finished sentence to Nova's voice straight away."""
 
@@ -1423,11 +1432,16 @@ class SpeechStream:
     def __init__(self):
         self.buf = ""
         self.cut = False
+        self.opened = False      # the start of the reply has been checked for a greeting with her own name
 
     def feed(self, piece):
         if self.cut:                                              # everything after the cut is the echo: drop it
             return
         self.buf += piece
+        if not self.opened:      # "Hey Lucy! ..." from Lucy: wait until the greeting is whole, then drop her name
+            if len(self.buf) < 24 and not self.END.search(self.buf):
+                return
+            self.buf, self.opened = no_self_greeting(self.buf), True
         if "[open windows" in self.buf:                           # she started echoing the hidden window list
             self.buf = INFO_ECHO.sub("", self.buf)
             if "[open windows" in self.buf:
@@ -1448,6 +1462,8 @@ class SpeechStream:
             speak(sentence.strip())
 
     def flush(self):
+        if not self.opened:
+            self.buf, self.opened = no_self_greeting(self.buf), True
         self.buf = re.sub(r"\[(?:c(?:h(?:e(?:c)?)?)?|s(?:p(?:o(?:k(?:e(?:n)?)?)?)?)?)?$", "", self.buf)
         speak(INFO_ECHO.sub("", self.buf).split("[open windows")[0].strip())
         self.buf = ""
@@ -1506,6 +1522,7 @@ def _agent_loop(activity):
         if stage:
             extra.setdefault("stage_reaction", stage)
         reply = re.sub(r"[ \t]{2,}", " ", shared.REACT_MARKER_RE.sub(" ", reply or "")).strip()   # ...and not on screen
+        reply = no_self_greeting(reply)
         say = " ".join(unsaid).strip()
         if not say and not spoken:
             say = reply                     # e.g. the plain "Done!"
@@ -1813,6 +1830,7 @@ def setup():
         s["avatar_roam"] = body["avatar_roam"]
     if body.get("character") in characters.CHARACTERS and body["character"] != s.get("character"):
         s["character"] = body["character"]
+        task_log(f"CHARACTER switch asked by {request.remote_addr} ({(request.user_agent.string or '?')[:60]})")
         apply_character(s["character"])
     if "think" in body:
         s["think"] = bool(body["think"])
@@ -1915,28 +1933,6 @@ def set_autostart(on):
         f"$s.WorkingDirectory='{ps_escape(ROOT)}';$s.Save()")
 
 
-@app.post("/api/dev/save_frames")
-def save_frames():
-    """Receives the 3D Nova sprite frames rendered by static/nova3d.html."""
-    import base64
-    body = _body()
-    out = ROOT / "static" / "nova3d"
-    out.mkdir(exist_ok=True)
-    count = 0
-    frames_by_anim = body.get("frames") if isinstance(body.get("frames"), dict) else {}
-    for anim, frames in frames_by_anim.items():
-        if not re.fullmatch(r"[a-z]+", anim) or not isinstance(frames, list):
-            continue
-        for i, url in enumerate(frames[:100]):
-            (out / f"{anim}_{i:02d}.png").write_bytes(base64.b64decode(url.split(",", 1)[1]))
-            count += 1
-    if count:   # an empty or rejected export must not wipe the sprite sheet's description
-        (out / "meta.json").write_text(json.dumps(body.get("meta", {}), indent=1), encoding="utf-8")
-    if avatar_reload_hook:
-        avatar_reload_hook()
-    return jsonify(ok=True, count=count)
-
-
 @app.get("/api/look")
 def get_look():
     """3D Nova's saved look (nova/avatar/body.py) - the 3D preview page dresses her in it."""
@@ -1948,12 +1944,35 @@ def get_look():
 def get_model():
     """The chosen character's 3D model for nova3d.html (characters/<id>/: a VRM made in VRoid Studio): where to load
     it, the colours it was made with (so change_look can tint it) and how to fit the moves onto her body.
-    ?character=lucy asks about another character (testing). vrm is null when she has no model (toon body)."""
+    ?character=lucy asks about another character (testing). vrm is null when her folder has no model.vrm."""
     from nova.avatar import body
     ch = characters.get(request.args.get("character") or settings().get("character"))
-    there = characters.model_path(ch) is not None
-    return jsonify(id=ch["id"], name=ch["name"], vrm=f"/characters/{ch['id']}/model.vrm" if there else None,
-                   base={**body.DEFAULT_LOOK, **ch["look"]}, fit=ch["model"]["fit"])
+    path = characters.model_path(ch)
+    # ?v= changes whenever the file does (a new export from VRoid Studio): the 3D page then loads the new model
+    vrm = f"/characters/{ch['id']}/model.vrm?v={path.stat().st_mtime_ns}" if path else None
+    style = body.character_style(ch["id"])      # how she shows feelings and how big she moves (character.json)
+    return jsonify(id=ch["id"], name=ch["name"], vrm=vrm,
+                   base={**body.DEFAULT_LOOK, **ch["look"]}, fit=ch["model"]["fit"],
+                   style={"size": style["size"], "faces": style["faces"], "walk": style["walk"],
+                          # ?full=1 (the joint check): her own moves and talking gestures too
+                          **({"moves": style["moves"], "gestures": style["gestures"]} if request.args.get("full") else {})})
+
+
+@app.get("/api/dev/character_ids")
+def dev_character_ids():
+    """Every character with a folder (the 3D page's joint check runs through all of them)."""
+    return jsonify(ids=list(characters.CHARACTERS))
+
+
+@app.post("/api/dev/joint_report")
+def dev_joint_report():
+    """The 3D page's joint check (nova3d.html?check=1): every pose measured on each character's bones.
+    Saved as tests/joint_report.json; tests/test_joints.py reads it."""
+    from nova.avatar import joint_check
+    report = request.get_json(force=True)
+    report["inputs"] = joint_check.inputs_digest()       # what it was measured on (the tests compare)
+    joint_check.REPORT.write_text(json.dumps(report, indent=1), encoding="utf-8")
+    return jsonify(ok=True)
 
 
 @app.get("/characters/<cid>/model.vrm")
@@ -1967,7 +1986,6 @@ def character_model(cid):
     return send_file(path, mimetype="application/octet-stream", max_age=0)
 
 
-avatar_reload_hook = None
 show_window_hook = None  # set by desktop.py
 
 
