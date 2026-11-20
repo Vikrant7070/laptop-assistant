@@ -45,6 +45,7 @@ import os
 import re
 import shutil
 import time
+from nova.core import characters
 from pathlib import Path
 
 from nova.brain import retrieval
@@ -76,12 +77,14 @@ READ_ONLY = ("get_", "list_", "read_", "look_", "find_", "search_", "check_", "s
 FUZZY_FLOOR = 0.85            # with the embedding model (measured with nova.skill_eval: 0.75 let "good night" start the morning briefing); FUZZY_FLOOR_WORDS is for the word-overlap fallback
 FUZZY_FLOOR_WORDS = 0.6
 FUZZY_MARGIN = 0.05           # ... and beat the next-best skill by this much
-FILLERS = ("hey nova", "hi nova", "ok nova", "okay nova", "hello nova", "nova", "hey", "hi", "ok", "okay", "please",
-           "can you", "could you", "would you", "will you", "so", "just", "now", "and")
-TRAILING = ("please", "nova", "now", "for me")
+# Every character's name ("hey lucy, movie time" is the same request as "hey nova, movie time").
+_NAMES = tuple(n for n in characters.all_names() if " " not in n) or ("nova",)
+FILLERS = (*(f"{g} {n}" for n in _NAMES for g in ("hey", "hi", "ok", "okay", "hello")), *_NAMES,
+           "hey", "hi", "ok", "okay", "please", "can you", "could you", "would you", "will you", "so", "just", "now", "and")
+TRAILING = ("please", *_NAMES, "now", "for me")
 STOPWORDS = set("""a an the and or of to is are was were be been i me my you your it its this that these those can could
-would will do does did what which who whom how where when why for on in at with about tell check please nova hey ok
-okay so just some any want need let s from as if then than too very up out one""".split())
+would will do does did what which who whom how where when why for on in at with about tell check please hey ok
+okay so just some any want need let s from as if then than too very up out one""".split()) | set(_NAMES)
 
 last_decision = ""            # why the last pick() answered as it did - app.new_task writes it to the task log
 

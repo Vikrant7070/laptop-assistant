@@ -69,6 +69,43 @@ def work_area():
     return r.left, r.top, r.right, r.bottom
 
 
+class _APPBARDATA(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND), ("uCallbackMessage", wintypes.UINT),
+                ("uEdge", wintypes.UINT), ("rc", wintypes.RECT), ("lParam", wintypes.LPARAM)]
+
+
+def autohide_taskbar():
+    """(edge, rect) of the taskbar when it is set to auto-hide (edge 0 left, 1 top, 2 right, 3 bottom), else None."""
+    try:
+        ab = _APPBARDATA()
+        ab.cbSize = ctypes.sizeof(ab)
+        if not ctypes.windll.shell32.SHAppBarMessage(4, ctypes.byref(ab)) & 1:     # ABM_GETSTATE: ABS_AUTOHIDE
+            return None
+        ctypes.windll.shell32.SHAppBarMessage(5, ctypes.byref(ab))                 # ABM_GETTASKBARPOS
+        return ab.uEdge, (ab.rc.left, ab.rc.top, ab.rc.right, ab.rc.bottom)
+    except Exception:
+        return None
+
+
+def stand_area(area=None, taskbar=...):
+    """Where desktop Nova may stand: the work area, but above an auto-hidden taskbar too. Windows counts the whole
+    screen as usable when the taskbar auto-hides, so she stood on the bottom row and the taskbar covered her shoes
+    whenever it popped up (2026-11-20: 60 px on this laptop)."""
+    left, top, right, bottom = area or work_area()
+    tb = autohide_taskbar() if taskbar is ... else taskbar
+    if tb:
+        edge, (tl, tt, tr, tbm) = tb
+        # its thickness, in the work area's own scale (a process that isn't DPI-aware gets the work area scaled but
+        # the taskbar rectangle not): a top/bottom taskbar spans the full width, a side one the full height
+        if edge in (1, 3) and tr > tl:
+            thick = round((tbm - tt) * (right - left) / (tr - tl))
+            bottom, top = (bottom - thick, top) if edge == 3 else (bottom, top + thick)
+        elif edge in (0, 2) and tbm > tt:
+            thick = round((tr - tl) * (bottom - top) / (tbm - tt))
+            left, right = (left + thick, right) if edge == 0 else (left, right - thick)
+    return left, top, right, bottom
+
+
 def ps_escape(s):
     """Escape a string for safe interpolation inside a PowerShell single-quoted string.
 

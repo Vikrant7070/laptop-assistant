@@ -68,7 +68,7 @@ def main():
     ear = webview.create_window("Nova ear", URL + "/ear", width=430, height=104, frameless=True, on_top=True,
                                 hidden=True, resizable=False, background_color="#151829")
     # 3D Nova's live renderer: draws her model every frame and hands the pixels to avatar.py (see body.py).
-    # Never shown; off in the tray menu ("Live 3D Nova") falls back to the saved sprite frames.
+    # Never shown.
     webview.create_window("Nova body", URL + "/static/nova3d.html?live=1", width=300, height=380, hidden=True)
     quitting = {"v": False}
     ducked = {"v": False}
@@ -138,7 +138,6 @@ def main():
     pyw = Path(sys.executable).with_name("pythonw.exe")
     body["proc"] = subprocess.Popen([str(pyw if pyw.exists() else sys.executable), "-m", "nova.avatar.avatar"], cwd=str(ROOT),
                                     env={**os.environ, "NOVA_PARENT": str(os.getpid())})
-    server.avatar_reload_hook = lambda: avatar_client.send("reload", timeout=5)
 
     def toggle_body(icon, _):
         body["shown"] = not body["shown"]
@@ -156,12 +155,6 @@ def main():
             except Exception:
                 pass
         threading.Timer(2, lambda: os._exit(0)).start()
-
-    def toggle_live(icon, _):
-        s = server.settings()
-        s["live_3d"] = not s.get("live_3d", True)
-        server.save_settings(s)
-        avatar_client.send("live", on=s["live_3d"], timeout=3)
 
     def toggle_hearing(icon, _):
         s = server.settings()
@@ -190,8 +183,6 @@ def main():
         pystray.MenuItem("Open Nova", show, default=True),
         pystray.MenuItem("Stop what Nova is doing", lambda icon, _: server.stop_now()),
         pystray.MenuItem("Show 3D Nova on desktop", toggle_body, checked=lambda _: body["shown"]),
-        pystray.MenuItem("Live 3D Nova (new moves and looks)", toggle_live,
-                         checked=lambda _: server.settings().get("live_3d", True)),
         pystray.MenuItem("Dance to music playing on the laptop", toggle_hearing,
                          checked=lambda _: server.settings().get("react_to_sound", True)),
         pystray.MenuItem("Start with Windows", toggle_autostart, checked=lambda _: server.STARTUP_LNK.exists()),
