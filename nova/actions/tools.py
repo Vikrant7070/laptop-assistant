@@ -1249,6 +1249,92 @@ def press_keys(keys):
     return f"Pressed {keys}."
 
 
+# ------------------------------------------------------------ the app the user asked for
+# 2026-11-20 "type hello judge in notepad" with Notepad closed: the small brain pressed alt+tab, ctrl+shift+n and
+# ctrl+n in VS Code (the window in front), then typed into "Untitled-1 - Visual Studio Code". Now, when a request
+# names an app, keys that open or switch windows only go to that app, and typing only goes into that app's window.
+# If the app isn't open she is told to open_app it first.
+_NAMED_APP_RE = re.compile(
+    r"\b(?:in|into|inside|using|open|launch|start)\s+(?:up\s+)?(?:the\s+|my\s+|a\s+(?:new\s+)?|new\s+)?("
+    + "|".join(re.escape(k) for k in sorted(APPS, key=len, reverse=True)) + r")\b", re.I)
+APP_PROCS = {   # process names (no .exe) an app's windows can have, beyond its own name and APPS target
+    "calculator": {"calculatorapp"}, "calc": {"calculatorapp"}, "terminal": {"windowsterminal"},
+    "cmd": {"windowsterminal", "conhost"}, "powershell": {"windowsterminal", "conhost"},
+    "outlook": {"olk"}, "mail": {"olk", "hxoutlook"}, "settings": {"systemsettings"}, "camera": {"windowscamera"},
+    "store": {"winstore.app"}, "clock": {"time"}, "photos": {"photos"}, "paint": {"mspaint"},
+}
+SWITCH_KEYS = {"alt+tab", "alt+shift+tab", "ctrl+alt+tab", "windows+tab"}   # these leave the window in front
+NEW_WINDOW_KEYS = {"ctrl+n", "ctrl+shift+n", "ctrl+t", "ctrl+shift+t"}      # these make a new window/tab in the front app
+
+
+def named_app(request):
+    """The app a request names ("type hello in notepad", "open chrome and ..."), as an APPS key, or ""."""
+    m = _NAMED_APP_RE.search(request or "")
+    return m.group(1).lower() if m else ""
+
+
+def _keys_combo(keys):
+    """'Shift + Ctrl+N' -> 'ctrl+shift+n' (modifiers in one order), to compare shortcuts."""
+    parts = [p.strip().lower() for p in str(keys or "").replace(" ", "").split("+") if p.strip()]
+    names = {"control": "ctrl", "win": "windows", "cmd": "windows"}
+    parts = [names.get(p, p) for p in parts]
+    order = ["ctrl", "alt", "shift", "windows"]
+    mods = sorted({p for p in parts if p in order}, key=order.index)
+    rest = [p for p in parts if p not in order]
+    return "+".join(mods + rest)
+
+
+def window_is_app(w, app):
+    """Is this window (hwnd, title, process) one of the app's own windows?"""
+    _, title, proc = w
+    target = APPS.get(app, app).lower().rstrip(":").removesuffix(".exe")
+    procs = {app.replace(" ", ""), target} | APP_PROCS.get(app, set())
+    if proc.lower().removesuffix(".exe") in procs:
+        return True
+    last = title.lower().replace("​", "").rsplit(" - ", 1)[-1].strip()   # "Untitled - Notepad" -> "notepad"
+    return app in last
+
+
+def _app_window(app, wait=0.0):
+    """An open window of the app (waits up to `wait` seconds for one to appear - right after open_app)."""
+    end = time.time() + wait
+    while True:
+        for w in _windows():
+            if window_is_app(w, app):
+                return w
+        if time.time() >= end:
+            return None
+        time.sleep(0.25)
+
+
+def app_guard(tool, args, app, wait=0.0):
+    """Before press_keys / type_text, when the request named an app: None if it's fine, else why it wasn't done."""
+    if not app or tool not in ("press_keys", "type_text"):
+        return None
+    args = args or {}
+    if tool == "press_keys":
+        keys = _keys_combo(args.get("keys"))
+        if keys not in SWITCH_KEYS | NEW_WINDOW_KEYS:
+            return None
+        front = _target_window(None)
+        if keys in NEW_WINDOW_KEYS and front and window_is_app(front, app):
+            return None                                     # a new tab/document inside the app itself is fine
+        where = f"'{front[1][:60]}'" if front else "the window in front"
+    else:
+        into = str(args.get("into_window") or "").strip()
+        target = _find_window(into) if into else _target_window(None)
+        if target and window_is_app(target, app):
+            return None
+        where = f"'{target[1][:60]}'" if target else f"'{into}'" if into else "the window in front"
+    did = "pressed" if tool == "press_keys" else "typed"
+    mine = _app_window(app, wait)
+    if not mine:
+        return (f"Not done - nothing {did}: {app} isn't open, and this would have gone into {where}. "
+                f"Call open_app(name='{app}') first, then type_text(text=..., into_window='{app}').")
+    return (f"Not done - nothing {did}: this would have gone into {where}, not {app}. "
+            f"Use type_text(text=..., into_window='{app}') - it brings '{mine[1][:60]}' to the front first.")
+
+
 def get_clipboard():
     return pyperclip.paste()[:4000] or "(clipboard is empty)"
 
@@ -2778,8 +2864,11 @@ TOOLS = [
           {"title_or_app": S, "action": {"type": "string", "enum": ["focus", "minimize", "maximize", "close"]}}, ["title_or_app", "action"]),
     _tool("minimize_all_windows", "Show the desktop."),
     _tool("close_all_windows", "Close every open app window (not Nova). Apps with unsaved work may ask to save."),
-    _tool("type_text", "Type text with the keyboard, optionally into a window (focuses it first).", {"text": S, "into_window": S}, ["text"]),
-    _tool("press_keys", "Press a key or shortcut, e.g. 'ctrl+s', 'alt+tab', 'enter', 'windows+e'.", {"keys": S}, ["keys"]),
+    _tool("type_text", "Type text into an app that is already open; into_window = that app's name, e.g. 'notepad' "
+          "(it is brought to the front first). If the app isn't in the open windows list, call open_app first.",
+          {"text": S, "into_window": S}, ["text"]),
+    _tool("press_keys", "Press a key or shortcut in the window in front, e.g. 'ctrl+s', 'enter', 'windows+e'. Never "
+          "use it to open or switch apps (alt+tab, ctrl+n): use open_app or window_action focus.", {"keys": S}, ["keys"]),
     _tool("get_clipboard", "Read the clipboard text."),
     _tool("read_selection", "Get the text the user has highlighted/selected in their app (copies it for you, "
           "then restores their clipboard). Use it for 'read this', 'what does the selected text say', "
