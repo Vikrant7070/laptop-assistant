@@ -1,7 +1,9 @@
 # Nova as a manager — plan
 
-**Status (2026-11-20): plan only. Nothing here is built.** The user's answers are in section 9. Build the phases in
-order, one at a time, each on its own branch/commit with tests, and only after the user says go.
+**Status (2026-11-20): phase 1 (Judge, `nova/actions/judge.py`) and phase 2 (episode log + Learner,
+`nova/actions/learner.py`, `nova/actions/questions.py`) are built. Phases 3–8 are not.** The user's answers are in
+section 9. Build the phases in order, one at a time, each on its own branch/commit with tests, and only after the
+user says go.
 
 ## 1. The goal (the user's words, summarised)
 
@@ -101,6 +103,20 @@ into "done" by vision; tests cover the trust order.
 3. **Learning without asking:** facts — silent (viewable, deletable). New skills — always asked.
 
 **Done when:** a repeated research task offers a skill; the second "search for tea" uses the remembered sites.
+
+**As built (2026-11-20):**
+- Episodes are written when the next request starts, or by the idle Learner (60 s quiet, at most every 5 min). Secret-
+  looking arguments are stored as `[hidden]`, and such episodes are never offered as skills.
+- "Worked" (`learner.worked`): the Judge said done; or its checks covered only part of the goal but all passed and
+  every step worked; or every background job the task started finished. Stopped, failed or unchecked = never offered.
+- Offers go on the daily question list (`data/questions.json`, section 9 answer 4), not asked on the spot: one per
+  answer at the laptop (never on the phone), with its reason, once a day; skipped 3 times = not asked again. Yes →
+  `skills.draft_from_steps` (draft, promoted after 2 good runs). Single tasks need 2+ replayable steps.
+- Slot skills: two worked episodes with the same steps, goals sharing their first words ("search for") and one
+  argument holding the changed words → `{input}`; the shared words become the trigger phrase.
+- Facts (`data/facts.json`): per research topic, hosts cited in the report ("good") vs opened and not cited
+  ("ignored"). The next research on a close topic (≥ half the words shared) reads good sites first, skips ignored
+  ones, and searches `site:<best>` if it isn't in the results. Shown on the Knowledge page, "unconfirmed" until ✓.
 
 ## 5. Phase 3 — Workers and the job tracker
 
