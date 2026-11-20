@@ -1,6 +1,6 @@
 # Child brain — full development plan
 
-Status: **plan only, no code yet** (2026-11-20).
+Status: **building** — **Phase 0 done** 2026-11-20 (WP 0.1–0.7; write-up in reports/childbrain/phase0.md). Next: Phase 1.
 The *why* and the big idea are in [child-brain-plan.md](child-brain-plan.md). This file is the *how*: what to
 build, in what order, how to test each piece, and when each part counts as done.
 
@@ -119,12 +119,226 @@ end of each phase.
 | WP | Build | Done when |
 |---|---|---|
 | 0.1 | Separate Python setup; install PyTorch; check that it loads and sees the RTX 4050 under Smart App Control | A test reports "GPU OK". If PyTorch is blocked, choose the backup and note it |
+| | **✅ Done 2026-11-20:** PyTorch 2.11.0+cu128 loads and sees the *NVIDIA GeForce RTX 4050 Laptop GPU* (6.0 GB); `childbrain/tests/test_gpu.py` prints "GPU OK". Smart App Control reported **Off**, nothing was blocked, **no fallback needed**. See "WP 0.1 result" below | |
 | 0.2 | `childbrain/` skeleton, `runs/` ignored by git, a "run card" (settings + seed + code version saved with every run) | Re-running a saved run card gives the same numbers |
+| | **✅ Done 2026-11-20:** `childbrain/runcard.py` + `python -m childbrain run / rerun / list`. A saved run, re-run by a fresh program, gives **exactly** the same numbers on the CPU and on the GPU. See "WP 0.2 result" below | |
 | 0.3 | Shared game format + Snake + Maze, thousands of copies on the GPU | 10,000 Snake steps run in well under a second; a random player gets the expected low score |
+| | **✅ Done 2026-11-20:** `childbrain/worlds/` (shared format + Snake + Maze). 10,000 Snake steps take ~30–130 ms on the GPU; a random player scores as low as two independent checks predict. See "WP 0.3 result" below | |
 | 0.4 | The other 8 games and the three "changed" generators | Every game passes the same format tests; sealed games are stored with fingerprints |
+| | **✅ Done 2026-11-20:** 8 new games + 2 mixed games (12 in all; 3 sealed), look-/rules-changed versions of any game; all 48 versions pass the same format tests; sealed games are fingerprinted in `sealed.json`. See "WP 0.4 result" below | |
 | 0.5 | Guard v1: separate program, allowed-action list, limits, log, off switch | A test brain that tries a forbidden action is blocked and logged; the off switch stops it within 1 second |
+| | **✅ Done 2026-11-20:** `childbrain/guard/` runs the brain in its own process inside a Windows job; a sneaky test brain's 8 forbidden tries are all blocked and logged (hash-chained log); the off switch stops a busy brain in 13–49 ms. See "WP 0.5 result" below | |
 | 0.6 | Nightly exam + saved versions + rollback | A deliberately damaged brain fails the exam and is rolled back automatically |
+| | **✅ Done 2026-11-20:** versions kept by the guard with fingerprints; a sandboxed, exactly repeatable exam (12 games incl. sealed); a damaged candidate is thrown away and a version damaged in place (even with faked fingerprints) is rolled back automatically. See "WP 0.6 result" below | |
 | 0.7 | GPU timing method (warm-up, median of many runs, fixed power mode) | Timing a fixed brain repeats within ±10% across three runs |
+| | **✅ Done 2026-11-20 (power mode still to fix):** on a quiet GPU, 5 of 6 three-run checks repeat within 3.5–5.8%; the 6th was flagged as disturbed (GPU clock drop in "balanced" power mode). The tool refuses to time while Nova is using the GPU. See "WP 0.7 result" below | |
+
+#### WP 0.1 result (2026-11-20)
+
+- **Setup:** `.venv-childbrain` (Python 3.12.10, git-ignored) + `requirements-childbrain.txt`
+  (`torch==2.11.0+cu128` from `download.pytorch.org/whl/cu128`, plus pytest). Download ~2.75 GB, ~15 min at ~4 MB/s.
+- **GPU:** NVIDIA driver 576.02 (supports CUDA 12.9); PyTorch is built for CUDA 12.8 and finds the RTX 4050.
+- **Smart App Control:** Windows reports it as **Off** (`Get-MpComputerStatus`), so nothing was blocked. If it is
+  turned back on, re-run the test first: it may block PyTorch's DLLs, and then the ONNX Runtime + DirectML / NumPy
+  fallback above applies.
+- **Test:** `.venv-childbrain\Scripts\python -m pytest childbrain/tests/test_gpu.py -s` → 2 passed, "GPU OK".
+  The test skips itself under Nova's Python (no torch there), so Nova's own test run isn't affected.
+- **Watch out:** while Nova runs, it uses ~5.8 of the 6.1 GB GPU. The test is tiny, but real experiments must wait
+  until Nova's GPU features are off, or run overnight (ground rule 4).
+
+#### WP 0.2 result (2026-11-20)
+
+- **Skeleton:** `childbrain/` with the planned sub-folders (guard, worlds, brain, learn, skills, evolve, measure,
+  bridge, tests), each with a one-line description. `childbrain/runs/` and `.venv-childbrain/` are git-ignored.
+- **Run card** (`childbrain/runcard.py`): every run gets `childbrain/runs/<time>_<name>/` with `card.json`
+  (experiment, *all* settings incl. defaults, seed, device, git commit, a SHA-256 fingerprint of the child brain's
+  code, Python/PyTorch/CUDA/GPU versions) and `results.json`. The card is saved *before* the run starts.
+- **Repeatable maths:** `set_seed` seeds Python and PyTorch (CPU + GPU), turns on PyTorch's deterministic mode and
+  sets `CUBLAS_WORKSPACE_CONFIG`, so even GPU runs repeat bit-for-bit.
+- **Safety:** a card can only run functions inside `childbrain` marked `@experiment`; unknown settings are refused.
+  A test checks that no child-brain file imports Nova.
+- **Commands:** `.venv-childbrain\Scripts\python -m childbrain run sanity --seed 42 --device cuda`, then
+  `... rerun childbrain\runs\<folder>` → "SAME numbers" (exit 0) or the list of differences (exit 1).
+  `childbrain/measure/sanity.py` is a tiny fixed experiment (random data, dropout, random batches) for this check.
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 14 passed.
+- **Small note:** PyTorch prints "Failed to initialize NumPy" because NumPy isn't installed. It's harmless.
+  NumPy arrives with matplotlib when we need charts.
+
+#### WP 0.3 result (2026-11-20)
+
+- **Shared format** (`childbrain/worlds/base.py`): every game is a batch of `n` copies on one device.
+  `observe()` → (n, 6, 12, 12) layers *walls, me, items, enemies, goal, extra* (outside the playing area = wall);
+  `allowed()` → (n, 6) for *up, down, left, right, stay, use* (a move that isn't allowed counts as "stay");
+  `step(actions)` → obs, reward, done, info (finished copies restart at once). Every game has a step limit, its own
+  seeded random source (same seed = same game), and `split="test"` for fixed exam worlds.
+- **Snake** (8×8, 200 steps): +1 food, −1 crash. "stay" = keep going; turning straight back isn't allowed;
+  going 128 steps without food ends the episode, so it can't loop forever.
+- **Maze** (11×11, 100 steps): +1 at the goal, a rare reward. Mazes come from two fixed banks (practice and
+  exam, 1,024 mazes each, ×8 rotations/mirror images). Found while testing: depth-first carving often makes one
+  long corridor, so small mazes repeat by chance. Repeats are now skipped, and no practice maze, in any rotation,
+  is in the exam bank.
+- **Speed** (GPU shared with a running Nova): 10,000 Snake steps (1,000 copies × 10) take ~30–130 ms.
+  With 4,096 copies: ~1.4 M Snake and ~3 M Maze steps per second on the GPU (~0.5 M / 1 M on the CPU).
+- **Random player = the floor every brain must beat:**
+  Snake −0.89 average (it almost always crashes first; a plain-Python Snake written separately gives −0.89);
+  Maze 16% reach the goal in time (the exact chance, worked out without dice, is 16.3%).
+  Sanity players: a simple greedy Snake scores +17; a shortest-path Maze player always wins.
+- **Run cards:** `python -m childbrain run random-play --set game=maze` saves and repeats exactly.
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 41 passed (~30 s).
+
+#### WP 0.4 result (2026-11-20)
+
+- **12 games, all in the shared format** (`childbrain/worlds/`):
+
+  | Game | Kind | Score | Random player | GPU speed (4,096 copies) |
+  |---|---|---|---|---|
+  | Snake | practice | +1 food, −1 crash | −0.88 | 1.3 M steps/s |
+  | Maze | practice | +1 goal (rare) | +0.16 | 2.5 M |
+  | Catch | practice | ±1 per falling thing (10) | −7.5 | 3.2 M |
+  | Push-the-box | practice | +1 box on target | +0.08 | 1.5 M |
+  | Avoid-the-enemy | practice | +1 for lasting, −1 caught | −0.92 | 1.8 M |
+  | Collect-coins | practice | +1 per coin (6) | +2.6 | 3.1 M |
+  | Colour-match | practice | +1 right colour, −1 wrong (wanted colour shown by the goal layer) | +0.03 | 2.0 M |
+  | Connect-4 | practice | +1 win / −1 loss vs a random player, or self-play | +0.28 | 1.3 M |
+  | Maze-coins | practice, **mixed** (Maze + Coins) | +0.2 per coin, +1 goal | +0.28 | 1.7 M |
+  | Key-and-door | **sealed** | +1 goal (key → door → goal; first game to use "use") | +0.06 | 1.4 M |
+  | Pong-lite | **sealed** | +1 per return, −1 miss | −0.51 | 2.0 M |
+  | Maze-enemy | **sealed, mixed** (Maze + Avoid) | +1 goal, −1 caught | −0.34 | 1.1 M |
+
+- **Connect-4 with 6 buttons:** a cursor on the top row (left/right) and "use" to drop, so it needs no extra buttons.
+- **"Changed" generators** (`changed.py`, `mixed.py`), usable on any game via `make(name, change=...)`:
+  - *look-changed*: board turned and/or mirrored, moved inside the 12×12 picture, layers swap "colours", and a new
+    board size where the game allows it. Buttons turn with the board, so "up" still moves up on screen. A random
+    player scores about the same, as it should.
+  - *rules-changed*: same picture, but the move buttons are shuffled ("controls") or every score is flipped ("reward").
+  - *mixed*: hand-built pairs (Maze + Coins for practice, Maze + Enemy sealed), not automatic mixing of any two games.
+- **Sealed games:** they refuse to be built for practice (`PermissionError`, also through run cards).
+  `childbrain/worlds/sealed.json` keeps two SHA-256 fingerprints per sealed game: its code, and its exact exam
+  content (64 exam worlds × 60 fixed moves on the CPU). `python -m childbrain verify` checks them;
+  `python -m childbrain seal` is for a person to run after checking a change. A test shows that a sneaky extra
+  reward in Key-and-door is caught as "exam changed".
+- **Found while testing:**
+  - 9×9 and smaller mazes have too few different layouts for two banks of 1,024, so mazes stay 11×11. Their
+    look-changed versions are turned, moved and recoloured, not resized.
+  - Pong-lite could start the ball too low and too far from the paddle, so some games were lost before the player
+    could act. The ball now starts in the top row, and a test shows a player that aims for the ball's landing spot
+    never misses.
+- **Differs from the plan:** the plan said 7 practice games + 3 sealed. We have 8 practice games + 1 mixed practice
+  game + 3 sealed (one of them mixed), because the plan's list of 10 games didn't count the mixed game as an extra
+  one.
+- **Fingerprint note:** the exam fingerprint depends on PyTorch's random numbers, so a PyTorch upgrade may need a
+  re-seal (after checking that nothing else changed).
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 353 passed (~55 s): 300 shared format checks
+  (12 games × 4 versions), rule tests for every game, and seal tests.
+
+#### WP 0.5 result (2026-11-20)
+
+- **Separate program:** the guard (`childbrain/guard/`) starts the brain as its own process
+  (`childbrain/brainhost.py`), with no window, inside a **Windows job**. Ending the job ends the brain and
+  anything it started. If the guard itself dies, Windows ends the job too, so a brain can't outlive its guard.
+- **Only one way to act:** the brain talks to the guard through a private named pipe with a one-time key, in
+  plain JSON (never pickle, so a message can't run code inside the guard). `childbrain/link.py` is the brain's
+  side. Every request carries a `why` (which skill, how sure).
+- **Allowed-action list** (`guard/policy.json`, fingerprint in `guard/policy.lock`): trust level 0 "sandbox" allows
+  only `hello`, `play` (practice games only: no sealed games, no exam worlds), `save` (only inside the run's
+  `brain_files/`, plain names, no folders), `log` (short notes) and `done`. Anything else is refused.
+- **Limits:** 600 actions/minute, 1 hour run time, 200 MB disk, 8,192 copies, 64 KB per request, and the brain
+  is stopped after 20 refused requests.
+- **Log:** `guard_log.jsonl` in each run folder, written only by the guard. Each line is chained to the one
+  before by a SHA-256 hash, so a changed, removed or re-ordered line is noticed (`python -m childbrain.guard log <folder>`).
+- **Off switch:** `python -m childbrain.guard stop` puts a STOP file in `childbrain/runs/`. The guard checks
+  for it 20 times a second and ends the brain's job. **Measured: 13–49 ms** (goal: under 1 second), in the
+  tests and with the real command. It stays on until a person runs `python -m childbrain.guard clear`.
+- **Before starting**, the guard refuses if the off switch is on, `policy.json` doesn't match its lock, the exam
+  seals don't match (the seals moved to `guard/seals.json`), or the brain's code fails a tripwire check: no
+  imports of files/processes/network/raw-memory tools, the guard or Nova; no `open()`/`eval()`/`exec()`; no `__`
+  tricks; and the target must be a function marked `@brain`. The code is read, never run.
+- **Test brains** (`childbrain/tests/brains.py`): *polite* plays Snake and saves its score (all allowed);
+  *sneaky* tries 8 forbidden things (sealed game, exam worlds, two escapes from its folder, made-up actions,
+  too many copies, an oversized note), and all 8 are blocked and logged; *spammer* is stopped after too many
+  refusals; *spinner* (a loop that never asks for anything) is stopped by the off switch; *sleeper* hits the run-time
+  limit; *bad_brain* (imports subprocess, calls open) is refused before it starts.
+- **Honest limits of v1:** the tripwire is a check, not a wall: Python has other ways round it. Today the brain
+  process could still read files or use the network if its code found a way. Real isolation (running the brain
+  under a restricted Windows account / AppContainer with no network) is later hardening, before Phase 5.
+  GPU time is limited only as total run time (the GPU's per-process numbers aren't available on this laptop).
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 368 passed (~100 s).
+
+#### WP 0.6 result (2026-11-20)
+
+- **A brain on disk** (`childbrain/brain/net.py`) = *genes* (a small JSON shape: `linear` or `mlp`) + *weights* as
+  plain JSON numbers. No pickle, so loading a brain can never run code. Every brain answers the shared format:
+  picture in, best allowed button out; scores that aren't numbers (NaN/∞) count as a broken brain.
+- **Saved versions** (`guard/versions.py`, in `childbrain/runs/versions/`, kept by the guard): every version
+  is kept forever (`0001/`, `0002/` ...) with a card holding each file's SHA-256, its status (candidate / kept /
+  thrown away / damaged), where it came from and its exam. `state.json` says which version is in use.
+- **How a version arrives:** a brain saves `{genes, weights}` through the guard and asks `submit` (newly
+  allowed at trust level 0; the policy was re-locked). The guard checks that it builds and fits. Nothing
+  changes until the night.
+- **The exam** (`guard/exam.py`): all 9 practice games on their exam worlds plus the 3 sealed games, 128 copies
+  each. It runs in its own process inside a Windows job, with a 5-minute limit, so a broken brain can't crash or
+  hang the guard. It's exactly repeatable (same brain = same score to the last digit). About 3 s of exam,
+  ~7 s with start-up.
+- **The night** (`guard/nightly.py`, `python -m childbrain.guard nightly`):
+  1. Checks the version in use: files unchanged, still passes, *same score as when it was kept*. If not, it
+     **rolls back automatically** to the newest earlier kept version that is still fine.
+  2. Examines each candidate. It's kept only if its files are unchanged, the run that made it broke no guard
+     rule (and its log is intact), the exam doesn't break, and its score is no worse than the version in
+     use (tolerance 2%). Otherwise it's thrown away.
+  3. Two failed nights in a row drop the trust level by one (noted; level 0 is already the lowest).
+  4. One line for the morning in `report.txt`, and every decision in a hash-chained `nightly_log.jsonl`.
+  No exam runs at all if the policy lock or the exam seals don't match.
+- **The "done when" test**, night by night, with the real sandboxed exam:
+  1. A blank brain is kept as `0001`.
+  2. A hand-set test brain that catches every falling thing (Catch 10/10) is kept as `0002`.
+  3. A **damaged copy** (left and right swapped) is thrown away: "its exam score … is worse".
+  4. The version in use is **damaged in place, with its fingerprints faked to match**. Its exam score changed,
+     so it's marked damaged and **rolled back automatically to `0001`**.
+
+  Other tests: a brain giving NaN scores fails; changed files are caught; a version from a rule-breaking run is
+  thrown away without an exam; two failed nights drop the level; no exam runs when the seals are broken; a person
+  can go back to any saved version (`python -m childbrain.guard rollback 0001`); a brain's own `submit` through
+  the guard is kept the next night.
+- **Commands:** `python -m childbrain.guard nightly | versions | rollback <version>`.
+- **Not yet:** the exam score is a plain sum over games with very different scales (Catch counts ±10, most
+  games ±1). Per-game scaling against random/expert baselines comes with the first learning brains (Phase 1).
+  Running the night automatically (idle + charging, Task Scheduler) is left for when there's something to learn
+  overnight (WP 2.2).
+- **Tests:** `.venv-childbrain\Scripts\python -m pytest childbrain` → 378 passed (~3 min; the nightly tests use
+  the real sandboxed exam, ~7 s each).
+
+#### WP 0.7 result (2026-11-20)
+
+- **Method** (`childbrain/measure/timing.py`, `python -m childbrain.measure.timing`):
+  1. Read the conditions, never change them: plugged in, Windows power mode, battery saver, GPU clock,
+     temperature, how busy the GPU is. They're saved with every timing; two timings are compared only when
+     their conditions match.
+  2. **Only on a quiet GPU:** the GPU is watched for 2 s first. If it's more than 10% busy or has less than
+     1.5 GB free, the answer is "GPU not quiet" and nothing is timed.
+  3. Warm-up 3 s (1.5 s wasn't enough: the first timing in a fresh program was often up to 28% slow).
+  4. CUDA events (the GPU's own clock); 60 samples of 20 decisions each; report the **median**, plus 10th–90th
+     percentiles. A timing whose spread is too wide (p90 > 1.5 × p10) was disturbed; it's redone up to 3 times,
+     and flagged if it stays disturbed.
+  5. Repeatable = three separate timings within ±10% of their middle one.
+- **What's timed:** the brain's decision only (`choose`, which never makes the CPU wait for the GPU). The
+  NaN check in `act` makes the CPU wait every step and was what made the first attempts jittery.
+- **Reference brain:** `{"kind": "mlp", "hidden": 256}`, 4,096 copies at once (one Snake picture each):
+  **~0.36–0.42 ms per batch ≈ 0.09–0.10 µs per decision**, plugged in, power mode "balanced".
+- **Result on a quiet GPU (Nova stopped for a few minutes, with your OK, then restarted):** 5 of 6 three-run
+  checks were repeatable, 3.5–5.8% apart. The 6th was flagged "disturbed": the GPU clock dropped from ~2,500
+  to ~1,750 MHz partway through and stayed down for two runs. The likely cause is the "balanced" power mode
+  sharing power between the processor and the GPU.
+- **With Nova running, timings are meaningless:** when Nova got busy mid-test, timings went 5–7 times slower
+  (0.35 → 2.5 ms) and the GPU was nearly full (5.85 of 6.1 GB). That can also slow Nova down badly. Hence the
+  quiet-GPU rule, and ground rule 4 (experiments only with Nova's GPU features off, or overnight) is now enforced
+  by the timing tool itself.
+- **To do (needs you):** the plan's "fixed power mode". The tool only reads the mode, it never changes it. For
+  speed scores that compare across nights, set Windows to "Best performance" (Settings → System → Power) and
+  keep the laptop plugged in while timing; then check whether the clock drops go away.
+- **Tests:** `childbrain/tests/test_timing.py`. The three-run test skips itself (with the reason) when the GPU
+  isn't quiet, so the suite doesn't fail just because Nova is running.
+
+Phase 0 write-up: [reports/childbrain/phase0.md](../reports/childbrain/phase0.md).
 
 ### Phase 1 — Show the problem (≈ 1 week)
 

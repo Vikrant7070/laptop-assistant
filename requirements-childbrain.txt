@@ -1,0 +1,9 @@
+# Child brain research project only. Kept apart from Nova's requirements.txt.
+# Install into its own environment:
+#   py -3.12 -m venv .venv-childbrain
+#   .venv-childbrain\Scripts\python -m pip install -r requirements-childbrain.txt
+# PyTorch's CUDA 12.8 build comes from pytorch.org (driver 576.02 supports CUDA 12.9).
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+torch==2.11.0+cu128
+pytest
