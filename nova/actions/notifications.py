@@ -301,7 +301,7 @@ class Watcher:
             try:
                 p.kill()
             except Exception:
-                pass
+                pass  # intentional: the helper process may have exited
 
     def _run(self):
         fails = 0

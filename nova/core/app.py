@@ -40,6 +40,7 @@ from nova.actions import tools
 from nova.audio import voice
 from nova import shared
 from nova import protocol
+from nova.log import log_exception
 from nova.shared import REACTIONS, host_allowed, ps_escape
 
 ROOT = shared.ROOT
@@ -68,7 +69,7 @@ def settings():
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
-        pass
+        log_exception("settings.json")     # keep the defaults; the broken file is reported in the task log
     return s
 
 
@@ -296,7 +297,7 @@ def _windows_display_name():
         if ctypes.windll.secur32.GetUserNameExW(3, buf, ctypes.byref(size)) and buf.value.strip():
             return buf.value.strip().split()[0]
     except Exception:
-        pass
+        pass        # intentional: the Windows display name is a nicety; "boss" is the fallback
     return ""
 
 
@@ -469,7 +470,7 @@ def task_log(line):
         with TASK_LOG.open("a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%H:%M:%S')} {line}\n")
     except Exception:
-        pass
+        pass        # intentional: this is the log itself; a full disk must not break the turn
 
 
 llm.log = task_log                      # the brain notes oddities (a call written as text) in the same log
@@ -2167,7 +2168,7 @@ def warm_brain():
                                 if llm.supports_tools(model) else None,
                                 "options": {"num_ctx": llm.NUM_CTX, "num_predict": 1}}, timeout=300)
     except Exception:
-        pass
+        log_exception("warm-up")             # the first real question will just be the slow one
 
 
 # ------------------------------------------------------------------ 👀 "watch me" (recorder.py) and "show me this step"
@@ -2369,7 +2370,7 @@ def body_command(text):
             try:        # designing the poses takes the brain ~20 s: say something at once instead of going quiet
                 mouth.say(random.choice(("Okay, let me think of one.", "Alright, give me a moment to make it up.")))
             except Exception:
-                pass
+                pass    # intentional: the spoken heads-up is optional; the brain still designs the move
             return None                       # the brain designs the move
         if re.search(r"\b(usual|normal|regular|old|known|dance|that one|the one you know)\b", t, re.I):
             t = "dance"
@@ -3508,7 +3509,7 @@ def ring_cue():
         if sfx.play("happy"):
             mouth.hold(sfx.length("happy") + 0.3)         # keep the mic from hearing it
     except Exception:
-        pass
+        pass        # intentional: a missing reaction sound must not affect the answer
 
 
 def phone_note(n):
@@ -4254,13 +4255,13 @@ def quit_nova():
         try:
             f()
         except Exception:
-            pass
+            pass    # intentional: quit continues past a part that is already stopped
     avatar_client.send("quit", timeout=2)
     if quit_hook:
         try:
             quit_hook()
         except Exception:
-            pass
+            pass    # intentional: window/tray teardown is best effort
     threading.Timer(3, lambda: os._exit(0)).start()   # whatever is still running (phone, connectors) stops with us
 
 
