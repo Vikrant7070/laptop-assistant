@@ -30,6 +30,18 @@ A big cloud model understands multi-step tasks much better than the small local 
   photos never do. The local vision model always does the looking, so keep `qwen3-vl:4b-instruct` installed.
 - Cloud use is billed by the provider. Gemini's free tier is enough for light use.
 
+## Install the Python parts
+```
+pip install -e .[voice,gpu,camera,cloud]
+```
+The core (chat window, tray, tools) installs on its own with `pip install -e .`; each extra adds one part: `voice`
+(Whisper hearing and the Kokoro voice), `gpu` (Whisper on the NVIDIA card), `camera`, `cloud` (the Claude brain).
+`requirements.txt` holds the exact versions tested on this laptop: add `-c requirements.txt` to install exactly those.
+
+**Is everything ready?** `python -m nova --doctor` checks Ollama and your models, the GPU, the Kokoro voice files, the
+microphone, WebView2 and the data folder, one line each, with the command that fixes it. `Start Nova.bat` runs it
+first and shows anything that stops Nova working in a message box.
+
 ## Start Nova
 Double-click **`Start Nova.bat`**. 3D Nova appears on your desktop and a tray icon shows up; the chat window starts hidden, so press **Ctrl+Alt+N** (or click her or the tray icon) to open it. `pythonw desktop.py --show` opens the chat window straight away; `python -m nova` does the same from a terminal, and `python -m nova --version` prints the version. The first time, pick your model in **⚙ Model**.
 
