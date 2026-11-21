@@ -82,7 +82,7 @@ the same approval rules as a direct tool call.
 \* Approximate on purpose; the point is the relative size. The three biggest files are the ones
 Part B splits or shrinks.
 
-`static/index.html` is the chat UI, `static/nova3d.html` the live 3D renderer. `skills/*.md` are the
+`static/index.html` is the chat UI (`nova.css`, `nova.js`; `knowledge.html` + `knowledge.js` is the Knowledge page), `static/nova3d.html` the live 3D renderer. `skills/*.md` are the
 user's routines, `config/model_routing.json` the routing knobs, `characters/` the persona folders.
 
 ## Invariants
@@ -99,6 +99,8 @@ user's routines, `config/model_routing.json` the routing knobs, `characters/` th
   each test installs its own `Store` in a temp folder, and the suite stubs the voice, the keyboard, the browser, PowerShell and the 3D body, so the suite is safe on any machine.
 - **Heavy imports stay lazy.** `faster-whisper`, `kokoro`, `cv2`, `uiautomation`, `comtypes` and
   `sounddevice` are imported inside functions, which is why `requirements-test.txt` can be small.
+- **Page markup is escaped by default.** `static/markup.js` gives `` html`...` `` (every `${value}` escaped unless it
+  is itself `html`) and `put()`, the only place that sets `innerHTML`. Don't build markup any other way.
 - **History is sized to the model.** `llm.context_size` knows the local 8K window and the cloud
   providers' windows; `app.history_limit` keeps local at 12 messages and gives a cloud brain more
   (bounded, because a long prompt costs money and time).
@@ -131,13 +133,12 @@ embedding model, and re-check the tool cases with embeddings when the model is p
 The plan is `docs/part-b-plan-v3.md`. What is left is large and higher-risk, so it was deliberately
 not attempted in the first pass:
 
-1. UI split of `static/index.html`.
-2. Tool registry: one place that declares schema + handler + risk, and `tools.py` as a package.
-3. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
-4. Vision close-out: an on/off switch for the one screen look. (Vision is already advisory: the
+1. Tool registry: one place that declares schema + handler + risk, and `tools.py` as a package.
+2. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
+3. Vision close-out: an on/off switch for the one screen look. (Vision is already advisory: the
    Judge in `nova/actions/judge.py` trusts deterministic checks first.)
 
-Already done: the protocol module, model-aware history, exception logging, the data store, and the packaging/docs
+Already done: the protocol module, model-aware history, exception logging, the data store, the chat UI split, and the packaging/docs
 pass (`python -m nova`, this file, `README.md`, `docs/REVIEW.md` §6).
 
 Smaller known gaps found while writing the golden set:
