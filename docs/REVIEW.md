@@ -137,6 +137,7 @@ vision-check rewrite. They are large, higher-risk changes (described in the plan
 seams are stable. The golden set and the module map exist so those can be reviewed against
 something concrete.
 
-State: **1003 passed, 1 skipped** (`python -m pytest -q`, ~160 s), `ruff check .` clean,
-`scripts\check.cmd` green.
+State after merging master (Judge, Learner, child brain): **1096 passed, 1 skipped**
+(`python -m pytest -q`, ~100 s), `ruff check .` clean, `scripts\check.cmd` green. The remaining work is in
+`docs/part-b-plan-v3.md`.
 

@@ -42,13 +42,16 @@ the same approval rules as a direct tool call.
 
 | Path | Lines* | Job |
 |---|---|---|
-| `nova/core/app.py` | ~4.3k | Flask routes, prompt, task loop, tool execution, approvals, skills playback, settings |
-| `nova/actions/tools.py` | ~2.8k | Every tool schema and implementation (101 tools) |
+| `nova/core/app.py` | ~4.6k | Flask routes, prompt, task loop, tool execution, approvals, skills playback, settings, Judge glue (`check_step`, `final_judge`) |
+| `nova/actions/tools.py` | ~3.1k | Every tool schema and implementation (101 tools), app guard, typing by paste |
 | `nova/audio/voice.py` | ~1.8k | Whisper listening, Kokoro/SAPI speaking, barge-in, wake word |
 | `nova/actions/skills.py` | ~1.2k | Parse, match, render, run and edit `skills/*.md` |
 | `nova/avatar/avatar.py` | ~0.94k | 3D window, frame bridge, speech gestures |
 | `nova/actions/coworker.py` | ~0.77k | Background jobs (research, drafts) |
 | `nova/actions/recorder.py` | ~0.65k | "Watch me" recording of user actions |
+| `nova/actions/learner.py` | ~0.42k | Episode log, learned facts, skill offers from repeated tasks |
+| `nova/actions/judge.py` | ~0.19k | Is the task done? Deterministic checks first, one advisory screen look last |
+| `nova/actions/questions.py` | ~0.13k | Daily list of questions Nova wants to ask the user |
 | `nova/actions/mcp.py` | ~0.52k | MCP connector client (stdio + HTTP JSON-RPC) |
 | `nova/avatar/body.py` | ~0.51k | Moves, look, gesture selection |
 | `nova/brain/cloud.py` | ~0.47k | Gemini / OpenAI / Anthropic adapters and key storage |
@@ -123,14 +126,15 @@ embedding model, and re-check the tool cases with embeddings when the model is p
 
 ## Known follow-ups (Part B)
 
-The plan is in `C:\Users\vikra\.opencode\plan\nova-part-b-plan-v2.md` (outside the repo). What is
-left is large and higher-risk, so it was deliberately not attempted in the first pass:
+The plan is `docs/part-b-plan-v3.md`. What is left is large and higher-risk, so it was deliberately
+not attempted in the first pass:
 
-1. `app.py` split: protocol/HTTP, prompt building, tool execution, skills playback, settings.
-2. Tool registry: one place that declares schema + handler + risk, instead of three parallel lists.
-3. `store.py` for settings / notes / reminders instead of module-level file paths.
-4. Vision advisory instead of silent failure when the screen/camera tool cannot see.
-5. UI split of `static/index.html`.
+1. `store.py` for settings / notes / reminders instead of module-level file paths.
+2. UI split of `static/index.html`.
+3. Tool registry: one place that declares schema + handler + risk, and `tools.py` as a package.
+4. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
+5. Vision close-out: an on/off switch for the one screen look. (Vision is already advisory: the
+   Judge in `nova/actions/judge.py` trusts deterministic checks first.)
 
 Already done: the protocol module, model-aware history, exception logging, and the packaging/docs
 pass (`python -m nova`, this file, `README.md`, `docs/REVIEW.md` §6).
