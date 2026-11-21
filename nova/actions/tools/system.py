@@ -228,11 +228,12 @@ def ui_way(command):
 
 
 @tool("Last resort, HIDDEN from the user: a PowerShell command for system jobs no app or other "
-      "tool can do (system settings and info). The user wants to watch you work, so commands an on-screen tool "
+      "tool can do (system settings and info). The user wants to watch you work, so commands a visible tool "
       "can do (listing/reading files, opening/closing apps, git, command-line programs) come back not run, with "
       "the tool to use. NOT for web research (web_research/read_page), NOT for git/coding (VS Code). "
       "as_admin=true runs it elevated (Windows shows a UAC prompt).", friendly="Ran a command",
-      risky="Run a PowerShell command", core=True,
+      risky="Run a PowerShell command",
+      hints="powershell command, windows version, os build number, hotfixes, bios, uptime, registry value",
       props={"command": common.S, "as_admin": common.B,
       "no_ui_way": {"type": "string", "description": "only after a 'Not run' answer: why no on-screen way works"}},
       required=["command"])
