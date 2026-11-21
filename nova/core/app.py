@@ -38,6 +38,7 @@ from nova.actions import judge
 from nova.actions import learner
 from nova.actions import questions
 from nova.actions import recorder
+from nova.actions import workers
 from nova.brain import toolpick
 from nova.brain import router
 from nova.actions import tools
@@ -338,6 +339,8 @@ FRIENDLY = {
     "read_notifications": "Read your notifications", "check_email": "Looked in your Gmail", "connect_gmail": "Opened the Gmail sign-in", "read_email": "Read an email", "mute_notifications": "Changed which apps' notifications I read", "draft_email": "Started drafting an email",
     "write_document": "Started writing a document", "research_in_background": "Started researching in the background", "show_finished_work": "Showed finished work",
     "background_jobs": "Checked background jobs", "stop_background_job": "Stopped a background job",
+    "start_coding_job": "Started a coding job", "commit_coding_job": "Committed the changes",
+    "show_coding_changes": "Looked at the changes", "retry_coding_job": "Gave the job to another worker",
     "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
     "list_skills": "Listed my skills", "delete_skill": "Deleted a skill", "edit_skill": "Changed a skill",
     "undo_skill_change": "Undid a skill change", "save_task_as_skill": "Saved a skill", "login_if_needed": "Checked your sign-in",
@@ -355,6 +358,8 @@ ASK = {
     "toggle_wifi": "Switch Wi-Fi (admin)", "click_element": "Click something", "click_at": "Click on the screen",
     "click_nth": "Click an item", "fill_in": "Type into a box", "fill_form": "Fill in the form with your saved details", "delete_skill": "Delete a saved skill",
     "run_skill": "Run a skill", "login_if_needed": "Sign in on a website",
+    "start_coding_job": "Start a coding job in the background", "commit_coding_job": "Commit the changes (git, not pushed)",
+    "retry_coding_job": "Give the coding job to another worker",
 }
 
 
@@ -370,7 +375,17 @@ def ask_text(c):
         if s:
             first = re.split(r"(?<=[.!?])\s", s["description"] or "")[0].rstrip(".")[:90]
             return f"Run my '{s['name']}' skill" + (f" ({first})" if first else "")
+    if c["name"] in ("start_coding_job", "retry_coding_job") and coding_job_worker(c) == "claude":
+        budget = float(workers.config()["claude"].get("budget_usd") or 1)
+        return f"Send this coding job to Claude Code (paid, up to ${budget:.2f})"
     return ask_label(c["name"])
+
+
+def coding_job_worker(call):
+    args = call.get("args") or {}
+    if call.get("name") == "retry_coding_job":
+        return workers.pick_worker(args.get("worker") or "claude")
+    return workers.pick_worker(args.get("worker") or "auto", args.get("size") or "small")
 
 
 def skill_needs_ok(args):
@@ -412,6 +427,12 @@ def is_risky(call):
         return False
     if name in ("press_keys", "type_text") and wrong_app(call):
         return False                                    # it will be refused (wrong window): nothing to ask about
+    # Coding workers (workers.py, manager plan section 9 answer 3): the cheap one runs without asking, Claude Code
+    # costs money so it always asks, and nothing is committed without the user's OK - whatever the autonomy level.
+    if name == "commit_coding_job":
+        return True
+    if name in ("start_coding_job", "retry_coding_job"):
+        return coding_job_worker(call) == "claude" or bool(state.get("remote"))
     if name == "run_skill" and skill_needs_ok(args):    # it only sounds like that skill (or the brain picked it): ask
         return True
     if mcp.owns(name):                                  # 🔌 connector tools (mcp.py): ask unless known to be safe
@@ -727,7 +748,15 @@ def choose_local_route(task, s):
     """Pick the local helper brain from the request's words (brain/router.py); _agent_loop acts on it next turn."""
     if task and router.options(s)["auto_route"] and not task.get("routed"):
         goal = task.get("goal", "")
+        if JOB_STATUS_RE.search(goal):      # "how's the coding job going?" is a background_jobs lookup, not code
+            task["route"] = None            # (live 2026-11-21: the coder brain took 269 s and guessed "still running")
+            return
         task["route"] = "code" if router.code_wanted(goal) else "deep" if router.deep_wanted(goal) else None
+
+
+JOB_STATUS_RE = re.compile(r"\b(how'?s|how is|is|status of|progress (of|on)|done with|finished)\b.{0,40}\b(job|jobs|"
+                           r"worker|research)\b|\b(job|jobs|worker)\b.{0,30}\b(going|done|finished|ready|status|"
+                           r"progress)\b", re.I)
 
 
 def local_route_for(task, s):
@@ -3675,7 +3704,7 @@ def job_done(job):
         line = f"Sorry, the {job['kind'].replace('_', ' ')} didn't work: {job['error']}"
         push_event({"reply": line, "kind": "job"})
         announce(line)
-        tell_away(line)
+        tell_away(line + _phone_hint(job, failed=True))
         return
     wake_body()
     if offer["job"] and offer["job"] is not job and time.time() < offer["until"]:
@@ -3684,11 +3713,24 @@ def job_done(job):
     line = job["result"] + " Want to see it?"
     push_event({"reply": "✅ " + line, "kind": "job", "offer": {"id": job["id"], "label": "Show it"}})
     announce("✅ " + line, spoken=line)
-    tell_away("✅ " + job["result"] + " It's on the laptop for when you're back.")
+    tell_away("✅ " + job["result"] + (_phone_hint(job) or " It's on the laptop for when you're back."))
     react_later("happy")
     if settings()["wake"] and not convo["on"] and silent_ok():     # listen for the "yes"
         listen_state["single"] = True
         threading.Thread(target=silent_loop, daemon=True).start()
+
+
+def _phone_hint(job, failed=False):
+    """What the user can reply from Telegram about a coding job (each reply still asks Yes/No before it acts)."""
+    if job.get("kind") != "coding":
+        return ""
+    if failed:
+        return ("\nReply \"try Claude Code\" to give it to Claude Code (paid - I'll ask first)."
+                if job.get("worker") != "claude" else "")
+    if job.get("files"):
+        return ("\nReply \"what changed?\" to see the diff, or \"commit it\" to commit (I'll ask first, "
+                "nothing is pushed).")
+    return ""
 
 
 def _next_offer():
@@ -3948,7 +3990,7 @@ def phone_confirm(approved):
 def phone_status():
     s = tools.stats()
     bat = "no battery" if s["battery"] is None else f"battery {s['battery']}% ({'charging' if s['plugged'] else 'on battery'})"
-    jobs = [j for j in coworker.jobs if j.get("status") == "running"]
+    jobs = [j for j in coworker.jobs if j.get("status") == "working"]     # coworker's word for a running job
     return (f"💻 Laptop: CPU {s['cpu']:.0f}%, memory {s['ram']:.0f}%, disk {s['disk']:.0f}%, {bat}, on for {s['uptime_h']} h."
             + (f"\n🛠 Working on: {', '.join(j['title'] for j in jobs)}" if jobs else "")
             + ("\n😴 I'm napping." if nap["asleep"] else "")
@@ -4093,6 +4135,20 @@ def phone_set():
     except phone_link.PhoneError as e:
         return jsonify(error=str(e), **phone.info()), 400
     return jsonify(phone.info())
+
+
+@app.get("/api/workers")
+def workers_get():
+    """⚙ Workers: the coding workers (workers.py) - installed / signed in, models, budgets, recent jobs."""
+    return jsonify(workers.overview(fresh=request.args.get("fresh") == "1"))
+
+
+@app.post("/api/workers")
+def workers_set():
+    try:
+        return jsonify(workers.save_settings(_body()))
+    except ValueError as e:
+        return jsonify(error=str(e), **workers.overview()), 400
 
 
 # ------------------------------------------------------------------ 👋 presence (presence.py): back -> greet, gone -> lock

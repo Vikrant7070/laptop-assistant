@@ -159,6 +159,7 @@
 <button type="button" data-tab="phone">📱 Phone</button>
 <button type="button" data-tab="forms">📝 Forms</button>
 <button type="button" data-tab="tools">🔌 Connectors</button>
+<button type="button" data-tab="workers">🧑‍💻 Workers</button>
 </div>
 <div class="pane on" data-pane="brain">
       <p style="margin-bottom:2px"><b>Who thinks for me?</b></p>
@@ -314,6 +315,26 @@
         <textarea id="mcpCfg" class="sel" rows="7" spellcheck="false" style="font-family:Consolas,monospace;font-size:12.5px;resize:vertical" placeholder='{"mcpServers": {"files": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/you/Documents"]}}}'></textarea>
         <button id="mcpSave" class="yes" style="width:auto;padding:8px 14px">Save &amp; connect</button>
         <div id="mcpStatus" class="mood" style="margin-top:6px"></div>
+      </div>
+</div>
+<div class="pane" data-pane="workers">
+      <h3 style="margin-top:16px">🧑‍💻 Coding workers</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Say <i>"fix the bug in my project at C:\…"</i> and Nova hands the job to a coding agent that works in the background. Small jobs go to the cheap one (OpenCode + DeepSeek) without asking; Claude Code costs money, so she always asks first. Workers never commit, push or delete - you say <i>"commit it"</i> when you've looked (she asks Yes / No). One job per project folder at a time; others wait in line.</p>
+        <div id="wkStatus" class="mood" style="margin-top:8px"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 10px;margin-top:8px">
+          <label class="mood">OpenCode model<input id="wkOcModel" class="sel" spellcheck="false"></label>
+          <label class="mood">If it hits its free limit, try<input id="wkOcFallbacks" class="sel" spellcheck="false" placeholder="model, model"></label>
+          <label class="mood">OpenCode time limit (minutes)<input id="wkOcTimeout" class="sel" type="number" min="1" max="240"></label>
+          <label class="mood">Claude Code model (empty = its default)<input id="wkCcModel" class="sel" spellcheck="false"></label>
+          <label class="mood">Claude Code limit per job ($)<input id="wkCcBudget" class="sel" type="number" min="0.05" step="0.05"></label>
+          <label class="mood">Claude Code limit per day ($)<input id="wkDaily" class="sel" type="number" min="0" step="0.5"></label>
+          <label class="mood">Claude Code time limit (minutes)<input id="wkCcTimeout" class="sel" type="number" min="1" max="240"></label>
+        </div>
+        <button id="wkSave" class="yes" style="width:auto;padding:8px 14px;margin-top:8px">Save workers</button>
+        <a id="wkRecheck" href="#" style="font-size:13px;margin-left:8px">Check again</a>
+        <span id="wkNote" class="mood" style="margin-left:8px"></span>
+        <div id="wkRecent" class="mood" style="margin-top:8px"></div>
       </div>
 </div>
       <button class="yes" id="saveModel" style="margin-top:12px">Save &amp; wake up Nova</button>

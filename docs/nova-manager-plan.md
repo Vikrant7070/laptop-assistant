@@ -144,7 +144,67 @@ into "done" by vision; tests cover the trust order.
 **Done when:** "fix the typo in my README" runs on OpenCode/DeepSeek in the background, Nova says when it's done,
 and nothing is committed without the user's OK.
 
+**As built (2026-11-21):** `nova/actions/workers.py`, tools `start_coding_job` / `commit_coding_job` (status and stop
+are the existing `background_jobs` / `stop_background_job` - a coding job is a `coworker.py` job of kind "coding").
+- **Where the workers are:** OpenCode = `%LOCALAPPDATA%\Programs\ai.opencode.desktop\resources\opencode-cli.exe`;
+  Claude Code = the newest `%LOCALAPPDATA%\Claude-Data\*\claude-code\<ver>\*\claude.exe` (the desktop app's copy).
+  Neither is on the PATH. `data/workers.json` (written with defaults) can set `exe`, models, budgets, timeouts.
+- **Commands:** `opencode-cli run --standalone --format json --archived --title … -m <model> <brief>` (without
+  `--standalone` the run goes to OpenCode's background service, which ignores the permissions passed in);
+  `claude -p <brief> --output-format json --permission-mode acceptEdits --max-budget-usd N --disallowedTools …`.
+- **Models:** OpenCode `opencode/deepseek-v4.1-flash-free`, then `opencode/big-pickle` when the free limit (429) is
+  hit. Claude Code: its default model, $1 per job, $3 per day (from the jobs' reported cost).
+- **Safety:** OpenCode permissions are deny-by-default with read/edit/search allowed (its v2 `execute` tool runs
+  code and `subagent` keeps working after the run - both denied). Claude Code: git commit/push/reset/checkout, rm,
+  gh, curl, WebFetch denied. For every process a worker starts, git push goes to a remote helper that doesn't exist
+  and gh gets a dead token. Afterwards Nova compares with the "before" snapshot: a commit is undone with
+  `git reset --soft` (edits kept) and reported; only the files the job changed are listed and later committed.
+  Git folders only; one job per folder. The worker gets `PWD` = the job folder (OpenCode follows an inherited PWD
+  over its real working folder - started from Git Bash it worked on Nova's own README).
+- **Approvals (app.is_risky, any autonomy level):** OpenCode starts without asking; Claude Code always asks ("Send
+  this coding job to Claude Code (paid, up to $1.00)"); `commit_coding_job` always asks; from the phone, every
+  coding job asks. A failed OpenCode job offers Claude Code in its message; it never escalates by itself.
+- **Reports:** the usual job_done path - spoken + chat "✅ … changed N files … Nothing is committed - say 'commit it'
+  … Want to see it?" ("yes" opens the folder), Telegram when away; `background_jobs` shows the live step ("editing
+  README.md") and, when done, the changed files. History in `data/jobs.json`, raw output in `data/jobs/<key>.log`.
+- **Live check (2026-11-21), real Nova (local qwen3-vl:4b, GPU shared with child-brain training):** "Fix the spelling
+  mistakes in the README.md of my project at …" → start_coding_job → DeepSeek free limit → big-pickle, done in 23 s,
+  spoken "finished … changed 1 file"; "how's the coding job going?" → background_jobs → correct; "commit it" →
+  Allow/No → Allow → only the job's file committed, nothing pushed. Two fixes came out of it:
+  1. the tool picker cuts each tool's text to 128 tokens, so start_coding_job's hints never counted ("fix … README of
+     my project" ranked it 22nd and she opened Notepad) - `toolpick.CODING` words (readme, repo, bug, refactor, my
+     project/code, opencode, commit…) now always bring the coding tools;
+  2. "coding job" in a status question routed to the coder brain (269 s, guessed "still running" without a tool) -
+     `app.JOB_STATUS_RE` keeps job-status questions on the main brain.
+- **Added later the same day:**
+  - **⚙ Workers tab** (`/api/workers`, `workers.overview` / `save_settings`): installed / signed-in state with the
+    sign-in command, models and fallbacks, Claude Code limits per job and per day, time limits, spent today, recent jobs.
+    Only known fields are saved; numbers are clamped; bad model names and missing programs are refused.
+  - **Queue instead of refuse:** a job for a busy folder waits in line ("waiting in line behind job #N", stoppable,
+    record status "queued"), at most 3 per folder; the record shows "checking" while Nova inspects the changes.
+  - **Phone:** coding-job messages sent while the user is away end with what they can reply - "what changed?"
+    (`show_coding_changes`: files + short diff), "commit it" (Yes/No first), or for a failed job "try Claude Code"
+    (`retry_coding_job`: same brief and folder, Yes/No first). Telegram /status now lists running jobs (it looked for
+    "running"; coworker jobs say "working").
+  - **Claude Code sign-in:** the desktop app's bundled claude.exe is NOT signed in for use outside the app
+    (`auth status` → loggedIn false; ~/.claude/.credentials.json holds no Claude Code login). Nova checks with
+    `claude auth status` before a Claude Code job and tells the user the one command to run
+    (`& "<claude.exe>" auth login`); a "Not logged in" answer becomes the same message. Workers also get an
+    environment without inherited `CLAUDE*` variables or a local `ANTHROPIC_BASE_URL` (Nova started from a Claude desktop
+    session handed those on). A real Claude Code job has not run yet - it needs that sign-in first.
+- **Still open:** the research worker as a "worker" (moved to Phase 4, step 0); a real Claude Code job once the user
+  has signed in (left for later, 2026-11-21).
+
 ## 6. Phase 4 — The manager loop (brief writer)
+
+**Step 0 (first, before the manager loop): research becomes a worker.** Research today runs on its own path
+(`research_in_background` in coworker.py): it works, but it isn't in the worker system Phase 3 built. Move it in, so
+the manager can pick from one list:
+- listed in ⚙ Workers with its own settings (how many sources, whether the cloud brain may write the report);
+- recorded in `data/jobs.json` like coding jobs (shown under "Recent jobs", findable later: "the research from Tuesday");
+- the same status / stop / retry tools and phone hints as coding jobs;
+- `pick_worker` can choose it, so "research the best library, then add it to my project" becomes research → coding.
+What the user sees when they say "research X" stays the same.
 
 For any request that is bigger than a laptop skill:
 

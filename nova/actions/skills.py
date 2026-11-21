@@ -66,7 +66,8 @@ INVOKES = ("auto", "confirm_if_fuzzy", "explicit_only")
 STATUSES = ("draft", "active", "deprecated")
 CONSEQUENTIAL = {"kill_process", "organize_folder", "delete_to_recycle_bin", "clean_temp_files", "run_powershell",
                  "run_in_terminal", "write_text_file", "move_or_rename", "install_app", "uninstall_app", "power_action",
-                 "close_all_windows", "empty_recycle_bin", "toggle_wifi", "set_wallpaper", "draft_email", "fill_form"}
+                 "close_all_windows", "empty_recycle_bin", "toggle_wifi", "set_wallpaper", "draft_email", "fill_form",
+                 "start_coding_job", "commit_coding_job", "retry_coding_job"}
 READ_ONLY = ("get_", "list_", "read_", "look_", "find_", "search_", "check_", "show_", "recall_", "network_info",
              "temp_files_size", "background_jobs", "research_in_background", "take_screenshot")
 

@@ -2373,6 +2373,27 @@ def stop_background_job(which="all"):
     return coworker.stop(which or "all")
 
 
+def start_coding_job(brief, folder="", worker="auto", size="small"):
+    # workers.py: a coding agent (OpenCode/DeepSeek or Claude Code) does the job in the background, never commits.
+    from nova.actions import workers
+    return workers.start(brief, folder, worker or "auto", size or "small")
+
+
+def commit_coding_job(which="latest", message=""):
+    from nova.actions import workers
+    return workers.commit(which or "latest", message or "")
+
+
+def show_coding_changes(which="latest"):
+    from nova.actions import workers
+    return workers.changes(which or "latest")
+
+
+def retry_coding_job(which="latest", worker="claude"):
+    from nova.actions import workers
+    return workers.retry(which or "latest", worker or "claude")
+
+
 # ---------------------------------------------------------------- skills (skills/*.md - see skills.py)
 
 def run_skill(name, input=""):
@@ -3006,6 +3027,29 @@ TOOLS = [
     _tool("stop_background_job", "Stop a running background co-worker job (research, email draft, document) when "
           "the user says to stop, cancel or forget it.",
           {"which": {"type": "string", "description": "'all', the job number, or words from it like 'research'"}}),
+    _tool("start_coding_job", "Hand a CODING job to a coding agent that works in the BACKGROUND in a project folder "
+          "(a git project): fix a bug, change code, edit a README, build a page or app. You don't write the code "
+          "yourself. The worker never commits - you tell the user when it's done and they decide. Ask for the folder "
+          "if you don't know it. Check its progress with background_jobs, stop it with stop_background_job.",
+          {"brief": {"type": "string", "description": "the whole job for the worker: what to change and why, every "
+                                                      "detail the user gave, and what 'done' means"},
+           "folder": {"type": "string", "description": "the project folder, full path"},
+           "worker": {"type": "string", "enum": ["auto", "opencode", "claude"],
+                      "description": "auto = the cheap worker (OpenCode + DeepSeek) for small jobs, Claude Code for "
+                                     "big ones; 'claude' only if the user asked for it or the cheap one failed"},
+           "size": {"type": "string", "enum": ["small", "big"],
+                    "description": "big = a new site/app or a multi-file feature"}}, ["brief", "folder"]),
+    _tool("commit_coding_job", "Commit (git, locally - never pushes) the files a finished coding job changed, only "
+          "when the user says to commit it.",
+          {"which": {"type": "string", "description": "'latest' or the job number"},
+           "message": {"type": "string", "description": "the commit message, if the user gave one"}}),
+    _tool("show_coding_changes", "Show what a finished coding job changed (files and the diff), e.g. 'what changed?', "
+          "'show me the changes'.",
+          {"which": {"type": "string", "description": "'latest' or the job number"}}),
+    _tool("retry_coding_job", "Give the last coding job (usually one that failed) to another worker with the same "
+          "brief and folder, e.g. 'try it with Claude Code'.",
+          {"which": {"type": "string", "description": "'latest' or the job number"},
+           "worker": {"type": "string", "enum": ["claude", "opencode"]}}),
     _tool("go_to_sleep", "Go to sleep: stop listening and nap in the corner of the screen. Call it whenever the user "
           "tells you to sleep, rest, stop listening, or says goodnight/bye."),
     _tool("run_skill", "Run one of your saved skills (a routine or recipe the user taught you) by its name.",

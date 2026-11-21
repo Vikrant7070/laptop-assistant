@@ -398,7 +398,7 @@ function openSetup(s) {
   $("#reasoning").value = s.reasoning || "auto";
   $("#sounds").checked = s.reaction_sounds !== false; $("#powerOk").checked = !!s.power_ok;
   $("#setup").classList.add("show");
-  loadPhone(); loadGmail(); loadMobile(); loadMcp(); loadForms();
+  loadPhone(); loadGmail(); loadMobile(); loadMcp(); loadForms(); loadWorkers();
 }
 /* ---------------- 📱 phone + 🔌 connectors (their own Save buttons) ---------------- */
 function showPhone(p) {
@@ -483,6 +483,35 @@ $("#formsSave").onclick = async () => {
   const details = {}; document.querySelectorAll("#formFields input").forEach(i => details[i.dataset.k] = i.value);
   try { showForms(await api("/api/forms", {details})); $("#formsNote").textContent = "Saved on this laptop ✓"; }
   catch (e) { put($("#formsNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
+};
+/* ---------------- 🧑‍💻 coding workers (workers.py) ---------------- */
+function showWorkers(w) {
+  const c = w.config, oc = c.opencode, cc = c.claude;
+  const line = (name, ok, extra) => html`<div>${ok ? "✅" : "⚠️"} <b>${name}</b> - ${extra}</div>`;
+  const claudeState = !w.exe.claude ? "not found on this laptop" : w.claude_signed_in ? "ready, signed in" :
+    w.claude_signed_in === false ? "installed but not signed in" : "installed (couldn't check the sign-in)";
+  put($("#wkStatus"), html`${line("OpenCode + DeepSeek", !!w.exe.opencode, w.exe.opencode ? "ready" : "not found on this laptop")}${
+    line("Claude Code", !!(w.exe.claude && w.claude_signed_in), claudeState)}${
+    w.sign_in_help && html`<div style="margin-top:4px">${w.sign_in_help}</div>`}<div style="margin-top:4px">Claude Code spent today: $${
+    (+w.spent_today || 0).toFixed(2)} of $${(+c.daily_budget_usd || 0).toFixed(2)}${
+    w.running.length > 0 && ` · working now: ${w.running.length}`}${w.waiting > 0 && ` · waiting in line: ${w.waiting}`}</div>`);
+  $("#wkOcModel").value = oc.model || ""; $("#wkOcFallbacks").value = (oc.fallback_models || []).join(", ");
+  $("#wkOcTimeout").value = oc.timeout_min; $("#wkCcModel").value = cc.model || "";
+  $("#wkCcBudget").value = cc.budget_usd; $("#wkDaily").value = c.daily_budget_usd; $("#wkCcTimeout").value = cc.timeout_min;
+  const when = t => t ? new Date(t * 1000).toLocaleString([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) + " · " : "";
+  put($("#wkRecent"), w.recent.length > 0 && html`<b>Recent jobs</b>${w.recent.map(r => html`<div>${when(r.started)}#${r.job} ${r.worker} · ${
+    r.status}${r.files > 0 && ` · ${r.files} file${r.files > 1 ? "s" : ""}`}${r.committed && " · committed"}${
+    r.cost > 0 && ` · $${(+r.cost).toFixed(2)}`} - ${r.brief}</div>`)}`);
+}
+async function loadWorkers(fresh) { try { showWorkers(await (await fetch("/api/workers" + (fresh ? "?fresh=1" : ""))).json()); } catch (e) {} }
+$("#wkRecheck").onclick = (e) => { e.preventDefault(); $("#wkNote").textContent = "Checking…"; loadWorkers(true).then(() => $("#wkNote").textContent = ""); };
+$("#wkSave").onclick = async () => {
+  try {
+    showWorkers(await api("/api/workers", {opencode_model: $("#wkOcModel").value, opencode_fallbacks: $("#wkOcFallbacks").value,
+      opencode_timeout_min: $("#wkOcTimeout").value, claude_model: $("#wkCcModel").value, claude_budget_usd: $("#wkCcBudget").value,
+      daily_budget_usd: $("#wkDaily").value, claude_timeout_min: $("#wkCcTimeout").value}));
+    $("#wkNote").textContent = "Saved ✓";
+  } catch (e) { put($("#wkNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 };
 async function loadMcp() { try { const j = await (await fetch("/api/mcp")).json(); $("#mcpCfg").value = j.config; showMcp(j); } catch (e) {} }
 $("#mcpSave").onclick = async () => {
