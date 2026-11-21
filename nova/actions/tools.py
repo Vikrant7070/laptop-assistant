@@ -2334,8 +2334,9 @@ LOCAL_TOPIC = re.compile(r"\b[a-z]:\\|\\users\\|\bmy (project|repo|repository|fo
                          r"|\b(last|latest) commit\b|\bgit (log|status|diff|branch)\b", re.I)
 
 
-def research_in_background(topic, focus="", kind="general", max_sources=3):
-    from nova.actions import coworker
+def research_in_background(topic, focus="", kind="general", max_sources=None):
+    # A worker now (workers.research, manager plan phase 4 step 0): recorded in the job history, settings in ⚙ Workers.
+    from nova.actions import coworker, workers
     if LOCAL_TOPIC.search(f"{topic} {focus}"):
         # The small local brain sent "the last commit of C:\...\project" to a web search (4 times in a row), and
         # after a plain "use run_in_terminal" it only listed options - so name the exact call to make.
@@ -2350,12 +2351,22 @@ def research_in_background(topic, focus="", kind="general", max_sources=3):
                  and j["title"].lower() == str(topic).strip()[:80].lower()), None)
     if same:
         return f"Already researching that (background job #{same['id']}) - wait for it; don't start it again."
-    return coworker.research(topic=topic, focus=focus, kind=kind, max_sources=max_sources)[1]
+    return workers.research(topic, focus=focus, kind=kind, max_sources=max_sources)
 
 
 def show_finished_work(which="latest"):
-    from nova.actions import coworker
-    return coworker.show(coworker.find(which or "latest"))
+    from nova.actions import coworker, workers
+    job = coworker.find(which or "latest")
+    if not job:            # after a restart only the job history knows it: open the saved research report
+        rec = workers.last_record(which or "latest", need_files=False, kinds=("research",))
+        if rec and rec.get("path"):
+            job = {"title": rec.get("topic") or rec["brief"], "path": rec["path"], "hwnd": None}
+    return coworker.show(job)
+
+
+def research_report(which="latest"):
+    from nova.actions import workers
+    return workers.report(which or "latest")
 
 
 def go_to_sleep():
@@ -2389,9 +2400,10 @@ def show_coding_changes(which="latest"):
     return workers.changes(which or "latest")
 
 
-def retry_coding_job(which="latest", worker="claude"):
+def retry_coding_job(which="latest", worker=""):
+    # Any job, despite the name (kept so old skills and the phone hints still match): research runs again as research.
     from nova.actions import workers
-    return workers.retry(which or "latest", worker or "claude")
+    return workers.retry(which or "latest", worker or "")
 
 
 # ---------------------------------------------------------------- skills (skills/*.md - see skills.py)
@@ -3046,10 +3058,14 @@ TOOLS = [
     _tool("show_coding_changes", "Show what a finished coding job changed (files and the diff), e.g. 'what changed?', "
           "'show me the changes'.",
           {"which": {"type": "string", "description": "'latest' or the job number"}}),
-    _tool("retry_coding_job", "Give the last coding job (usually one that failed) to another worker with the same "
-          "brief and folder, e.g. 'try it with Claude Code'.",
+    _tool("retry_coding_job", "Try a background job again (usually one that failed): a coding job with another worker "
+          "and the same brief and folder ('try it with Claude Code'), or a research job again ('try again').",
           {"which": {"type": "string", "description": "'latest' or the job number"},
-           "worker": {"type": "string", "enum": ["claude", "opencode"]}}),
+           "worker": {"type": "string", "enum": ["auto", "claude", "opencode", "research"],
+                      "description": "auto = research again for research, Claude Code for a coding job"}}),
+    _tool("research_report", "Read out / send the report of a finished research job (findings and sources), e.g. "
+          "'send me the report', 'what did you find?', 'the research from Tuesday'.",
+          {"which": {"type": "string", "description": "'latest', the job number, or words/day from it"}}),
     _tool("go_to_sleep", "Go to sleep: stop listening and nap in the corner of the screen. Call it whenever the user "
           "tells you to sleep, rest, stop listening, or says goodnight/bye."),
     _tool("run_skill", "Run one of your saved skills (a routine or recipe the user taught you) by its name.",

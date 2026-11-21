@@ -41,7 +41,7 @@ GROUPS = [
     {"get_clipboard", "set_clipboard", "read_selection"},
     {"window_action", "minimize_all_windows", "close_all_windows", "drag_window", "list_windows"},
     {"draft_email", "write_document", "research_in_background", "show_finished_work", "background_jobs",
-     "stop_background_job", "start_coding_job", "commit_coding_job"},                                         # co-worker
+     "stop_background_job", "start_coding_job", "commit_coding_job", "retry_coding_job", "research_report"},                                         # co-worker
     {"run_skill", "save_skill", "edit_skill", "undo_skill_change", "save_task_as_skill", "list_skills", "delete_skill",
      "start_watching", "stop_watching"},                                              # skills
     {"react", "new_move", "forget_move", "change_look"},                                                     # 3D body
@@ -115,7 +115,10 @@ HINTS = {
                         "page app feature, refactor, add tests, coding job, use opencode deepseek claude code",
     "commit_coding_job": "commit it, commit the changes, commit what the worker changed, git commit",
     "show_coding_changes": "what changed, show me the changes, the diff, what did the worker change",
-    "retry_coding_job": "try it with claude code, try again with the other worker, give it to claude",
+    "retry_coding_job": "try it with claude code, try again with the other worker, give it to claude, try the job "
+                        "again, run the research again",
+    "research_report": "send me the report, what did you find, the research findings, the research from tuesday, "
+                       "read me the research",
     "stop_background_job": "stop the research, cancel the email, forget that job, stop working on that in the background",
     "save_skill": "when I say this do that, learn this routine, teach you a new skill, remember how to do it, shortcut",
     "list_skills": "what skills routines do you know, what have I taught you",

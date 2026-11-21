@@ -318,7 +318,7 @@
       </div>
 </div>
 <div class="pane" data-pane="workers">
-      <h3 style="margin-top:16px">🧑‍💻 Coding workers</h3>
+      <h3 style="margin-top:16px">🧑‍💻 Workers</h3>
       <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
         <p class="mood" style="margin:6px 0 0">Say <i>"fix the bug in my project at C:\…"</i> and Nova hands the job to a coding agent that works in the background. Small jobs go to the cheap one (OpenCode + DeepSeek) without asking; Claude Code costs money, so she always asks first. Workers never commit, push or delete - you say <i>"commit it"</i> when you've looked (she asks Yes / No). One job per project folder at a time; others wait in line.</p>
         <div id="wkStatus" class="mood" style="margin-top:8px"></div>
@@ -330,6 +330,12 @@
           <label class="mood">Claude Code limit per job ($)<input id="wkCcBudget" class="sel" type="number" min="0.05" step="0.05"></label>
           <label class="mood">Claude Code limit per day ($)<input id="wkDaily" class="sel" type="number" min="0" step="0.5"></label>
           <label class="mood">Claude Code time limit (minutes)<input id="wkCcTimeout" class="sel" type="number" min="1" max="240"></label>
+        </div>
+        <h4 style="margin:12px 0 0">🔎 Research</h4>
+        <p class="mood" style="margin:4px 0 0">Say <i>"research …"</i> and Nova reads web pages in Chrome windows parked off-screen, then saves a report with sources in Documents\Nova. Free, never asks first.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 10px;margin-top:8px">
+          <label class="mood">Pages to read (1-5)<input id="wkRsSources" class="sel" type="number" min="1" max="5"></label>
+          <label class="mood" style="display:flex;gap:6px;align-items:center"><input id="wkRsCloud" type="checkbox"> The cloud brain may write the report (off = the brain on this laptop only)</label>
         </div>
         <button id="wkSave" class="yes" style="width:auto;padding:8px 14px;margin-top:8px">Save workers</button>
         <a id="wkRecheck" href="#" style="font-size:13px;margin-left:8px">Check again</a>

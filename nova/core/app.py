@@ -340,8 +340,8 @@ FRIENDLY = {
     "write_document": "Started writing a document", "research_in_background": "Started researching in the background", "show_finished_work": "Showed finished work",
     "background_jobs": "Checked background jobs", "stop_background_job": "Stopped a background job",
     "start_coding_job": "Started a coding job", "commit_coding_job": "Committed the changes",
-    "show_coding_changes": "Looked at the changes", "retry_coding_job": "Gave the job to another worker",
-    "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
+    "show_coding_changes": "Looked at the changes", "retry_coding_job": "Tried the job again",
+    "research_report": "Read the research report", "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
     "list_skills": "Listed my skills", "delete_skill": "Deleted a skill", "edit_skill": "Changed a skill",
     "undo_skill_change": "Undid a skill change", "save_task_as_skill": "Saved a skill", "login_if_needed": "Checked your sign-in",
     "start_watching": "Started watching", "stop_watching": "Watched you",
@@ -384,7 +384,7 @@ def ask_text(c):
 def coding_job_worker(call):
     args = call.get("args") or {}
     if call.get("name") == "retry_coding_job":
-        return workers.pick_worker(args.get("worker") or "claude")
+        return workers.retry_target(args.get("which") or "latest", args.get("worker") or "")[1]
     return workers.pick_worker(args.get("worker") or "auto", args.get("size") or "small")
 
 
@@ -3686,12 +3686,14 @@ SHOW_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|haan?|show( it| me)?|open 
 OFFER_SECS = 900
 
 
-def write_text(prompt, max_tokens=700):
-    """Her brain as a writer (emails, documents) - no tools, a longer answer than a spoken reply."""
+def write_text(prompt, max_tokens=700, local=False):
+    """Her brain as a writer (emails, documents) - no tools, a longer answer than a spoken reply.
+    local: the laptop's own brain only (⚙ Workers: research reports may not go to the cloud brain)."""
     s = settings()
     msgs = [{"role": "system", "content": "You are a skilled writer helping the user. Follow the requested format exactly."},
             {"role": "user", "content": prompt}]
-    _, text, _ = llm.chat(brain(s), msgs, [], fallback=s["model"], num_predict=max_tokens)
+    model = s["model"] if local else brain(s)
+    _, text, _ = llm.chat(model, msgs, [], fallback=None if local else s["model"], num_predict=max_tokens)
     return text
 
 
@@ -3724,7 +3726,10 @@ def job_done(job):
 
 
 def _phone_hint(job, failed=False):
-    """What the user can reply from Telegram about a coding job (each reply still asks Yes/No before it acts)."""
+    """What the user can reply from Telegram about a coding or research job (coding replies still ask Yes/No)."""
+    if job.get("kind") == "research":
+        return ("\nReply \"try again\" to run the research again." if failed
+                else "\nReply \"send the report\" to get the findings and sources here.")
     if job.get("kind") != "coding":
         return ""
     if failed:
@@ -3778,6 +3783,7 @@ def take_offer(text, force=None, job_id=None):
 
 
 coworker.configure(write=write_text, on_done=job_done, on_note=lambda t: think(t, cloud_too=False),
+                   write_local=lambda prompt, n: write_text(prompt, n, local=True),
                    sites=lambda topic: learner.sites_for(topic)[:2])
 
 
