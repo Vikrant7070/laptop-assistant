@@ -573,6 +573,27 @@ def guess_input(skill, query):
     return ""
 
 
+# The request asks for more than the skill ("research tea and then email it"): the brain has to plan the rest.
+MORE_WORK = re.compile(r"\b(and then|then|after that|afterwards|also|as well|plus)\b|\band (?:also )?(?:send|email|mail|open|"
+                       r"save|add|tell|show|make|write|put|play|share|text|message|post|commit)\b", re.I)
+
+
+def direct_args(skill, query):
+    """run_skill's arguments when an exact match can run without asking the brain first, else None.
+    Only an active routine (its steps run as code anyway), only when the request is just the skill, and only when
+    a needed {input} can be read from the request. (Live 2026-11-21: on an exact 'web-research' match the small brain
+    called list_windows and focused the user's Netflix window before - or instead of - running the skill.)"""
+    if not skill or skill.get("kind") != "routine" or skill.get("status") != "active" or MORE_WORK.search(query or ""):
+        return None
+    args = {"name": skill["name"]}
+    if skill.get("needs_input"):
+        guess = guess_input(skill, query)
+        if not guess:
+            return None
+        args["input"] = guess
+    return args
+
+
 def prompt_block(query, matched=None, how="exact"):
     """What goes into the prompt about skills for this request: the matching one in full, and the names of the rest."""
     skills = [s for s in load() if s["kind"] != "broken" and s["status"] == "active"]

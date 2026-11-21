@@ -444,5 +444,31 @@ def save_task_as_skill_now(args):
     return msg
 
 
+# ------------------------------------------------------------------ an exact skill match runs without a brain turn
+
+def plan_direct(task, skill, how):
+    """new_task: an exact match on a routine that the request names and nothing more -> its run_skill call is the
+    first step (task["direct"]), so no brain turn comes before it. Live 2026-11-21: on an exact 'web-research' match
+    the small brain listed windows and focused the user's Netflix window before - or instead of - running it."""
+    args = skills.direct_args(skill, task.get("goal", "")) if how == "exact" else None
+    if args:
+        task["direct"] = {"id": "direct_0", "name": "run_skill", "args": args}
+        conversation.task_log(f"SKILL DIRECT: run_skill {json.dumps(args, ensure_ascii=False)}")
+    return bool(args)
+
+
+def direct_call(model, call):
+    """The planned first step, stored in the history as the brain's own call would be (so later turns read it like
+    any other) -> (stored, text, calls), what llm.chat returns. The usual approvals still apply (is_risky)."""
+    llm.LAST["fallback"] = None
+    session.think(f"📜 Running my '{call['args']['name']}' skill straight away.", cloud_too=False)
+    if llm.supports_tools(model):
+        stored = {"role": "assistant", "content": "",
+                  "tool_calls": [{"function": {"name": call["name"], "arguments": call["args"]}}]}
+    else:
+        stored = {"role": "assistant", "content": json.dumps({"name": call["name"], "arguments": call["args"]})}
+    return stored, "", [call]
+
+
 # Used only when a function runs; imported last so each module is complete before its siblings load.
 from nova.core.app import config, conversation, judging, learning, session  # noqa: E402

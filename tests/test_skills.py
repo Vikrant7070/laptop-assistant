@@ -112,11 +112,11 @@ def test_skill_tools_registered():
 def test_routine_runs_every_step_without_the_brain(brain):
     set_autonomy("trusted")
     write("movie-time", ROUTINE)
-    fake, ran = brain([("", [("run_skill", {"name": "movie-time"})]), ("This must never be asked for", [])])
+    fake, ran = brain([("This must never be asked for", [])])
     out, _ = app.answer("movie time")
     assert [n for n, _ in ran] == ["minimize_all_windows", "open_website", "set_volume"]
     assert ran[2][1] == {"action": "up", "steps": 10}
-    assert len(fake.seen) == 1                          # one brain call to start it; the skill words its own ending
+    assert len(fake.seen) == 0                          # an exact match starts it in code; the skill words its own ending
     assert out["reply"] == "Enjoy the movie!"
     history = json.dumps(app.state["messages"])
     assert "Ran the skill 'movie-time'" in history
@@ -125,7 +125,7 @@ def test_routine_runs_every_step_without_the_brain(brain):
 def test_matching_skill_is_in_the_prompt(brain):
     write("movie-time", ROUTINE)
     fake, ran = brain([("Okay!", [])])
-    app.answer("let's watch a movie")
+    app.answer("let's watch a movie and then order a pizza")     # more than the skill: the brain decides
     system = fake.seen[0][0]["content"]
     assert "run_skill(name='movie-time')" in system
     assert "run_skill" in app.state["task"]["tools"]
@@ -144,11 +144,12 @@ def test_routine_with_risky_step_asks_first(brain):
 def test_routine_needing_input_asks_for_it(brain):
     shutil.copy(EXAMPLES / "youtube-search.md", store.current().skills_dir / "youtube-search.md") if store.current().skills_dir.exists() else (
         store.current().skills_dir.mkdir(parents=True), shutil.copy(EXAMPLES / "youtube-search.md", store.current().skills_dir / "youtube-search.md"))
-    fake, ran = brain([("", [("run_skill", {"name": "youtube-search"})]),
-                       ("", [("run_skill", {"name": "youtube-search", "input": "lofi beats"})]), ("Here you go", [])])
-    app.answer("search youtube for lofi beats")
-    assert "input='lofi beats'" in fake.seen[0][0]["content"]
+    fake, ran = brain([("Here you go", [])])
+    app.answer("search youtube for lofi beats")          # exact match, input read from the request: no brain turn
+    assert not fake.seen
     assert ran == [("open_website", {"url_or_search": "https://www.youtube.com/results?search_query=lofi+beats"})]
+    yt = skills.get("youtube-search")                    # when the brain does get a turn, the prompt names the input
+    assert "input='lofi beats'" in skills.prompt_block("search youtube for lofi beats", yt, "exact")
 
 
 def test_recipe_hands_instructions_to_the_brain(brain):
