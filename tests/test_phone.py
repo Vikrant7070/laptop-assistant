@@ -178,7 +178,7 @@ def test_phone_request_asks_first_even_in_full_access(tg, brain, monkeypatch):
     app.save_settings({**app.settings(), "autonomy": "full"})
     p = paired_phone(tg)
     wire(p)
-    monkeypatch.setattr(app, "phone", p)
+    monkeypatch.setattr(app.integrations, "phone", p)
     monkeypatch.setattr(app.tools.windows, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
     fake, ran = brain([("Typing it.", [("type_text", {"text": "hello"})]), ("Typed hello!", [])])
     out = app.phone_message("type hello in notepad")
@@ -223,11 +223,11 @@ def test_phone_yes_no_text_answers_the_question(tg, brain):
 
 def test_reminders_go_to_phone_only_when_away(tg, monkeypatch):
     p = paired_phone(tg)
-    monkeypatch.setattr(app, "phone", p)
-    monkeypatch.setattr(app, "user_idle_secs", lambda: 5)
+    monkeypatch.setattr(app.integrations, "phone", p)
+    monkeypatch.setattr(app.background, "user_idle_secs", lambda: 5)
     app.tell_away("Reminder: call mom")
     assert tg.sent() == []
-    monkeypatch.setattr(app, "user_idle_secs", lambda: 900)
+    monkeypatch.setattr(app.background, "user_idle_secs", lambda: 900)
     app.tell_away("Reminder: call mom")
     assert tg.sent()[-1]["text"] == "🔔 Reminder: call mom"
     p.set_forward(False)

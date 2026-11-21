@@ -98,7 +98,7 @@ def test_new_move_in_a_chat_waits_until_she_has_spoken(monkeypatch):
     monkeypatch.setattr(app.avatar_client, "running", lambda: True)
     monkeypatch.setattr(app.avatar_client, "status", lambda: {"live": True})
     monkeypatch.setattr(app.avatar_client, "send", lambda do, **k: sent.append((do, k)))
-    monkeypatch.setattr(app, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
+    monkeypatch.setattr(app.body, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
     out = app._execute_one({"name": "new_move", "args": {"name": "bounce", "duration": 2, "keys": SHRUG}},
                            True, [], "m")
     assert "after you finish speaking" in out

@@ -53,14 +53,14 @@ def test_deep_sleep_turns_the_mic_off(body, ears):
 
 def test_deep_sleep_can_be_turned_off(body, ears, monkeypatch):
     s = dict(app.settings(), deep_sleep=False)
-    monkeypatch.setattr(app, "settings", lambda: s)
+    monkeypatch.setattr(app.config, "settings", lambda: s)
     asleep_for(app.DEEP_SLEEP_AFTER + 60)
     assert not app.deep_sleep_due()
 
 
 def test_click_wakes_her_and_turns_the_mic_back_on(body, ears, monkeypatch):
     s = dict(app.settings(), wake=True)
-    monkeypatch.setattr(app, "settings", lambda: s)
+    monkeypatch.setattr(app.config, "settings", lambda: s)
     asleep_for(app.DEEP_SLEEP_AFTER + 1)
     app.go_deep()
     r = app.app.test_client().post("/api/wake").get_json()
@@ -71,7 +71,7 @@ def test_click_wakes_her_and_turns_the_mic_back_on(body, ears, monkeypatch):
 
 def test_mic_stays_off_on_waking_if_hands_free_is_off(body, ears, monkeypatch):
     s = dict(app.settings(), wake=False)
-    monkeypatch.setattr(app, "settings", lambda: s)
+    monkeypatch.setattr(app.config, "settings", lambda: s)
     asleep_for(app.DEEP_SLEEP_AFTER + 1)
     app.go_deep()
     app.note_task()                            # a typed message wakes her too

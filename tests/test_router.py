@@ -254,7 +254,7 @@ CLOUD = "cloud:google:gemini-test"
 def cloud_that_fails(brain, monkeypatch, script):
     """The chosen brain is a cloud one that always fails, like llm.chat: with a fallback the turn runs on that local
     model (models shows it as the cloud id, the way llm.chat is called), without one it raises."""
-    monkeypatch.setattr(app, "brain", lambda s=None: CLOUD)
+    monkeypatch.setattr(app.config, "brain", lambda s=None: CLOUD)
     monkeypatch.setattr(app.llm, "_cloud_down", {"until": 0.0, "why": ""})
     fake, ran = brain(script)
     models = []
@@ -309,7 +309,7 @@ def test_cloud_resting_at_the_start_routes_locally_from_the_first_turn(brain, mo
 
 
 def test_working_cloud_brain_is_never_routed(brain, monkeypatch):
-    monkeypatch.setattr(app, "brain", lambda s=None: CLOUD)
+    monkeypatch.setattr(app.config, "brain", lambda s=None: CLOUD)
     monkeypatch.setattr(app.llm, "_cloud_down", {"until": 0.0, "why": ""})
     models, _, _ = recorded(brain, [("", [("get_datetime", {})]), ("Fixed.", [])])
     app.answer("debug my python script")
