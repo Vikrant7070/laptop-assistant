@@ -37,6 +37,23 @@ TARGETS = {
 }
 
 
+# Settings that reached each target alone (WP 1.1, 2026-11-21; see docs/child-brain-dev-plan.md "WP 1.1 result").
+# Pass them with --set. The two mazes never reached their targets; their best tries are listed instead.
+PASSED_WITH = {
+    "catch": {"gamma": 0.9},
+    "snake": {},
+    "collect-coins": {},
+    "colour-match": {},
+    "push-box": {},
+    "connect-4": {},
+    "avoid-enemy": {"gamma": 0.9, "max_steps": 20_000_000, "stop_at_target": False},
+}
+BEST_TRY = {
+    "maze": {"layers": 2, "channels": 64, "max_steps": 60_000_000},        # 64.5% of 70%
+    "maze-coins": {"layers": 2, "channels": 64, "max_steps": 30_000_000},  # 0.85 of 1.2
+}
+
+
 def _seed() -> int:
     return int(torch.randint(0, 2**62, (1,)).item())  # from the run card's seed
 

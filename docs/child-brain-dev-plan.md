@@ -1,6 +1,6 @@
 # Child brain — full development plan
 
-Status: **building** — **Phase 0 done** 2026-11-20 (WP 0.1–0.7; write-up in reports/childbrain/phase0.md). Next: Phase 1.
+Status: **building** — **Phase 0 done** 2026-11-20 (WP 0.1–0.7; write-up in reports/childbrain/phase0.md). **WP 1.1 done** 2026-11-21 (7 of 9 games; mazes left for Phase 2). Next: WP 1.2.
 The *why* and the big idea are in [child-brain-plan.md](child-brain-plan.md). This file is the *how*: what to
 build, in what order, how to test each piece, and when each part counts as done.
 
@@ -345,8 +345,51 @@ Phase 0 write-up: [reports/childbrain/phase0.md](../reports/childbrain/phase0.md
 | WP | Build | Done when |
 |---|---|---|
 | 1.1 | Plain brain + practice-by-reward; learns each game alone | Each training game reaches a target score on its own |
+| | **✅ Done 2026-11-21 (7 of 9; mazes recorded as the plain brain's weak spot, by your decision):** `childbrain/learn/ppo.py` + `python -m childbrain run learn-alone`. 7 games pass on exam worlds; Maze reaches 64.5% (target 70%) and Maze-coins 0.85 (target 1.2) with a deeper brain. See "WP 1.1 result" below | |
 | 1.2 | Task stream: the same plain brain learns the 7 games one after another | A chart shows how much it forgets. This is **the baseline every later phase must beat** |
 | 1.3 | Phase 1 write-up | Report saved in `reports/childbrain/` |
+
+#### WP 1.1 result (2026-11-21)
+
+- **What was built:** a plain brain (`{"kind": "plain"}` in `brain/net.py`: "grid" eyes = two 3×3 filter layers,
+  then hidden layers, a button head and a score-guess head) and a standard PPO learner (`learn/ppo.py`).
+  `measure/learn_alone.py` practises one game until its target, checks progress on practice worlds only, and takes
+  the final score on exam worlds it never trained on (for the mazes: mazes it never saw).
+- **Targets were fixed before any training**, between the random player and an expert (`TARGETS` in
+  `learn_alone.py`).
+- **Results** (graphics card, 1,024 copies, seed 42; run folders in `childbrain/runs/20261121-*`):
+
+| Game | Exam score | Target | Random | Settings that passed | Time |
+|---|---|---|---|---|---|
+| Catch | **+10.0** | +8 | −7.5 | gamma 0.9 | 56 s |
+| Snake | **+5.13** | +5 | −0.88 | default | 1.7 min |
+| Collect-coins | **5.64** | 5.5 | 2.6 | default | 4.4 min |
+| Colour-match | **2.50** | 2.5 | 0.03 | default | 3.9 min |
+| Push-box | **0.76** | 0.70 | 0.08 | default | 3.0 min |
+| Connect-4 | **0.78** | 0.70 | 0.28 | default | 1.7 min |
+| Avoid-enemy | **0.87** | 0.70 | −0.92 | gamma 0.9, 20M moves, no early stop | 14.5 min |
+| Maze | 64.5% ❌ | 70% | 16% | best: layers 2, channels 64, 60M moves | 2 h 48 min* |
+| Maze-coins | 0.85 ❌ | 1.2 | 0.28 | best: layers 2, channels 64, 30M moves | 68 min* |
+
+  \* slowed about 3× by Nova sharing the graphics card.
+- **Finding 1, look-ahead (gamma):** with the default 0.99, Catch stalled at about 0 (5 of 10 catches) for
+  1.7M moves. A Catch game ends after the 10th drop, but the picture doesn't show how many are left, so at long
+  look-ahead the score guess is too noisy to tell a good move from a bad one. Gamma 0.9 fixed it (+10). Nine
+  side-by-side tests ruled out exploration, number of copies, learning speed and eye type.
+- **Finding 2, early stop:** Avoid-enemy reached its target on practice worlds at 6.5M moves but scored 0.689 on
+  the exam. Practising on to 20M (`stop_at_target=false`) gave 0.87. Stopping exactly at the target leaves no
+  margin for the exam.
+- **Finding 3, mazes are the plain brain's weak spot:** its eyes see a 5×5 patch, but a route goes through the
+  whole 11×11 maze, and the reward comes only at the goal. A deeper brain roughly doubled both maze scores
+  (Maze 27% → 64.5%), but gains were slowing (+7 points for twice the practice). Rare rewards are what
+  Phase 2's curiosity bonus (WP 2.4) is for; the mazes are the first games it must fix.
+- **Speed:** the graphics card was about 17× faster than the CPU (Catch: 16 min for 2M moves on the CPU vs 56 s
+  for 1.3M on the graphics card). With Nova's model also on the graphics card, training ran about 3× slower.
+- **For WP 1.2:** one brain will learn several games in a row, so it needs one set of settings for all. Use
+  gamma 0.9 (needed by Catch and Avoid-enemy, and fine for the rest), no early stop, and leave the two mazes
+  out of the stream (they don't reach their targets even alone, so forgetting on them can't be measured).
+- **Tests:** `childbrain/tests/test_learn.py`; whole suite `.venv-childbrain\Scripts\python -m pytest
+  childbrain` → 393 passed.
 
 ### Phase 2 — Learn how to learn (≈ 4–6 weeks)
 
