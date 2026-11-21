@@ -381,6 +381,21 @@ Phase 0 write-up: [reports/childbrain/phase0.md](../reports/childbrain/phase0.md
 | 4.3 | Weekly report: achievements over time, forgetting, skills created, detector accuracy | Over a week it keeps unlocking new achievements and loses none |
 | 4.4 | Phase 4 write-up + **go / no-go for Nova** | You decide whether it's ready for Phase 5 |
 
+### Phase 4b — Learning words (≈ 4–6 weeks; can run during Phase 5's watching weeks)
+
+The brain learns words the way a child does: **first understanding, then speaking**, and every word is tied to
+something it sees or does in its worlds. It is still the child brain learning, not a ready-made language model
+plugged in. Goal: a small vocabulary (a few hundred words) and short sentences, not open chat — chat needs far
+more text and compute than this laptop has, and Nova already does that part.
+
+| WP | Build | Done when |
+|---|---|---|
+| 4b.1 | **Word worlds:** the games come with a short typed instruction ("get the red coin", "go left of the box"), made by a generator from a small fixed word list. Practice and exam banks, like the other worlds | Generator tests pass; a random player follows instructions only at chance level |
+| 4b.2 | **Understanding:** the brain gets "ears" (word input next to the picture) and learns to follow instructions by reward | Follows instructions on exam worlds above a target set before training, **including new mixes of known words** it never saw together (trained on "red key" and "blue coin", tested on "blue key") |
+| 4b.3 | **Speaking:** the brain gets a "mouth" (picks words from its list) to say what it sees, what it's about to do, "I can't" and "I don't know". The world knows the truth, so it is the teacher | What it says is true on exam worlds above a set level; it says "I don't know" instead of guessing (ties to WP 3.5) |
+| 4b.4 | **Talk with you:** a small text box in the sandbox (not in Nova) where you type a command; it acts and answers in a short sentence. Your typed commands are an **exam only**, never training (ground rule 2) | On a list of your own commands it does the right thing most of the time and its answers are true |
+| 4b.5 | Phase 4b write-up | Report saved in `reports/childbrain/`; you decide whether its words show up in Nova's hints in Phase 6 |
+
 ### Phase 5 — Inside Nova: watch only (≈ 2 weeks build + 2–4 weeks watching)
 
 | WP | Build | Done when |
@@ -443,15 +458,18 @@ Runs when the laptop is idle and charging (via Nova's idle detection or Windows 
 | 2 Learn how to learn | ~4–6 weeks |
 | 3 Know when to apply | ~3–4 weeks |
 | 4 Small world | ~4–6 weeks |
+| 4b Learning words | ~4–6 weeks (can overlap Phase 5's watching weeks) |
 | 5 Nova, watch | ~4–6 weeks |
 | 6 Nova, suggest → act | ongoing |
 
-**Total until it is helping inside Nova: about 5–7 months** part-time. This is a guess, revisited after every phase.
+**Total until it is helping inside Nova: about 5–7 months** part-time. Learning words adds about a month if it
+doesn't overlap Phase 5. This is a guess, revisited after every phase.
 
 ## 11. When is the whole project "done"?
 
 - It **learns new tasks faster the more it has learned** (sealed games prove it).
 - It **knows when a skill applies** and is rarely confident-and-wrong.
+- It **understands and says short sentences** about what it sees and does, with words it learned by doing.
 - It **keeps learning inside Nova** week after week, without being retrained from scratch.
 - It **stayed inside the guard the whole time**: no guard breaks, every rollback worked, the off switch worked.
 
