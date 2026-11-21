@@ -384,6 +384,7 @@ def test_retry_approvals(monkeypatch):
 def test_workers_settings_api(tmp_path, monkeypatch):
     monkeypatch.setattr(store.current(), "root", tmp_path)
     monkeypatch.setattr(workers, "claude_signed_in", lambda conf=None, fresh=False: False)
+    monkeypatch.setattr(workers, "find_exe", lambda w, conf=None: sys.executable)   # CI has no Claude Code installed
     c = app.app.test_client()
     j = c.get("/api/workers").get_json()
     assert j["config"]["opencode"]["model"] == workers.DEFAULTS["opencode"]["model"] and "auth login" in j["sign_in_help"]
