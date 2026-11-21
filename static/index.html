@@ -310,6 +310,7 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 <button type="button" data-tab="phone">📱 Phone</button>
 <button type="button" data-tab="forms">📝 Forms</button>
 <button type="button" data-tab="tools">🔌 Connectors</button>
+<button type="button" data-tab="workers">🧑‍💻 Workers</button>
 </div>
 <div class="pane on" data-pane="brain">
       <p style="margin-bottom:2px"><b>Who thinks for me?</b></p>
@@ -465,6 +466,26 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
         <textarea id="mcpCfg" class="sel" rows="7" spellcheck="false" style="font-family:Consolas,monospace;font-size:12.5px;resize:vertical" placeholder='{"mcpServers": {"files": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/you/Documents"]}}}'></textarea>
         <button id="mcpSave" class="yes" style="width:auto;padding:8px 14px">Save &amp; connect</button>
         <div id="mcpStatus" class="mood" style="margin-top:6px"></div>
+      </div>
+</div>
+<div class="pane" data-pane="workers">
+      <h3 style="margin-top:16px">🧑‍💻 Coding workers</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">Say <i>"fix the bug in my project at C:\…"</i> and Nova hands the job to a coding agent that works in the background. Small jobs go to the cheap one (OpenCode + DeepSeek) without asking; Claude Code costs money, so she always asks first. Workers never commit, push or delete - you say <i>"commit it"</i> when you've looked (she asks Yes / No). One job per project folder at a time; others wait in line.</p>
+        <div id="wkStatus" class="mood" style="margin-top:8px"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 10px;margin-top:8px">
+          <label class="mood">OpenCode model<input id="wkOcModel" class="sel" spellcheck="false"></label>
+          <label class="mood">If it hits its free limit, try<input id="wkOcFallbacks" class="sel" spellcheck="false" placeholder="model, model"></label>
+          <label class="mood">OpenCode time limit (minutes)<input id="wkOcTimeout" class="sel" type="number" min="1" max="240"></label>
+          <label class="mood">Claude Code model (empty = its default)<input id="wkCcModel" class="sel" spellcheck="false"></label>
+          <label class="mood">Claude Code limit per job ($)<input id="wkCcBudget" class="sel" type="number" min="0.05" step="0.05"></label>
+          <label class="mood">Claude Code limit per day ($)<input id="wkDaily" class="sel" type="number" min="0" step="0.5"></label>
+          <label class="mood">Claude Code time limit (minutes)<input id="wkCcTimeout" class="sel" type="number" min="1" max="240"></label>
+        </div>
+        <button id="wkSave" class="yes" style="width:auto;padding:8px 14px;margin-top:8px">Save workers</button>
+        <a id="wkRecheck" href="#" style="font-size:13px;margin-left:8px">Check again</a>
+        <span id="wkNote" class="mood" style="margin-left:8px"></span>
+        <div id="wkRecent" class="mood" style="margin-top:8px"></div>
       </div>
 </div>
       <button class="yes" id="saveModel" style="margin-top:12px">Save &amp; wake up Nova</button>
@@ -877,7 +898,7 @@ function openSetup(s) {
   $("#reasoning").value = s.reasoning || "auto";
   $("#sounds").checked = s.reaction_sounds !== false; $("#powerOk").checked = !!s.power_ok;
   $("#setup").classList.add("show");
-  loadPhone(); loadGmail(); loadMobile(); loadMcp(); loadForms();
+  loadPhone(); loadGmail(); loadMobile(); loadMcp(); loadForms(); loadWorkers();
 }
 /* ---------------- 📱 phone + 🔌 connectors (their own Save buttons) ---------------- */
 function showPhone(p) {
@@ -963,6 +984,35 @@ $("#formsSave").onclick = async () => {
   const details = {}; document.querySelectorAll("#formFields input").forEach(i => details[i.dataset.k] = i.value);
   try { showForms(await api("/api/forms", {details})); $("#formsNote").textContent = "Saved on this laptop ✓"; }
   catch (e) { $("#formsNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+};
+/* ---------------- 🧑‍💻 coding workers (workers.py) ---------------- */
+function showWorkers(w) {
+  const c = w.config, oc = c.opencode, cc = c.claude;
+  const line = (name, ok, extra) => `<div>${ok ? "✅" : "⚠️"} <b>${esc(name)}</b> - ${esc(extra)}</div>`;
+  $("#wkStatus").innerHTML =
+    line("OpenCode + DeepSeek", !!w.exe.opencode, w.exe.opencode ? "ready" : "not found on this laptop") +
+    line("Claude Code", !!(w.exe.claude && w.claude_signed_in),
+         !w.exe.claude ? "not found on this laptop" : w.claude_signed_in ? "ready, signed in" :
+         w.claude_signed_in === false ? "installed but not signed in" : "installed (couldn't check the sign-in)") +
+    (w.sign_in_help ? `<div style="margin-top:4px">${esc(w.sign_in_help)}</div>` : "") +
+    `<div style="margin-top:4px">Claude Code spent today: $${(+w.spent_today || 0).toFixed(2)} of $${(+c.daily_budget_usd || 0).toFixed(2)}` +
+    (w.running.length ? ` · working now: ${w.running.length}` : "") + (w.waiting ? ` · waiting in line: ${w.waiting}` : "") + `</div>`;
+  $("#wkOcModel").value = oc.model || ""; $("#wkOcFallbacks").value = (oc.fallback_models || []).join(", ");
+  $("#wkOcTimeout").value = oc.timeout_min; $("#wkCcModel").value = cc.model || "";
+  $("#wkCcBudget").value = cc.budget_usd; $("#wkDaily").value = c.daily_budget_usd; $("#wkCcTimeout").value = cc.timeout_min;
+  $("#wkRecent").innerHTML = w.recent.length ? "<b>Recent jobs</b>" + w.recent.map(r =>
+    `<div>${r.started ? esc(new Date(r.started * 1000).toLocaleString([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"})) + " · " : ""}#${esc(r.job)} ${esc(r.worker)} · ${esc(r.status)}${r.files ? ` · ${r.files} file${r.files > 1 ? "s" : ""}` : ""}` +
+    `${r.committed ? " · committed" : ""}${r.cost ? ` · $${(+r.cost).toFixed(2)}` : ""} - ${esc(r.brief)}</div>`).join("") : "";
+}
+async function loadWorkers(fresh) { try { showWorkers(await (await fetch("/api/workers" + (fresh ? "?fresh=1" : ""))).json()); } catch (e) {} }
+$("#wkRecheck").onclick = (e) => { e.preventDefault(); $("#wkNote").textContent = "Checking…"; loadWorkers(true).then(() => $("#wkNote").textContent = ""); };
+$("#wkSave").onclick = async () => {
+  try {
+    showWorkers(await api("/api/workers", {opencode_model: $("#wkOcModel").value, opencode_fallbacks: $("#wkOcFallbacks").value,
+      opencode_timeout_min: $("#wkOcTimeout").value, claude_model: $("#wkCcModel").value, claude_budget_usd: $("#wkCcBudget").value,
+      daily_budget_usd: $("#wkDaily").value, claude_timeout_min: $("#wkCcTimeout").value}));
+    $("#wkNote").textContent = "Saved ✓";
+  } catch (e) { $("#wkNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
 };
 async function loadMcp() { try { const j = await (await fetch("/api/mcp")).json(); $("#mcpCfg").value = j.config; showMcp(j); } catch (e) {} }
 $("#mcpSave").onclick = async () => {

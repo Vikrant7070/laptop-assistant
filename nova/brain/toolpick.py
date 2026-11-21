@@ -12,6 +12,8 @@ The set is chosen once per request and kept for the whole task: Ollama re-reads 
 token, so changing tools between steps would throw away its cache every step.
 Cloud brains get every tool (they have room, and they are smart enough not to get confused by 64).
 """
+import re
+
 from nova.brain import retrieval
 from nova.actions import tools
 
@@ -38,7 +40,7 @@ GROUPS = [
     {"get_clipboard", "set_clipboard", "read_selection"},
     {"window_action", "minimize_all_windows", "close_all_windows", "drag_window", "list_windows"},
     {"draft_email", "write_document", "research_in_background", "show_finished_work", "background_jobs",
-     "stop_background_job"},                                                                                  # co-worker
+     "stop_background_job", "start_coding_job", "commit_coding_job"},                                         # co-worker
     {"run_skill", "save_skill", "edit_skill", "undo_skill_change", "save_task_as_skill", "list_skills", "delete_skill",
      "start_watching", "stop_watching"},                                              # skills
     {"react", "new_move", "forget_move", "change_look"},                                                     # 3D body
@@ -108,6 +110,11 @@ HINTS = {
     "write_document": "write a document letter notes essay list report in the background, make a doc",
     "show_finished_work": "show me the email, show it, open what you wrote, let me see the draft",
     "background_jobs": "is the email ready, what are you working on, background jobs status, how's the research going",
+    "start_coding_job": "fix the bug in my code project repo, change the code, edit the readme, build a website "
+                        "page app feature, refactor, add tests, coding job, use opencode deepseek claude code",
+    "commit_coding_job": "commit it, commit the changes, commit what the worker changed, git commit",
+    "show_coding_changes": "what changed, show me the changes, the diff, what did the worker change",
+    "retry_coding_job": "try it with claude code, try again with the other worker, give it to claude",
     "stop_background_job": "stop the research, cancel the email, forget that job, stop working on that in the background",
     "save_skill": "when I say this do that, learn this routine, teach you a new skill, remember how to do it, shortcut",
     "list_skills": "what skills routines do you know, what have I taught you",
@@ -148,11 +155,23 @@ def best(query, n, exclude=()):
     return [name for score, name in ranked[:n] if score > 0]
 
 
+# Coding jobs (workers.py) by plain words, not similarity: a tool's text is cut to 128 tokens for retrieval and
+# start_coding_job's long description leaves its hints out - "fix the spelling mistakes in the README.md of my project"
+# ranked it 22nd (live, 2026-11-21) and the brain opened Notepad instead.
+CODING = re.compile(r"\b(readme|repo|repository|codebase|source code|code ?base|bugs?|refactor\w*|unit tests?|"
+                    r"opencode|open code|deepseek|claude code|coding job|git|commit|"
+                    r"(my|the|this|our) (code|project|website project|web ?app)( folder)?)\b", re.I)
+CODING_TOOLS = {"start_coding_job", "commit_coding_job", "show_coding_changes", "retry_coding_job", "background_jobs",
+                "stop_background_job"}
+
+
 def pick(query, keep=()):
     """Names of the tools for this request, in the fixed TOOLS order (so equal sets give an identical prompt)."""
     every = _all()
     known = {t["name"] for t in every}
     chosen = set(CORE) | set(n for n in keep if n in known)
+    if CODING.search(str(query or "")):
+        chosen |= CODING_TOOLS & known
     top = best(query, TOP, exclude=chosen)
     chosen |= set(top) | _expand(top[:GROUPED])
     return [t["name"] for t in every if t["name"] in chosen]

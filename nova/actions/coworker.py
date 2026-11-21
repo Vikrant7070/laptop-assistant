@@ -148,6 +148,8 @@ def summary():
             line += f" for {_ago(now - j['started'])}" + (f" - now: {j['step']}" if j.get("step") else "")
         elif j.get("error"):
             line += f" - {j['error']}"
+        elif j.get("files"):                      # a coding job (workers.py): what it changed, still uncommitted
+            line += f" - changed {len(j['files'])} file{'s' if len(j['files']) != 1 else ''}: " + ", ".join(j["files"][:3])
         lines.append(line)
     return "\n".join(lines)
 
