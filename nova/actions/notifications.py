@@ -1,7 +1,7 @@
 """Nova reads your Windows notifications (only when you switch it on: ⚙ Model → Notifications).
 
 Windows' own notification listener (WinRT UserNotificationListener) is used through PowerShell, like the speech
-recognizer in voice.py - no extra packages. It needs "Let apps access your notifications" to be allowed in Windows
+recognizer in nova/audio/voice/ - no extra packages. It needs "Let apps access your notifications" to be allowed in Windows
 Settings → Privacy & security → Notifications (it is by default).
 
   latest(n)   - the newest notifications, for "read my notifications"
