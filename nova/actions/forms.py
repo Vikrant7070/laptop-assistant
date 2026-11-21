@@ -14,9 +14,8 @@ import json
 import re
 import threading
 
-from nova.shared import DATA
+from nova import store
 
-FILE = DATA / "form_details.json"
 _lock = threading.Lock()
 
 # (key, label in the ⚙ dialog, what form boxes for it are called). Order matters: the first match wins, so the
@@ -59,7 +58,7 @@ NOT_CODE = re.compile(r"pin\s*-?\s*code|postal|zip|promo|coupon|referral|discoun
 
 def load():
     try:
-        d = json.loads(FILE.read_text(encoding="utf-8"))
+        d = json.loads(store.current().forms.read_text(encoding="utf-8"))
         return {k: str(d.get(k) or "").strip() for k in KEYS}
     except (OSError, ValueError):
         return {k: "" for k in KEYS}
@@ -74,8 +73,8 @@ def save(details):
             return None, f"That looks like a card or ID number in '{dict((a, b) for a, b, _ in FIELDS)[k]}' - those aren't kept here."
         clean[k] = v
     with _lock:
-        FILE.parent.mkdir(parents=True, exist_ok=True)
-        FILE.write_text(json.dumps(clean, indent=2, ensure_ascii=False), encoding="utf-8")
+        store.current().forms.parent.mkdir(parents=True, exist_ok=True)
+        store.current().forms.write_text(json.dumps(clean, indent=2, ensure_ascii=False), encoding="utf-8")
     return clean, ""
 
 

@@ -27,7 +27,7 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from nova.shared import DATA
+from nova import store
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -49,7 +49,7 @@ class GmailError(Exception):
 # ---------------------------------------------------------------- the locked file
 
 def _file():
-    return DATA / "gmail.json"
+    return store.current().gmail
 
 
 def _protect(text, on):

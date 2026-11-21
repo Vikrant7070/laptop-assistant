@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from nova import store
 from nova.actions import recorder, skills
 from nova.core import app
 
@@ -34,12 +35,12 @@ def rec(monkeypatch):
 def set_autonomy(mode):
     s = app.settings()
     s["autonomy"] = mode
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
 
 
 def write(name, body, extra=""):
-    skills.DIR.mkdir(parents=True, exist_ok=True)
-    (skills.DIR / f"{name}.md").write_text(
+    store.current().skills_dir.mkdir(parents=True, exist_ok=True)
+    (store.current().skills_dir / f"{name}.md").write_text(
         f"---\nname: {name}\nformat: 2\ndescription: test skill {name}\nexamples: {name.replace('-', ' ')}\n{extra}---\n{body}\n",
         encoding="utf-8")
 

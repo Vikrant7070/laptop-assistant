@@ -4,17 +4,18 @@ import wave
 
 import numpy as np
 
+from nova import store
 from nova.audio import sfx
 from nova.audio import voice
-from nova.shared import DATA, REACTIONS
+from nova.shared import REACTIONS
 
 
 def test_every_reaction_has_a_clean_sound(tmp_path, monkeypatch):
-    monkeypatch.setattr(sfx, "DIR", tmp_path)
+    monkeypatch.setattr(store.current(), "root", tmp_path)
     sfx.build(force=True)
     assert set(REACTIONS) == set(sfx.SOUNDS)
     for name in REACTIONS:
-        with wave.open(str(tmp_path / f"{name}.wav"), "rb") as w:
+        with wave.open(str(store.current().sfx / f"{name}.wav"), "rb") as w:
             a = np.frombuffer(w.readframes(w.getnframes()), "<i2") / 32767
         assert 0.2 < len(a) / sfx.RATE < 7, name
         assert abs(a).max() <= sfx.VOLUME + 0.01, name                 # never louder than set
@@ -23,11 +24,11 @@ def test_every_reaction_has_a_clean_sound(tmp_path, monkeypatch):
 
 
 def test_sounds_can_be_turned_off(tmp_path, monkeypatch):
-    monkeypatch.setattr(sfx, "DIR", tmp_path)
+    monkeypatch.setattr(store.current(), "root", tmp_path)
     played = []
     import winsound
     monkeypatch.setattr(winsound, "PlaySound", lambda *a: played.append(a))
-    settings = DATA / "settings.json"
+    settings = store.current().settings
     old = settings.read_text(encoding="utf-8") if settings.exists() else None
     try:
         settings.parent.mkdir(parents=True, exist_ok=True)

@@ -12,8 +12,9 @@ import threading
 import time
 from pathlib import Path
 
+from nova import store
 from nova.avatar import avatar_client
-from nova.shared import ROOT, stage_directions
+from nova.shared import stage_directions
 
 PREFERRED_VOICES = ("Heera", "Zira", "Aria", "Jenny")
 ONECORE = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices"
@@ -716,7 +717,7 @@ class Transcriber:
     def start(self):
         if self.proc and self.proc.poll() is None:
             return True
-        script = ROOT / "data" / "rt_listen.ps1"
+        script = store.current().file("rt_listen.ps1")
         script.parent.mkdir(exist_ok=True)
         script.write_text(RT_PS1, encoding="utf-8")
         kill_strays("rt_listen.ps1")   # Windows' speech service only serves one recognizer well at a time
@@ -1742,9 +1743,9 @@ class Ears(_EarsBase):
     def start(self):
         if self.proc and self.proc.poll() is None:
             return
-        script = ROOT / "data" / "listen.ps1"
+        script = store.current().file("listen.ps1")
         script.write_text(LISTEN_PS1, encoding="utf-8")
-        (ROOT / "data" / "phrases.txt").write_text("\n".join(command_phrases()), encoding="utf-8")
+        (store.current().file("phrases.txt")).write_text("\n".join(command_phrases()), encoding="utf-8")
         kill_strays("listen.ps1")   # only one wake-word listener may run, or two of them answer at once
         self.proc = subprocess.Popen(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Mode", self.mode],

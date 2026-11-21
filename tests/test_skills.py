@@ -3,6 +3,7 @@ import json
 import shutil
 from pathlib import Path
 
+from nova import store
 from nova.core import app
 from nova.actions import skills
 from nova.actions import tools
@@ -24,12 +25,12 @@ when: movie time, let's watch a movie
 def set_autonomy(mode):
     s = app.settings()
     s["autonomy"] = mode
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
 
 
 def write(name, text):
-    skills.DIR.mkdir(parents=True, exist_ok=True)
-    (skills.DIR / f"{name}.md").write_text(text, encoding="utf-8")
+    store.current().skills_dir.mkdir(parents=True, exist_ok=True)
+    (store.current().skills_dir / f"{name}.md").write_text(text, encoding="utf-8")
 
 
 # ------------------------------------------------------------------ parsing
@@ -92,7 +93,7 @@ def test_save_list_and_delete():
     assert "movie-time (routine)" in skills.describe()
     assert "Deleted" in skills.delete("movie-time")
     assert skills.get("movie-time") is None
-    assert list((skills.DIR / ".trash").glob("movie-time-*.md"))      # not gone for good
+    assert list((store.current().skills_dir / ".trash").glob("movie-time-*.md"))      # not gone for good
 
 
 def test_save_recipe_and_reject_bad_routine_and_secrets():
@@ -141,8 +142,8 @@ def test_routine_with_risky_step_asks_first(brain):
 
 
 def test_routine_needing_input_asks_for_it(brain):
-    shutil.copy(EXAMPLES / "youtube-search.md", skills.DIR / "youtube-search.md") if skills.DIR.exists() else (
-        skills.DIR.mkdir(parents=True), shutil.copy(EXAMPLES / "youtube-search.md", skills.DIR / "youtube-search.md"))
+    shutil.copy(EXAMPLES / "youtube-search.md", store.current().skills_dir / "youtube-search.md") if store.current().skills_dir.exists() else (
+        store.current().skills_dir.mkdir(parents=True), shutil.copy(EXAMPLES / "youtube-search.md", store.current().skills_dir / "youtube-search.md"))
     fake, ran = brain([("", [("run_skill", {"name": "youtube-search"})]),
                        ("", [("run_skill", {"name": "youtube-search", "input": "lofi beats"})]), ("Here you go", [])])
     app.answer("search youtube for lofi beats")

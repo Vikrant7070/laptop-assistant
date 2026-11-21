@@ -30,7 +30,8 @@ from functools import wraps
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from nova.shared import DATA, ROOT
+from nova import store
+from nova.shared import ROOT
 
 PORT = 5057
 HOST = "127.0.0.1"
@@ -42,7 +43,7 @@ STATIC = ROOT / "static" / "mobile"
 
 
 def _file():
-    return DATA / "devices.json"
+    return store.current().devices
 
 
 def _load():
