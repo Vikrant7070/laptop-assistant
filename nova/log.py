@@ -44,6 +44,17 @@ def log_exception(where, exc=None):
     return True
 
 
+def note(line):
+    """One plain line in the task log (what a tool really did, for fixing it later). Never raises."""
+    try:
+        store.current().task_log.parent.mkdir(parents=True, exist_ok=True)
+        with store.current().task_log.open("a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {line}\n")
+    except OSError:
+        return False        # the log is the last thing that may fail; never raise from here
+    return True
+
+
 def reset():
     """Forget the rate limit (tests, and a new day's log)."""
     with _lock:

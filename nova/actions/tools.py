@@ -22,6 +22,7 @@ import psutil
 
 from nova import store
 from nova.actions import registry
+from nova.log import note
 from nova.shared import REACTIONS, ps_escape, work_area
 
 try:  # real pixel coordinates, so clicks land where UI Automation says
@@ -706,16 +707,21 @@ def clean_temp_files():
     # Without a real TEMP folder, Path("") would be the current folder - never clean that (or a drive or home).
     if not root or not os.path.isabs(root) or not Path(root).is_dir() or Path(root) in (Path(Path(root).anchor), HOME):
         return "I couldn't find the temporary-files folder (TEMP), so I didn't delete anything."
-    freed = 0
+    freed, removed, recent, skipped, first_err = 0, 0, 0, 0, ""
     for entry in Path(root).iterdir():
         try:
             size = entry.stat().st_size if entry.is_file() else sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
             if time.time() - entry.stat().st_mtime < 3600:
+                recent += 1
                 continue  # skip files in use / very recent
             shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
             freed += size
-        except Exception:
-            pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
+            removed += 1
+        except Exception as e:  # intentional: files in use can't be deleted; counted and logged below
+            skipped += 1
+            first_err = first_err or f"{entry.name}: {type(e).__name__}: {e}"
+    note(f"CLEAN TEMP {root}: removed {removed} items, freed {_fmt_bytes(freed)}, kept {recent} recent, "
+         f"skipped {skipped} in use" + (f" (first: {first_err[:200]})" if first_err else ""))
     return f"Cleaned temporary files and freed about {_fmt_bytes(freed)}. Files in use were skipped."
 
 
@@ -1452,10 +1458,6 @@ def list_installed_apps(name_contains=""):
            f"Where-Object {{ $_.DisplayName -like '*{ps_escape(_like_literal(name_contains))}*' }} | Sort-Object DisplayName -Unique | "
            "Select-Object -First 60 -ExpandProperty DisplayName")
     return _ps(cmd)
-
-
-def list_startup_apps():
-    return _ps("Get-CimInstance Win32_StartupCommand | Select-Object Name, Command | Format-Table -AutoSize | Out-String -Width 200")
 
 
 SETTINGS_PAGES = {
@@ -2903,7 +2905,6 @@ TOOLS = [
     _tool("install_app", "Install an app with winget by its exact Id (find it with search_installable_apps).", {"winget_id": S}, ["winget_id"]),
     _tool("uninstall_app", "Uninstall an app with winget.", {"name_or_id": S}, ["name_or_id"]),
     _tool("list_installed_apps", "List installed programs, optionally filtered.", {"name_contains": S}),
-    _tool("list_startup_apps", "Programs that start with Windows."),
     _tool("open_settings_page", "Open a Windows Settings page: " + ", ".join(SETTINGS_PAGES), {"page": S}, ["page"]),
     _tool("set_dark_mode", "Turn Windows dark mode on or off.", {"enabled": B}, ["enabled"]),
     _tool("set_wallpaper", "Set the desktop wallpaper from an image file.", {"image_path": S}, ["image_path"]),
@@ -3136,6 +3137,8 @@ def _install(spec):
 
 
 registry.on_register(_install)
+
+from nova.actions import speedup  # noqa: E402,F401  (its @tool declarations join the tables above)
 
 
 def run_tool(name, args):

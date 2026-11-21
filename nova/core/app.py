@@ -326,7 +326,7 @@ FRIENDLY = {
     "set_clipboard": "Copied to clipboard", "take_screenshot": "Took a screenshot", "read_text_file": "Read a file",
     "write_text_file": "Wrote a file", "move_or_rename": "Moved/renamed", "copy_path": "Copied files",
     "search_installable_apps": "Searched for apps", "install_app": "Installed an app", "uninstall_app": "Uninstalled an app",
-    "list_installed_apps": "Listed installed apps", "list_startup_apps": "Checked startup apps",
+    "list_installed_apps": "Listed installed apps",
     "open_settings_page": "Opened Settings", "set_dark_mode": "Changed theme", "set_wallpaper": "Changed wallpaper",
     "toggle_wifi": "Switched Wi-Fi", "list_clickable": "Looked at the buttons", "click_element": "Clicked a button",
     "click_at": "Clicked on screen", "look_through_camera": "Looked through the camera",
