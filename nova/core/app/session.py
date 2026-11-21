@@ -80,7 +80,7 @@ def ask_text(c):
 def coding_job_worker(call):
     args = call.get("args") or {}
     if call.get("name") == "retry_coding_job":
-        return workers.pick_worker(args.get("worker") or "claude")
+        return workers.retry_target(args.get("which") or "latest", args.get("worker") or "")[1]
     return workers.pick_worker(args.get("worker") or "auto", args.get("size") or "small")
 
 

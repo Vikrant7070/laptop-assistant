@@ -9,17 +9,13 @@ import time
 from nova import store
 from nova.avatar import avatar_client
 from nova.avatar import body as body_module
-from nova.brain import cloud
+from nova.brain import cloud, llm, retrieval, router, toolpick
 from nova.core import characters
 from nova.actions import knowledge
-from nova.brain import llm
 from nova.actions import mcp
-from nova.brain import retrieval
 from nova.actions import skills
 from nova.actions import judge
 from nova.actions import recorder
-from nova.brain import toolpick
-from nova.brain import router
 from nova.actions import tools
 from nova import shared
 from nova import protocol
@@ -186,6 +182,7 @@ def new_task(goal):
                      "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": [],
                      "skill": skill["name"] if skill else "", "skill_how": how or "",
                      "app": tools.named_app(clean)}      # "type hello in notepad": keys and typing go only there
+    direct = skillrun.plan_direct(session.state["task"], skill, how)     # an exact routine match: no brain turn first
     try:
         made = judge.goal_checks(clean)   # the Judge's checks for this goal (more may be proposed later)
     except Exception as e:
@@ -203,7 +200,7 @@ def new_task(goal):
     if cloud.parse(config.brain(s)) and not s.get("email_cloud") and not session.state["task"].get("model") and EMAIL_WORDS.search(clean):
         session.state["task"]["model"] = s["model"]      # her mail never goes to a cloud brain unless ⚙ allows it
         task_log(f"EMAIL: local {s['model']} for this task")
-    if not cloud.parse(task_brain(s)):
+    if not cloud.parse(task_brain(s)) and not direct:      # no brain turn coming: no helper brain to load
         choose_local_route(session.state["task"], s)
     task_log(f"PICKED {len(picked) if picked else 'all'} tools ({retrieval.status()}): "
              + (", ".join(n for n in picked if n not in toolpick.CORE) if picked else "-"))
@@ -608,10 +605,10 @@ def _agent_loop(activity):
         # If the cloud fails on a request the local router would hand to the coder or the planner, don't let the
         # everyday brain answer it: give up this turn and run it again on that brain (no local answer to throw away).
         local_route = local_route_for(task, s) if cloud.parse(model) else None
-        t0 = time.time()
+        t0, direct = time.time(), (task.pop("direct", None) if task and turns == 1 else None)
         try:
             answer_only = bool(task and task.get("answer_only") and model == task.get("model"))
-            stored, text, calls = interruptible(llm.chat, model, msgs, [] if answer_only else prompts.active_tools(model),
+            stored, text, calls = skillrun.direct_call(model, direct) if direct else interruptible(llm.chat, model, msgs, [] if answer_only else prompts.active_tools(model),
                                                 think=s["think"] or (level != "low" and (bool(cloud.parse(model)) or s.get("reasoning", "auto") != "auto")), reasoning=level,   # auto never makes the local brain think: 30-45 s per step on a 6 GB GPU
                                                 on_text=unless_stopped(stream.feed if stream else None),
                                                 fallback=None if local_route else s["model"], on_think=unless_stopped(reasoning.feed),
@@ -630,10 +627,11 @@ def _agent_loop(activity):
             continue
         reasoning.flush()
         used = s["model"] if llm.LAST["fallback"] else model
-        task_log(f"BRAIN {time.time() - t0:.1f}s ({'local fallback' if llm.LAST['fallback'] else model}, {level})")
-        session.think(f"⏱ Thought for {time.time() - t0:.1f}s ({used.replace('cloud:', '')})"
-              + (f" → {len(calls)} step{'s' if len(calls) > 1 else ''} to do" if calls else " → answering"),
-              cloud_too=False)
+        if not direct:                  # a step code chose (skillrun.direct_call) took no brain time to report
+            task_log(f"BRAIN {time.time() - t0:.1f}s ({'local fallback' if llm.LAST['fallback'] else model}, {level})")
+            session.think(f"⏱ Thought for {time.time() - t0:.1f}s ({used.replace('cloud:', '')})"
+                  + (f" → {len(calls)} step{'s' if len(calls) > 1 else ''} to do" if calls else " → answering"),
+                  cloud_too=False)
         if llm.LAST["fallback"] and "Used the local brain" not in activity:
             activity.append("Used the local brain")   # the cloud one failed; she carried on with the local model
             task_log(f"CLOUD BRAIN NOT USED ({model}): {llm.LAST['fallback']} -> local {s['model']}")

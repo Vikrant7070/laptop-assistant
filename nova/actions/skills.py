@@ -69,7 +69,8 @@ CONSEQUENTIAL = {"kill_process", "organize_folder", "delete_to_recycle_bin", "cl
                  "close_all_windows", "empty_recycle_bin", "toggle_wifi", "set_wallpaper", "draft_email", "fill_form",
                  "start_coding_job", "commit_coding_job", "retry_coding_job"}
 READ_ONLY = ("get_", "list_", "read_", "look_", "find_", "search_", "check_", "show_", "recall_", "network_info",
-             "temp_files_size", "background_jobs", "research_in_background", "take_screenshot")
+             "temp_files_size", "background_jobs", "research_in_background", "research_report",
+             "take_screenshot")
 
 # Fuzzy matching must clear BOTH bars. (Tuned on the real log with `python -m nova.tools.skill_eval`.)
 FUZZY_FLOOR = 0.85            # with the embedding model (measured with nova.skill_eval: 0.75 let "good night" start the morning briefing); FUZZY_FLOOR_WORDS is for the word-overlap fallback
@@ -570,6 +571,27 @@ def guess_input(skill, query):
             if rest:
                 return rest
     return ""
+
+
+# The request asks for more than the skill ("research tea and then email it"): the brain has to plan the rest.
+MORE_WORK = re.compile(r"\b(and then|then|after that|afterwards|also|as well|plus)\b|\band (?:also )?(?:send|email|mail|open|"
+                       r"save|add|tell|show|make|write|put|play|share|text|message|post|commit)\b", re.I)
+
+
+def direct_args(skill, query):
+    """run_skill's arguments when an exact match can run without asking the brain first, else None.
+    Only an active routine (its steps run as code anyway), only when the request is just the skill, and only when
+    a needed {input} can be read from the request. (Live 2026-11-21: on an exact 'web-research' match the small brain
+    called list_windows and focused the user's Netflix window before - or instead of - running the skill.)"""
+    if not skill or skill.get("kind") != "routine" or skill.get("status") != "active" or MORE_WORK.search(query or ""):
+        return None
+    args = {"name": skill["name"]}
+    if skill.get("needs_input"):
+        guess = guess_input(skill, query)
+        if not guess:
+            return None
+        args["input"] = guess
+    return args
 
 
 def prompt_block(query, matched=None, how="exact"):
