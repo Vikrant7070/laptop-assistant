@@ -31,14 +31,25 @@ def inputs_digest():
             f = d / name
             if not f.is_file():
                 continue
-            if name == "model.vrm":        # big: its size and both ends are enough to notice a new export
-                with open(f, "rb") as fh:
-                    head = fh.read(1 << 20)
-                    fh.seek(max(0, f.stat().st_size - (1 << 20)))
-                    h.update(str(f.stat().st_size).encode() + head + fh.read())
+            if name == "model.vrm":
+                h.update(model_id(f).encode())
             else:
                 h.update(f.read_bytes())
     return h.hexdigest()
+
+
+LFS_POINTER = b"version https://git-lfs.github.com/spec/v1"
+
+
+def model_id(path):
+    """The model's SHA-256: computed from the file, or read from its Git LFS pointer (CI checks out without LFS).
+    Both give the same value, so a report made on the laptop is still current in CI."""
+    data = path.read_bytes()
+    if data.startswith(LFS_POINTER):
+        for line in data.decode("ascii", "replace").splitlines():
+            if line.startswith("oid sha256:"):
+                return line.split(":", 1)[1].strip()
+    return hashlib.sha256(data).hexdigest()
 
 
 def current():
