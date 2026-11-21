@@ -71,6 +71,7 @@ the same approval rules as a direct tool call.
 | `nova/actions/checks.py` | ~0.15k | Step checks (`window_open`, `page_has`, ...) |
 | `nova/shared.py` | ~0.13k | Paths (`ROOT`, `DATA`), PowerShell quoting, host checks |
 | `nova/protocol.py` | ~0.09k | Every text marker: builders, `strip_meta`, vision verdict parsing |
+| `nova/store.py` | ~0.1k | Every data path (`store.current().settings`, `.notes`, ...), atomic JSON helpers |
 | `nova/log.py` | ~0.06k | Rate-limited exception breadcrumbs in `data/task_log.txt` |
 | `nova/__main__.py` | ~0.01k | `python -m nova` entry point; `--version` avoids the desktop stack |
 | `nova/brain/retrieval.py` | ~0.13k | Embeddings, with a shared-word fallback |
@@ -93,8 +94,9 @@ user's routines, `config/model_routing.json` the routing knobs, `characters/` th
 - **Tools never bypass approval.** `is_risky` runs for direct calls and for every skill step.
 - **What a person hears has been through `protocol.strip_meta`.** Hidden notes, window lists and
   check markers are prompt text; never speak or show them raw.
-- **`data/` is personal and git-ignored.** Tests redirect it (`NOVA_DATA`) and stub the voice, the
-  keyboard, the browser, PowerShell and the 3D body, so the suite is safe on any machine.
+- **`data/` is personal and git-ignored.** Every path in it comes from `store.current()`, asked for when it is
+  needed: no module keeps a data path in a global (`tests/test_store.py` checks). `NOVA_DATA` moves all of it;
+  each test installs its own `Store` in a temp folder, and the suite stubs the voice, the keyboard, the browser, PowerShell and the 3D body, so the suite is safe on any machine.
 - **Heavy imports stay lazy.** `faster-whisper`, `kokoro`, `cv2`, `uiautomation`, `comtypes` and
   `sounddevice` are imported inside functions, which is why `requirements-test.txt` can be small.
 - **History is sized to the model.** `llm.context_size` knows the local 8K window and the cloud
@@ -129,14 +131,13 @@ embedding model, and re-check the tool cases with embeddings when the model is p
 The plan is `docs/part-b-plan-v3.md`. What is left is large and higher-risk, so it was deliberately
 not attempted in the first pass:
 
-1. `store.py` for settings / notes / reminders instead of module-level file paths.
-2. UI split of `static/index.html`.
-3. Tool registry: one place that declares schema + handler + risk, and `tools.py` as a package.
-4. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
-5. Vision close-out: an on/off switch for the one screen look. (Vision is already advisory: the
+1. UI split of `static/index.html`.
+2. Tool registry: one place that declares schema + handler + risk, and `tools.py` as a package.
+3. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
+4. Vision close-out: an on/off switch for the one screen look. (Vision is already advisory: the
    Judge in `nova/actions/judge.py` trusts deterministic checks first.)
 
-Already done: the protocol module, model-aware history, exception logging, and the packaging/docs
+Already done: the protocol module, model-aware history, exception logging, the data store, and the packaging/docs
 pass (`python -m nova`, this file, `README.md`, `docs/REVIEW.md` §6).
 
 Smaller known gaps found while writing the golden set:

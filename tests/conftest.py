@@ -62,16 +62,13 @@ voice.RealMouth = voice.Mouth     # tests of the real voice class use this
 voice.Mouth = FakeMouth
 voice.WhisperTranscriber.available = staticmethod(lambda: False)
 
+from nova import store  # noqa: E402
 from nova.actions import tools  # noqa: E402
-from nova.actions import knowledge  # noqa: E402
-from nova.brain import cloud  # noqa: E402
 from nova.brain import router  # noqa: E402
 from nova.core import app  # noqa: E402
 from nova.actions import skills  # noqa: E402
 from nova.actions import checks  # noqa: E402
 from nova.actions import recorder  # noqa: E402
-from nova.actions import learner  # noqa: E402
-from nova.actions import questions  # noqa: E402
 from nova import log  # noqa: E402
 
 recorder.ENABLED = False          # never install real mouse/keyboard hooks in tests (tests patch recorder's functions)
@@ -80,24 +77,12 @@ checks.real_evaluate = checks.evaluate     # the autouse fixture below replaces 
 
 
 def _point_data_at(folder):
+    """One Store for the test: every data file, the skills folder and the routing file live in `folder`."""
     folder.mkdir(parents=True, exist_ok=True)
-    tools.DATA = folder
-    tools.NOTES_FILE = folder / "notes.json"
-    tools.REMINDERS_FILE = folder / "reminders.json"
-    knowledge.FILE = folder / "knowledge.json"
-    knowledge.OLD_MEMORY = folder / "memory.json"
-    cloud.KEYS_FILE = folder / "keys.json"
-    app.SETTINGS_FILE = folder / "settings.json"
-    app.TASK_LOG = folder / "task_log.txt"
-    log.FILE = folder / "task_log.txt"     # log_exception's breadcrumbs, same file as the task log
+    store.use(store.Store(folder, skills_dir=folder / "skills", routing=folder / "model_routing.json"))
     log.reset()
-    router.FILE = folder / "model_routing.json"
     router._cache.update(key=None, conf=None)
-    skills.DIR = folder / "skills"
     skills._cache.update(key=None, skills=[])
-    learner.EPISODES = folder / "episodes.jsonl"
-    learner.FACTS = folder / "facts.json"
-    questions.FILE = folder / "questions.json"
     app.learn_state.update(last=0.0)
 
 

@@ -23,10 +23,8 @@ import time
 import urllib.parse
 
 from nova.log import log_exception
-from nova.shared import DATA
+from nova import store
 
-EPISODES = DATA / "episodes.jsonl"
-FACTS = DATA / "facts.json"
 KEEP_DAYS = 30
 MAX_EPISODES = 2000
 MAX_FACTS = 300
@@ -97,7 +95,7 @@ def load(now=None):
     out = []
     with _lock:
         try:
-            lines = EPISODES.read_text(encoding="utf-8").splitlines()
+            lines = store.current().episodes.read_text(encoding="utf-8").splitlines()
         except FileNotFoundError:
             return []
         except Exception:
@@ -114,10 +112,10 @@ def load(now=None):
 
 
 def _write(eps):
-    EPISODES.parent.mkdir(parents=True, exist_ok=True)
-    tmp = EPISODES.with_suffix(".tmp")
+    store.current().episodes.parent.mkdir(parents=True, exist_ok=True)
+    tmp = store.current().episodes.with_suffix(".tmp")
     tmp.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in eps[-MAX_EPISODES:]), encoding="utf-8")
-    tmp.replace(EPISODES)
+    tmp.replace(store.current().episodes)
 
 
 def record(ep, now=None):
@@ -181,7 +179,7 @@ def host(url):
 def load_facts():
     with _lock:
         try:
-            d = json.loads(FACTS.read_text(encoding="utf-8"))
+            d = json.loads(store.current().facts.read_text(encoding="utf-8"))
         except FileNotFoundError:
             d = {}
         except Exception:
@@ -194,10 +192,10 @@ def load_facts():
 
 
 def _save_facts(d):
-    FACTS.parent.mkdir(parents=True, exist_ok=True)
-    tmp = FACTS.with_suffix(".tmp")
+    store.current().facts.parent.mkdir(parents=True, exist_ok=True)
+    tmp = store.current().facts.with_suffix(".tmp")
     tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(FACTS)
+    tmp.replace(store.current().facts)
 
 
 def learn_sites(topic, sources, cited, now=None):

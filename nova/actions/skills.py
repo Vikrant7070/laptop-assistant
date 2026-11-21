@@ -41,17 +41,14 @@ by the model: skills/.stats/<name>.json (runs, failures by step, ...), skills/.h
 change can be undone), skills/.trash/ (deleted skills).
 """
 import json
-import os
 import re
 import shutil
 import time
+from nova import store
 from nova.core import characters
-from pathlib import Path
 
 from nova.brain import retrieval
-from nova.shared import ROOT
 
-DIR = Path(os.environ.get("NOVA_SKILLS") or ROOT / "skills")
 MAX_STEPS = 25
 MAX_BODY = 2500
 MAX_ACTIVE = 40
@@ -399,10 +396,10 @@ _cache = {"key": None, "skills": []}
 def load():
     """All skills, re-read only when a file in the folder changed."""
     try:
-        files = sorted(DIR.glob("*.md"))
+        files = sorted(store.current().skills_dir.glob("*.md"))
         # mtime alone isn't enough: Windows file times are coarse, so a save right after another kept the same key
         # and the old skill was read back (seen as a flaky test). The size usually changes; _write also clears it.
-        key = (str(DIR),) + tuple((f.name, f.stat().st_mtime_ns, f.stat().st_size) for f in files)
+        key = (str(store.current().skills_dir),) + tuple((f.name, f.stat().st_mtime_ns, f.stat().st_size) for f in files)
     except OSError:
         return []
     if key != _cache["key"]:
@@ -605,7 +602,7 @@ def prompt_block(query, matched=None, how="exact"):
 # ------------------------------------------------------------------ side files: stats and history
 
 def _side(kind):
-    return DIR / f".{kind}"
+    return store.current().skills_dir / f".{kind}"
 
 
 def stats_get(name):
@@ -709,8 +706,8 @@ def _set_front(text, key, value):
 def _write(name, text, author="local", cause="", op=""):
     """Write a skill file. The file it replaces is kept in .history (so the change can be undone) and the change is
     logged. Returns the new version number."""
-    DIR.mkdir(parents=True, exist_ok=True)
-    f = DIR / f"{name}.md"
+    store.current().skills_dir.mkdir(parents=True, exist_ok=True)
+    f = store.current().skills_dir / f"{name}.md"
     old_ver, backup = 0, ""
     if f.exists():
         old = f.read_text(encoding="utf-8")
@@ -732,7 +729,7 @@ def _write(name, text, author="local", cause="", op=""):
 
 
 def set_status(name, status, cause="", author="code"):
-    f = DIR / f"{slug(name)}.md"
+    f = store.current().skills_dir / f"{slug(name)}.md"
     if status not in STATUSES or not f.exists():
         return False
     text = _set_front(f.read_text(encoding="utf-8"), "status", status)
@@ -744,7 +741,7 @@ def undo(name):
     """Put back the version a change replaced (undoing it again redoes it)."""
     n = slug(name)
     last = next((h for h in reversed(history(n)) if h.get("backup")), None)
-    f = DIR / f"{n}.md"
+    f = store.current().skills_dir / f"{n}.md"
     if not last or not (_side("history") / last["backup"]).exists() or not f.exists():
         return f"There is no earlier version of '{n}' to go back to."
     old = (_side("history") / last["backup"]).read_text(encoding="utf-8")
@@ -841,7 +838,7 @@ def _render(name, description, when, kind, body):
 
 
 def _explicit_risk(name):
-    f = DIR / f"{name}.md"
+    f = store.current().skills_dir / f"{name}.md"
     try:
         r = _front(f.read_text(encoding="utf-8"))[0].get("risk", "").lower()
         return r if r in RISKS else ""
@@ -877,7 +874,7 @@ def save(name, description, steps, when="", kind="", replace=False, author="loca
     kind = str(kind or "").lower()
     if kind not in ("routine", "recipe", ""):
         kind = ""
-    existed = (DIR / f"{name}.md").exists()
+    existed = (store.current().skills_dir / f"{name}.md").exists()
     if existed and not replace:
         return (f"I already have a skill called '{name}'. To change it use edit_skill (one step at a time), or save "
                 "it again with replace=true to rewrite the whole thing.")
@@ -921,7 +918,7 @@ def delete(name):
     s = get(name)
     if not s:
         return f"I have no skill called '{name}'."
-    trash = DIR / ".trash"
+    trash = store.current().skills_dir / ".trash"
     trash.mkdir(parents=True, exist_ok=True)
     shutil.move(s["file"], trash / f"{s['name']}-{int(time.time())}.md")
     _cache["key"] = None
@@ -1074,7 +1071,7 @@ def describe():
     skills = load()
     if not skills:
         return (f"I have no skills yet. Teach me one - e.g. 'when I say movie time, close everything, open Netflix "
-                f"and turn the volume up' - and I'll save it in {DIR}.")
+                f"and turn the volume up' - and I'll save it in {store.current().skills_dir}.")
     lines = []
     for s in skills:
         tag = "BROKEN - " + s["error"] if s["kind"] == "broken" else s["kind"]
@@ -1086,7 +1083,7 @@ def describe():
             extra += f" [{st.get('ok', 0)}/{st['runs']} ok]"
         lines.append(f"- {s['name']} ({tag}): {s['description'] or s['body'][:80]}" + extra
                      + (f" [say: {', '.join(s['examples'][:3])}]" if s["examples"] else ""))
-    return f"My skills (files in {DIR}):\n" + "\n".join(lines)
+    return f"My skills (files in {store.current().skills_dir}):\n" + "\n".join(lines)
 
 
 def fill(args, text):
@@ -1175,7 +1172,7 @@ def draft_from_steps(name, description, examples, steps, hints=None, goal=""):
     name = slug(name)
     if not name:
         return "Give the skill a short name, like 'crunchyroll-new'."
-    if (DIR / f"{name}.md").exists():
+    if (store.current().skills_dir / f"{name}.md").exists():
         return f"I already have a skill called '{name}' - pick another name, or change it with edit_skill."
     ex = [e for e in (_list(examples) if not isinstance(examples, list) else examples) if str(e).strip()] or [name.replace("-", " ")]
     description = re.sub(r"\s+", " ", str(description or "")).strip()[:300] or f"{name.replace('-', ' ')} (saved from a task: {goal[:80]})"

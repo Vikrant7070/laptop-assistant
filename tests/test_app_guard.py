@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from nova import store
 from nova.actions import tools
 from nova.core import app
 
@@ -17,7 +18,7 @@ def trusted():
     """As on the laptop: typing and keys don't ask first."""
     s = app.settings()
     s["autonomy"] = "trusted"
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
 
 
 @pytest.fixture

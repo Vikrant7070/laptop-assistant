@@ -83,7 +83,14 @@ needed. Gate: 1096 passed, 1 skipped, ruff clean.
 
 **Accept:** CI green on GitHub; `master` contains Phases 0, 1, 5, 6, 9a; `refactor/part-b` deleted.
 
-### Step B — Store (Phase 4, M, risk medium)
+### Step B — Store (Phase 4, M, risk medium) — done 2026-11-21, in review
+
+Result: `nova/store.py`; 20 modules ask `store.current()` for paths (16 frozen path globals removed, plus
+`settings.json` reads in sfx/avatar/body and the voice scripts that ignored `NOVA_DATA`). `conftest` installs one
+`Store` per test; tests use `store.current().<name>` instead of module globals. `tests/test_store.py` runs a fresh
+interpreter with `NOVA_DATA` and fails if any data path ignores it or any module freezes one at import.
+Not done on purpose: the modules' own load/save functions were already atomic (except `forms`/`body`) and were
+left as they are; `Store.read_json`/`write_json` exist for new code.
 
 No longer waits for the `app.py` split — it only touches path globals and `conftest`, and is the safest structural
 change. Same steps as v1 Phase 4 (`nova/store.py`, one redirect point, fresh-interpreter `NOVA_DATA` test).

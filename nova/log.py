@@ -13,9 +13,8 @@ import threading
 import time
 import traceback
 
-from nova.shared import DATA
+from nova import store
 
-FILE = DATA / "task_log.txt"
 RATE_SECS = 60          # at most one report per place per minute
 _last = {}
 _lock = threading.Lock()
@@ -36,8 +35,8 @@ def log_exception(where, exc=None):
         detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
     stamp = time.strftime("%H:%M:%S")
     try:
-        FILE.parent.mkdir(parents=True, exist_ok=True)
-        with FILE.open("a", encoding="utf-8") as f:
+        store.current().task_log.parent.mkdir(parents=True, exist_ok=True)
+        with store.current().task_log.open("a", encoding="utf-8") as f:
             f.write(f"{stamp} ERROR {where}: {type(exc).__name__ if exc else 'unknown'}: {exc}\n"
                     + "".join("      " + line + "\n" for line in detail.splitlines()))
     except OSError:
