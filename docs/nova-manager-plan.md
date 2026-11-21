@@ -242,6 +242,26 @@ What the user sees when they say "research X" stays the same.
     "#1 Research · done · 2 sources".
   - Gotcha: while a child-brain training run held the GPU at 100%, the local brain never answered. Two tries ended
     with "can't reach Ollama" after 20 min. The run was paused for the test (process suspended), then resumed.
+- **Live re-check after merging master's packages (2026-11-21):**
+  - On the merged branch, with the GPU free, "research …" worked 2 out of 2 times: done in 83 s and 118 s, recorded,
+    and shown in Recent jobs.
+  - The brain first took stray steps: `list_windows`, and `window_action focus` on the user's Netflix Chrome window.
+  - With the GPU busy, it only called `list_windows`, twice.
+  - Plain master went straight to research (1 out of 1).
+  - The brain is offered the same tools as before the merge. Master's refactor changed their order, and the branch
+    adds 2 tools (`research_report`, `retry_coding_job`) to the co-worker group.
+  - Too few runs to blame either change.
+- **Fix (2026-11-21): an exact routine skill match runs without a brain turn.**
+  - When the request names an active routine skill and nothing more, `skills.direct_args` builds the `run_skill`
+    call. A request with "and then …" or "also …" still goes to the brain, and so does a needed `{input}` that can't
+    be read from the request.
+  - `skillrun.plan_direct` puts that call on the task. On the first turn, `_agent_loop` uses it through
+    `skillrun.direct_call` instead of asking the brain.
+  - The usual approvals and checks still apply, and the call is stored in the history like the brain's own call.
+  - `conversation.py` was exactly at the 800-line guard. Its `nova.brain` imports were merged into one line to make
+    room.
+  - **Live:** "research the best budget mechanical keyboards" got its reply in 3 s (it was 30–230 s), with no
+    brain call and no window steps. The job was done in 58 s.
 
 For any request that is bigger than a laptop skill:
 
