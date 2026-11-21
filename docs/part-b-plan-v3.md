@@ -98,7 +98,12 @@ change. Same steps as v1 Phase 4 (`nova/store.py`, one redirect point, fresh-int
 
 **Accept:** `NOVA_DATA` alone redirects every file; `conftest` installs one `Store`; no test patches a path global.
 
-### Step C — UI split (Phase 8, M, risk low)
+### Step C — UI split (Phase 8, M, risk low) — done 2026-11-21, in review
+
+Result: `index.html` (327 lines) + `nova.css` + `nova.js`; `knowledge.html` + `knowledge.js`; shared `markup.js`
+with an auto-escaping `html` template, `put()` (the only `innerHTML`) and `el()`. All 28 + 4 sites converted; this
+also escapes the character name in "is thinking" and a field key on the Knowledge page, which were unescaped.
+Same DOM ids, API calls and routes. `nova3d.html`, `ear.html` and `static/mobile/` were out of scope.
 
 Independent of everything else; can run in parallel with B in its own session (touches only `static/`).
 `index.html` is 1,048 lines with 28 `innerHTML` sites. Same steps as v1 Phase 8; also split `knowledge.html`'s inline
