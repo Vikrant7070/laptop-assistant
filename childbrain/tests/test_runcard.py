@@ -84,3 +84,46 @@ def test_childbrain_never_imports_nova():
         for line in text.splitlines():
             stripped = line.strip()
             assert not stripped.startswith(("import nova", "from nova")), f"{py} imports Nova: {line}"
+
+
+# ---------- live progress and stop requests (the Child brain tab in Nova) ----------
+
+from childbrain import runcard as _rc  # noqa: E402
+
+LIVE = "childbrain.tests.test_runcard:live_demo"
+
+
+@_rc.experiment(defaults={"rounds": 5})
+def live_demo(settings, device):
+    """Reports progress each round, asks itself to finish after round 1, and says where it stopped."""
+    seen = []
+    for r in range(settings["rounds"]):
+        _rc.report_progress(round=r)
+        seen.append(json.loads((_rc._live / _rc.PROGRESS_FILE).read_text(encoding="utf-8"))["round"])
+        if r == 1:
+            (_rc._live / _rc.FINISH_FILE).write_text("now", encoding="utf-8")
+        why = _rc.stop_requested()
+        if why:
+            return {"stopped_at": r, "why": why, "seen": seen}
+    return {"stopped_at": None, "seen": seen}
+
+
+def test_progress_file_and_finish_request(tmp_path):
+    folder = run(LIVE, seed=0, runs_dir=tmp_path)
+    res = json.loads((folder / RESULTS_FILE).read_text(encoding="utf-8"))
+    assert res == {"stopped_at": 1, "why": "a person asked it to finish", "seen": [0, 1]}
+    assert json.loads((folder / _rc.PROGRESS_FILE).read_text(encoding="utf-8"))["round"] == 1
+    assert _rc._live is None and _rc.stop_requested() is None   # outside a run: never stops
+    _rc.report_progress(round=99)                                 # and reporting does nothing
+
+
+def test_off_switch_stops_a_run(tmp_path):
+    (tmp_path / _rc.OFF_SWITCH).write_text("x", encoding="utf-8")
+    folder = run(LIVE, seed=0, runs_dir=tmp_path)
+    res = json.loads((folder / RESULTS_FILE).read_text(encoding="utf-8"))
+    assert res["stopped_at"] == 0 and res["why"] == "the off switch is on"
+
+
+def test_off_switch_name_matches_the_guard():
+    from childbrain.guard.server import STOP_NAME
+    assert _rc.OFF_SWITCH == STOP_NAME
