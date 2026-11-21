@@ -59,7 +59,7 @@ class FakeMouth:
 
 
 voice.RealMouth = voice.Mouth     # tests of the real voice class use this
-voice.Mouth = FakeMouth
+voice.speak.Mouth = FakeMouth     # its home module (nova/audio/voice/ is a package; tests/test_packages.py)
 voice.WhisperTranscriber.available = staticmethod(lambda: False)
 
 from nova import store  # noqa: E402
