@@ -1,5 +1,16 @@
 let WAKE = "Hey Nova";      // the chosen character's wake phrase ("Hey Lucy"), from /api/events
 const $ = s => document.querySelector(s);
+
+/* ---------------- safe markup ----------------
+   Every piece of markup this page builds is an html`...` template: each ${value} in it is escaped, unless it is
+   itself an html`...` result (or a list of them), so a name or message from the server can never become markup.
+   put() is the only place that sets innerHTML; el() builds one element without any markup at all. */
+class Html { constructor(s) { this.s = s; } }
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const markup = v => v instanceof Html ? v.s : Array.isArray(v) ? v.map(markup).join("") : v === false || v == null ? "" : esc(v);
+const html = (strings, ...vals) => new Html(strings.reduce((out, s, i) => out + s + (i < vals.length ? markup(vals[i]) : ""), ""));
+function put(node, content) { node.innerHTML = markup(content); return node; }
+function el(tag, props = {}, ...kids) { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; }
 const log = $("#log"), orb = $("#orb"), input = $("#input");
 let voiceOn = true, handsFree = false, busy = false, NAME = "Nova";
 document.querySelectorAll("#setupTabs button").forEach(b => b.onclick = () => {
@@ -55,9 +66,8 @@ const CAPS = [
   ["💬 Companion", "Chat, remember you, keep you company", ["Remember that I'm a student and I love cricket", "Tell me a joke", "I'm bored"]],
   ["🛠 Power user", "Any PowerShell command, even as admin", ["What Windows version am I on?", "List my installed Wi-Fi profiles"]],
 ];
-$("#caps").innerHTML = CAPS.map(([t, d, ex]) =>
-  `<div class="cap"><b>${t}</b><small>${d}</small>${ex.map(e => `<button>“${e}”</button>`).join("")}</div>`).join("") +
-  `<p class="mood">How often I ask <b>Allow / No</b> first is up to you - change it under ⚙ Model.</p>`;
+put($("#caps"), html`${CAPS.map(([t, d, ex]) =>
+  html`<div class="cap"><b>${t}</b><small>${d}</small>${ex.map(e => html`<button>“${e}”</button>`)}</div>`)}<p class="mood">How often I ask <b>Allow / No</b> first is up to you - change it under ⚙ Model.</p>`);
 document.addEventListener("click", e => {
   const b = e.target.closest(".cap button, .chip");
   if (b) send(b.textContent.replace(/[“”]/g, ""));
@@ -141,8 +151,8 @@ $("#mic").onclick = () => recording ? stopRec() : startRec();
 
 /* ---------------- chat ---------------- */
 function add(cls, text) { const d = document.createElement("div"); d.className = "msg " + cls; d.textContent = text; log.append(d); log.scrollTop = 1e9; return d; }
-function acts(list) { if (!list?.length) return; const d = document.createElement("div"); d.className = "acts"; d.innerHTML = list.map(a => `<span>✓ ${esc(a)}</span>`).join(""); log.append(d); }
-function typing(on) { $("#typing")?.remove(); if (on) { const d = document.createElement("div"); d.id = "typing"; d.className = "typing"; d.innerHTML = `${NAME} is thinking <i></i><i></i><i></i>`; log.append(d); log.scrollTop = 1e9; } }
+function acts(list) { if (!list?.length) return; const d = document.createElement("div"); d.className = "acts"; put(d, html`${list.map(a => html`<span>✓ ${a}</span>`)}`); log.append(d); }
+function typing(on) { $("#typing")?.remove(); if (on) { const d = document.createElement("div"); d.id = "typing"; d.className = "typing"; put(d, html`${NAME} is thinking <i></i><i></i><i></i>`); log.append(d); log.scrollTop = 1e9; } }
 
 /* ---------------- what Nova is thinking ----------------
    Every step she takes while working on a request (and a thinking model's own reasoning) shows up live in a
@@ -164,7 +174,7 @@ function addThought(t) {
   if (!thoughtBox || thoughtBox.dataset.turn != t.turn) openThoughts(t);
   const li = document.createElement("li");
   if (MINOR.test(t.text)) li.className = "minor";
-  li.innerHTML = `<time>+${(t.t - thoughtBox.dataset.t0).toFixed(1)}s</time><span>${esc(t.text)}</span>`;
+  put(li, html`<time>+${(t.t - thoughtBox.dataset.t0).toFixed(1)}s</time><span>${t.text}</span>`);
   thoughtBox.querySelector("ol").append(li);
   thoughtBox.dataset.n = +thoughtBox.dataset.n + 1;
   thoughtBox.dataset.t1 = t.t;
@@ -180,7 +190,7 @@ function openThoughts(t) {
   const d = document.createElement("details");
   d.className = "thoughts live"; d.open = true;
   d.dataset.turn = t.turn; d.dataset.t0 = t.t; d.dataset.t1 = t.t; d.dataset.n = 0;
-  d.innerHTML = `<summary></summary><ol></ol>`;
+  d.append(el("summary"), el("ol"));
   const typingEl = $("#typing");
   typingEl ? log.insertBefore(d, typingEl) : log.append(d);
   thoughtBox = d;
@@ -225,7 +235,7 @@ function render(j) {
 // A background job is done: "Show it" brings its window (Gmail, Notepad) to the front.
 function showOffer(o) {
   const d = document.createElement("div"); d.className = "confirm";
-  d.innerHTML = `<button class="yes">${esc(o.label || "Show it")}</button><button class="no">Not now</button>`;
+  put(d, html`<button class="yes">${o.label || "Show it"}</button><button class="no">Not now</button>`);
   const go = async show => { d.querySelectorAll("button").forEach(b => b.disabled = true); d.style.opacity = .6;
     if (o.help && show) { add("me", o.label || "Help me"); return handle(api("/api/help", {yes: true, id: o.id})); }   // 🆘 she works on it
     try { const j = await api(o.help ? "/api/help" : "/api/offer", o.help ? {yes: false, id: o.id} : {show, id: o.id}); add("nova", j.reply); }
@@ -281,15 +291,13 @@ document.addEventListener("keydown", e => {
 
 function showConfirm(items) {
   const d = document.createElement("div"); d.className = "confirm";
-  d.innerHTML = `<b>May I?</b> ${esc(items.map(i => i.label).join(", "))}<code>${items.map(i => esc(JSON.stringify(i.input))).join("\n")}</code>
-    <button class="yes">Allow</button><button class="no">No thanks</button>`;
+  put(d, html`<b>May I?</b> ${items.map(i => i.label).join(", ")}<code>${items.map(i => JSON.stringify(i.input)).join("\n")}</code>
+    <button class="yes">Allow</button><button class="no">No thanks</button>`);
   const go = ok => { d.querySelectorAll("button").forEach(b => b.disabled = true); d.style.opacity = .6;
     d.querySelector("b").textContent = ok ? "Allowed ✓" : "Declined ✗"; handle(api("/api/confirm", {approved: ok})); };
   d.querySelector(".yes").onclick = () => go(true); d.querySelector(".no").onclick = () => go(false);
   log.append(d); log.scrollTop = 1e9;
 }
-const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-
 /* ---------------- header buttons ---------------- */
 $("#voiceBtn").onclick = async e => { voiceOn = !voiceOn; e.target.classList.toggle("on", voiceOn); await api("/api/setup", {voice: voiceOn}); };
 function earsLabel() { $("#handsBtn").textContent = handsFree ? `👂 ${WAKE}` : "🙉 Ears off"; }
@@ -299,7 +307,7 @@ $("#handsBtn").onclick = async e => {
   add("nova", handsFree ? `I'm listening for “${WAKE}” now. Say it, wait for my bubble, then tell me what you need!`
     : `🙉 My ears are off - I'm not listening at all now, not even for “${WAKE}”. Click 👂 to turn them back on (the 🎤 button still works when you want to talk).`);
 };
-$("#resetBtn").onclick = async () => { await api("/api/reset"); log.innerHTML = ""; thoughtBox = null; hideCloud(); greet(); };
+$("#resetBtn").onclick = async () => { await api("/api/reset"); log.replaceChildren(); thoughtBox = null; hideCloud(); greet(); };
 $("#keyBtn").onclick = async () => openSetup(await loadStatus());
 $("#quitBtn").onclick = async () => {
   if (!confirm("Shut Nova down completely? She stops listening, 3D Nova and the tray icon go away. Start her again with \"Start Nova.bat\".")) return;
@@ -313,8 +321,8 @@ const KEY_LINKS = {google: "https://aistudio.google.com/app/apikey", openai: "ht
                    anthropic: "https://platform.claude.com/settings/keys"};
 const PRIVACY = "Our chat (and window titles) goes to this company. Screenshots and camera photos never do - they stay on the local model.";
 function fillCloud(ids, sel) {
-  $("#cloudModel").innerHTML = ids.length ? ids.map(m => `<option ${m === sel ? "selected" : ""}>${esc(m)}</option>`).join("")
-    : `<option value="">Save a key to see the models</option>`;
+  put($("#cloudModel"), ids.length ? ids.map(m => html`<option ${m === sel ? "selected" : ""}>${m}</option>`)
+    : html`<option value="">Save a key to see the models</option>`);
 }
 function keyPlaceholder(p) {
   $("#apiKey").value = "";
@@ -334,9 +342,9 @@ async function loadCloudModels(p, sel) {
 function showProvider() {
   const p = $("#provider").value, onCloud = p !== "ollama";
   $("#cloudBox").style.display = onCloud ? "block" : "none";
-  $("#localLabel").innerHTML = onCloud
-    ? "<b>Backup brain</b> - this local model takes over whenever the cloud fails (no internet, key or credit problem):"
-    : "Pick an installed Ollama model. Everything stays on your laptop.";
+  put($("#localLabel"), onCloud
+    ? html`<b>Backup brain</b> - this local model takes over whenever the cloud fails (no internet, key or credit problem):`
+    : "Pick an installed Ollama model. Everything stays on your laptop.");
   if (!onCloud) return;
   $("#keyLink").href = KEY_LINKS[p];
   keyPlaceholder(p);
@@ -370,7 +378,7 @@ function fillRouting(s) {
   $("#autoRoute").checked = r.auto_route !== false; $("#heavySteps").value = r.heavy_steps || 6;
   for (const [id, key] of [["coderModel", "coder_model"], ["deepModel", "deep_model"], ["heavyModel", "heavy_model"]]) {
     const want = r[key] || "", list = names.includes(want) || !want ? names : [want, ...names];   // keep a chosen model that isn't installed visible
-    $("#" + id).innerHTML = list.map(m => `<option ${m === want ? "selected" : ""}>${esc(m)}</option>`).join("");
+    put($("#" + id), list.map(m => html`<option ${m === want ? "selected" : ""}>${m}</option>`));
   }
   $("#routeBox").style.opacity = $("#autoRoute").checked ? 1 : .5;
 }
@@ -382,20 +390,20 @@ function openSetup(s) {
   $("#pick").style.display = "block";
   $("#pullCmd").textContent = "ollama pull " + s.default_model;
   $("#provider").value = s.provider || "ollama"; showProvider();
-  if (!s.ollama) $("#model").innerHTML = `<option value="">Ollama isn't running - no local brain right now</option>`;
+  if (!s.ollama) put($("#model"), html`<option value="">Ollama isn't running - no local brain right now</option>`);
   if (s.ollama) {
-    $("#model").innerHTML = s.models.length ? s.models.map(m => `<option ${m === s.model || m === s.model + ":latest" ? "selected" : ""}>${esc(m)}</option>`).join("")
-      : `<option value="">No models yet - run: ollama pull ${esc(s.default_model)}</option>`;
+    put($("#model"), s.models.length ? s.models.map(m => html`<option ${m === s.model || m === s.model + ":latest" ? "selected" : ""}>${m}</option>`)
+      : html`<option value="">No models yet - run: ollama pull ${s.default_model}</option>`);
     $("#toolNote").textContent = s.ready ? (s.tools ? "✓ This model supports tool calling." : "This model has no native tool calling - I'll use a text-based fallback (works, but less reliably).") : "";
     $("#think").checked = s.think; $("#autostart").checked = s.autostart; $("#camera").checked = s.camera; $("#screen").checked = s.screen;
     $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep; $("#deepSleep").checked = s.deep_sleep !== false; $("#listenPause").value = s.listen_pause ?? 0.7; $("#listenMax").value = s.listen_max ?? 10; $("#micLevel").value = s.mic_level ?? 5; showMicLevel(); $("#phoneCalls").checked = s.phone_calls !== false; $("#phoneQuiet").checked = s.phone_quiet !== false;$("#phoneCloud").checked = !!s.phone_notes_cloud; $("#emailCloud").checked = !!s.email_cloud;
     $("#errorHelp").checked = s.error_help !== false; $("#bargeIn").checked = s.barge_in !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
-    $("#visionNote").innerHTML = s.vision_model ? `Eyes: <b>${esc(s.vision_model)}</b> ✓`
-      : `She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`;
+    put($("#visionNote"), s.vision_model ? html`Eyes: <b>${s.vision_model}</b> ✓`
+      : html`She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`);
     document.querySelectorAll("[name=aut]").forEach(r => r.checked = r.value === s.autonomy);
   }
   fillRouting(s); $("#avatarRoam").value = s.avatar_roam || "corner";
-  $("#character").innerHTML = (s.characters || []).map(c => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join("");
+  put($("#character"), (s.characters || []).map(c => html`<option value="${c.id}">${c.label}</option>`));
   $("#character").value = s.character || "nova";
   $("#character").dataset.was = $("#character").value;   // Save sends her only when you picked another one
   $("#reasoning").value = s.reasoning || "auto";
@@ -407,11 +415,10 @@ function openSetup(s) {
 function showPhone(p) {
   const n = $("#phoneNote");
   $("#phoneToken").placeholder = p.configured ? `Bot @${p.bot || "?"} saved ✓ (paste a new token to replace it)` : "Paste your bot token (123456789:ABC...)";
-  n.innerHTML = !p.configured ? "No bot yet."
-    : p.paired ? `✓ Paired with <b>${esc(p.paired_name || "your account")}</b> via <b>@${esc(p.bot)}</b>. ${p.running ? "Listening." : "Not listening."}`
-    : p.pair_code ? `Now open <b>@${esc(p.bot)}</b> in Telegram and send it this code: <b style="font-size:18px;letter-spacing:2px">${esc(p.pair_code)}</b> (works for 10 minutes)`
-    : `The pairing code expired - click "New pairing code".`;
-  if (p.note) n.innerHTML += `<br><span style="color:var(--warn)">${esc(p.note)}</span>`;
+  put(n, html`${!p.configured ? "No bot yet."
+    : p.paired ? html`✓ Paired with <b>${p.paired_name || "your account"}</b> via <b>@${p.bot}</b>. ${p.running ? "Listening." : "Not listening."}`
+    : p.pair_code ? html`Now open <b>@${p.bot}</b> in Telegram and send it this code: <b style="font-size:18px;letter-spacing:2px">${p.pair_code}</b> (works for 10 minutes)`
+    : `The pairing code expired - click "New pairing code".`}${p.note && html`<br><span style="color:var(--warn)">${p.note}</span>`}`);
   $("#phoneNewCode").style.display = p.configured && !p.paired ? "" : "none";
   $("#phoneUnpair").style.display = p.paired ? "" : "none";
   $("#phoneForget").style.display = p.configured ? "" : "none";
@@ -420,7 +427,7 @@ function showPhone(p) {
 async function loadPhone() { try { showPhone(await (await fetch("/api/phone")).json()); } catch (e) {} }
 async function phoneDo(body) {
   try { showPhone(await api("/api/phone", body)); $("#phoneToken").value = ""; }
-  catch (e) { $("#phoneNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+  catch (e) { put($("#phoneNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 }
 $("#phoneSave").onclick = () => { const t = $("#phoneToken").value.trim(); if (t) { $("#phoneNote").textContent = "Checking the token with Telegram…"; phoneDo({token: t}); } };
 $("#phoneNewCode").onclick = e => { e.preventDefault(); phoneDo({new_code: true}); };
@@ -430,10 +437,10 @@ $("#phoneForward").onchange = () => phoneDo({forward: $("#phoneForward").checked
 /* ---------------- 📧 Gmail ---------------- */
 let gmTimer = null;
 function showGmail(g) {
-  $("#gmNote").innerHTML = (g.error ? `<span style="color:var(--bad)">${esc(g.error)}</span><br>` : "") +
-    (g.connected ? `✓ Connected${g.email ? " as <b>" + esc(g.email) + "</b>" : ""}. Read-only.`
+  put($("#gmNote"), html`${g.error && html`<span style="color:var(--bad)">${g.error}</span><br>`}${
+    g.connected ? html`✓ Connected${g.email && html` as <b>${g.email}</b>`}. Read-only.`
      : g.connecting ? "Finish signing in on Google's page in your browser…"
-     : g.configured ? "Saved. Click Connect Gmail." : "Not set up yet.");
+     : g.configured ? "Saved. Click Connect Gmail." : "Not set up yet."}`);
   $("#gmClient").placeholder = g.configured ? "Client saved ✓ (paste a new ID to replace it)" : "Google client ID (….apps.googleusercontent.com)";
   $("#gmConnect").style.display = g.configured && !g.connected && !g.connecting ? "" : "none";
   $("#gmDisconnect").style.display = g.connected ? "" : "none";
@@ -443,7 +450,7 @@ function showGmail(g) {
 async function loadGmail() { try { showGmail(await (await fetch("/api/gmail")).json()); } catch (e) {} }
 async function gmailDo(body) {
   try { showGmail(await api("/api/gmail", body)); $("#gmSecret").value = ""; $("#gmClient").value = ""; }
-  catch (e) { $("#gmNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+  catch (e) { put($("#gmNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 }
 $("#gmSave").onclick = () => { const i = $("#gmClient").value.trim(), s = $("#gmSecret").value.trim(); if (i && s) gmailDo({client_id: i, client_secret: s}); };
 $("#gmConnect").onclick = () => gmailDo({connect: true});
@@ -453,13 +460,13 @@ let mobTimer = null;
 function showMobile(m) {
   $("#mobOn").checked = !!m.on;
   $("#mobBody").style.display = m.on ? "" : "none";
-  $("#mobUrl").innerHTML = m.url
-    ? `Open <b>${esc(m.url)}</b> in Safari on your iPhone (signed in to the same Tailscale account), then Share → Add to Home Screen.`
-    : `Tailscale isn't set up on this laptop yet. Install it, then run <code>${esc(m.serve)}</code> once - the address to open on your phone appears here.`;
+  put($("#mobUrl"), m.url
+    ? html`Open <b>${m.url}</b> in Safari on your iPhone (signed in to the same Tailscale account), then Share → Add to Home Screen.`
+    : html`Tailscale isn't set up on this laptop yet. Install it, then run <code>${m.serve}</code> once - the address to open on your phone appears here.`);
   $("#mobCodeShow").textContent = m.code ? m.code.replace(/(...)(...)/, "$1 $2") : "";
-  $("#mobDevices").innerHTML = (m.devices || []).length
-    ? m.devices.map(d => `📱 <b>${esc(d.name)}</b> <a href="#" data-dev="${esc(d.id)}" style="font-size:13px">Remove</a>`).join("<br>")
-    : "None yet.";
+  put($("#mobDevices"), (m.devices || []).length
+    ? m.devices.map((d, i) => html`${i > 0 && html`<br>`}📱 <b>${d.name}</b> <a href="#" data-dev="${d.id}" style="font-size:13px">Remove</a>`)
+    : "None yet.");
   document.querySelectorAll("#mobDevices a[data-dev]").forEach(a => a.onclick = e => { e.preventDefault(); mobDo({remove: a.dataset.dev}); });
   clearTimeout(mobTimer);
   if (m.on && m.code) mobTimer = setTimeout(loadMobile, 4000);       // the code disappears once a phone has used it
@@ -467,32 +474,32 @@ function showMobile(m) {
 async function loadMobile() { try { showMobile(await (await fetch("/api/mobile")).json()); } catch (e) {} }
 async function mobDo(body) {
   try { showMobile(await api("/api/mobile", body)); $("#mobNote").textContent = ""; }
-  catch (e) { $("#mobNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+  catch (e) { put($("#mobNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 }
 $("#mobOn").onchange = () => mobDo({on: $("#mobOn").checked});
 $("#mobCode").onclick = () => mobDo({new_code: true});
 function showMcp(j) {
   const icon = {connected: "🟢", failed: "🔴", starting: "🟡", disabled: "⚪", stopped: "⚪"};
-  $("#mcpStatus").innerHTML = (j.error ? `<span style="color:var(--bad)">${esc(j.error)}</span><br>` : "") +
-    (j.servers.length ? j.servers.map(s => `${icon[s.status] || "•"} <b>${esc(s.name)}</b> - ${esc(s.status)}` +
-      (s.tools.length ? `: ${s.tools.length} tool${s.tools.length === 1 ? "" : "s"} (${esc(s.tools.slice(0, 6).join(", "))}${s.tools.length > 6 ? "…" : ""})` : "") +
-      (s.trusted ? " · trusted" : "") + (s.error ? `<br><span style="color:var(--bad)">${esc(s.error)}</span>` : "")).join("<br>") : "No connectors yet.");
+  put($("#mcpStatus"), html`${j.error && html`<span style="color:var(--bad)">${j.error}</span><br>`}${
+    j.servers.length ? j.servers.map((s, i) => html`${i > 0 && html`<br>`}${icon[s.status] || "•"} <b>${s.name}</b> - ${s.status}${
+      s.tools.length > 0 && html`: ${s.tools.length} tool${s.tools.length === 1 ? "" : "s"} (${s.tools.slice(0, 6).join(", ")}${s.tools.length > 6 ? "…" : ""})`}${
+      s.trusted && " · trusted"}${s.error && html`<br><span style="color:var(--bad)">${s.error}</span>`}`) : "No connectors yet."}`);
 }
 function showForms(j) {
-  $("#formFields").innerHTML = j.fields.map(f => `<label class="mood" style="display:flex;flex-direction:column;gap:2px">${esc(f.label)}
-    <input data-k="${esc(f.key)}" value="${esc(f.value)}" autocomplete="off" spellcheck="false" ${f.key === "birth_date" ? 'placeholder="e.g. 15/08/1998"' : ""}></label>`).join("");
+  put($("#formFields"), j.fields.map(f => html`<label class="mood" style="display:flex;flex-direction:column;gap:2px">${f.label}
+    <input data-k="${f.key}" value="${f.value}" autocomplete="off" spellcheck="false" ${f.key === "birth_date" && html`placeholder="e.g. 15/08/1998"`}></label>`));
 }
 async function loadForms() { try { showForms(await (await fetch("/api/forms")).json()); } catch (e) {} }
 $("#formsSave").onclick = async () => {
   const details = {}; document.querySelectorAll("#formFields input").forEach(i => details[i.dataset.k] = i.value);
   try { showForms(await api("/api/forms", {details})); $("#formsNote").textContent = "Saved on this laptop ✓"; }
-  catch (e) { $("#formsNote").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+  catch (e) { put($("#formsNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 };
 async function loadMcp() { try { const j = await (await fetch("/api/mcp")).json(); $("#mcpCfg").value = j.config; showMcp(j); } catch (e) {} }
 $("#mcpSave").onclick = async () => {
   $("#mcpStatus").textContent = "Connecting… (a server that npx has to download can take ~30 s the first time)";
   try { const j = await api("/api/mcp", {config: $("#mcpCfg").value}); $("#mcpCfg").value = j.config; showMcp(j); }
-  catch (e) { $("#mcpStatus").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+  catch (e) { put($("#mcpStatus"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 };
 $("#retry").onclick = async () => { const s = await loadStatus(); s.ollama ? openSetup(s) : ($("#keyErr").textContent = "Still can't reach Ollama on port 11434."); };
 $("#saveModel").onclick = async () => {
@@ -551,7 +558,7 @@ async function loadStatus() {
   $("#voiceBtn").classList.toggle("on", voiceOn); $("#handsBtn").classList.toggle("on", handsFree); earsLabel();
   if (s.voice_name) $("#voiceBtn").title = "Nova's voice: " + s.voice_name;
   $("#keyBtn").title = "Brain: " + (s.brain || "").replace(/^cloud:/, "") + (s.brain !== s.model ? `  (backup: ${s.model})` : "");
-  $("#mem").innerHTML = s.memories.length ? s.memories.map(m => `<li>${esc(m)}</li>`).join("") : "<li>Nothing yet - tell me about yourself!</li>";
+  put($("#mem"), s.memories.length ? s.memories.map(m => html`<li>${m}</li>`) : html`<li>Nothing yet - tell me about yourself!</li>`);
   return s;
 }
 function greet() {
