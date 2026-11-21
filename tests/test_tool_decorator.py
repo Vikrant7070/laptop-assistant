@@ -65,10 +65,13 @@ def test_core_tools_are_always_offered():
 
 
 def test_mistakes_are_caught_when_declaring():
-    def get_datetime():                                              # a hand-written tool of the same name
+    def get_datetime():                                              # one of Nova's own tools has this name
         return ""
-    with pytest.raises(ValueError, match="both in TOOLS"):
+    with pytest.raises(ValueError, match="declared twice"):
         registry.tool("Another clock.", friendly="Checked")(get_datetime)
+
+    with pytest.raises(ValueError, match="once"):
+        registry.tool("Both.", friendly="Both", risky="Do it", ask="Do it")
 
     def twice():
         return ""
