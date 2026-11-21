@@ -32,7 +32,12 @@ os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 CARD_FILE = "card.json"
 RESULTS_FILE = "results.json"
+PROGRESS_FILE = "progress.json"   # live numbers while a run is going (the Child brain tab in Nova reads it)
+FINISH_FILE = "FINISH"            # a person asked this run to stop practising now, then finish and save
+OFF_SWITCH = "STOP"               # the guard's off switch (guard/server.py STOP_NAME): every run stops too
 FORMAT = 1
+
+_live: Path | None = None         # the folder of the run going on in this process
 
 
 # ---------- experiments ----------
@@ -58,6 +63,29 @@ def resolve(path: str) -> Callable:
     if not getattr(fn, "is_experiment", False):
         raise ValueError(f"{path} is not marked with @experiment")
     return fn
+
+
+# ---------- live progress and stop requests ----------
+
+def report_progress(**numbers: Any) -> None:
+    """Write the run's live numbers to progress.json (replaced whole, so a reader never sees half a file).
+    Does nothing outside `run()`, so experiments can call it freely (tests, reruns)."""
+    if _live is None:
+        return
+    tmp = _live / (PROGRESS_FILE + ".tmp")
+    tmp.write_text(json.dumps({"time": time.strftime("%Y-%m-%dT%H:%M:%S"), **numbers}), encoding="utf-8")
+    os.replace(tmp, _live / PROGRESS_FILE)
+
+
+def stop_requested() -> str | None:
+    """Why this run should stop practising now, or None: a FINISH file in its folder, or the guard's off switch."""
+    if _live is None:
+        return None
+    if (_live / FINISH_FILE).exists():
+        return "a person asked it to finish"
+    if (_live.parent / OFF_SWITCH).exists():
+        return "the off switch is on"
+    return None
 
 
 # ---------- seed and versions ----------
@@ -169,7 +197,13 @@ def run(experiment: str, settings: dict | None = None, seed: int = 0, device: st
     card = RunCard.new(experiment, settings, seed, device, name)
     folder = _new_folder(Path(runs_dir or RUNS_DIR), card.name)
     card.save(folder)  # saved first, so even a crashed run can be repeated
-    _write_json(folder / RESULTS_FILE, execute(card))
+    print(f"run folder {folder}", flush=True)
+    global _live
+    _live = folder
+    try:
+        _write_json(folder / RESULTS_FILE, execute(card))
+    finally:
+        _live = None
     return folder
 
 

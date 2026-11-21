@@ -20,7 +20,7 @@ import torch
 
 from ..brain.net import build, weights_to_json
 from ..learn.ppo import Learner, Settings, by_chance, greedy
-from ..runcard import experiment
+from ..runcard import experiment, report_progress, stop_requested
 from ..worlds import PRACTICE, make, play_once, random_actions
 
 # game -> (target, random floor from WP 0.4, best possible or expert)
@@ -98,7 +98,18 @@ def learn_alone(settings: dict, device: str) -> dict:
 
     checks = {"steps": [], "score": []}
     reached_at = None
+    stopped = None
     start = time.perf_counter()
+
+    def live(phase: str) -> None:
+        p = learner.progress
+        report_progress(phase=phase, game=game, target=target, random_floor=TARGETS[game][1],
+                        steps=learner.steps, max_steps=rounds * settings["horizon"] * settings["copies"],
+                        round=len(p.steps), rounds=rounds, seconds=round(time.perf_counter() - start, 1),
+                        checks_steps=checks["steps"], checks_score=checks["score"], reached_at=reached_at,
+                        practice_steps=p.steps[-400:], practice_score=p.score[-400:])
+
+    live("practising")
     for r in range(rounds):
         learner.round()
         if (r + 1) % settings["check_every"] == 0 or r == rounds - 1:
@@ -109,7 +120,13 @@ def learn_alone(settings: dict, device: str) -> dict:
                 reached_at = learner.steps
                 if settings["stop_at_target"]:
                     break
+        if r % 5 == 4:
+            live("practising")
+        stopped = stop_requested()
+        if stopped:
+            break
     seconds = time.perf_counter() - start
+    live("final exam")
 
     exam = score(brain, game, device, 1024, "test", "greedy")
     exam_chance = score(brain, game, device, 1024, "test", "chance")
@@ -133,6 +150,8 @@ def learn_alone(settings: dict, device: str) -> dict:
         "genes": genes,
         "weights_sha256": fingerprint,
     }
+    if stopped:
+        out["stopped_early"] = stopped  # only when it happened, so older runs still rerun to the same numbers
     if settings["keep_weights"]:
         out["weights"] = weights
     return out
