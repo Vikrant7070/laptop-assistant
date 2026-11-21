@@ -255,7 +255,7 @@ _u = _k = None
 
 
 def _dlls():
-    """Our own copies of user32/kernel32, so the argtypes set here never change how tools.py's calls behave."""
+    """Our own copies of user32/kernel32, so the argtypes set here never change how the tools package's calls behave."""
     global _u, _k
     if _u is None:
         u = ctypes.WinDLL("user32", use_last_error=True)

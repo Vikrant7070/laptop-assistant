@@ -53,10 +53,10 @@ def test_fill_form_never_tells_the_brain_the_values(monkeypatch):
 
     boxes = [{"name": n, "type": "Edit", "password": n == "Password", "filled": False, "offscreen": False,
               "x": 10, "y": 10 * i, "ctrl": Ctrl()} for i, n in enumerate(["Full name", "Email", "Password", "OTP"])]
-    monkeypatch.setattr(tools, "_form_boxes", lambda window: ((1, "Sign up - Chrome", "chrome.exe"), boxes))
-    monkeypatch.setattr(tools, "_focus", lambda h: None)
-    monkeypatch.setattr(tools, "_nova_click", lambda *a, **k: None)
-    monkeypatch.setattr(tools, "_focused_is_password", lambda: False)
+    monkeypatch.setattr(tools.forms, "_form_boxes", lambda window: ((1, "Sign up - Chrome", "chrome.exe"), boxes))
+    monkeypatch.setattr(tools.windows, "_focus", lambda h: None)
+    monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
+    monkeypatch.setattr(tools.forms, "_focused_is_password", lambda: False)
     monkeypatch.setattr(tools.keyboard, "write", lambda text, delay=0: typed.append(text))
     monkeypatch.setattr(tools.keyboard, "send", lambda keys: None)
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
@@ -71,7 +71,7 @@ def test_fill_form_without_details_points_to_settings():
 
 
 def test_typing_into_a_password_box_is_refused(monkeypatch):
-    monkeypatch.setattr(tools, "_focused_is_password", lambda: True)
+    monkeypatch.setattr(tools.forms, "_focused_is_password", lambda: True)
     written = []
     monkeypatch.setattr(tools.keyboard, "write", lambda *a, **k: written.append(a))
     assert tools.type_text("hunter2") == tools.NO_SECRETS and not written
@@ -81,7 +81,7 @@ def test_fill_in_refuses_a_password_box(monkeypatch):
     class Ctrl:
         IsPassword = True
     items = [{"name": "Password", "type": "Edit", "x": 1, "y": 1, "offscreen": False, "ctrl": Ctrl()}]
-    monkeypatch.setattr(tools, "_scan", lambda window, limit=0: ((1, "Login", "chrome.exe"), items))
+    monkeypatch.setattr(tools.forms, "_scan", lambda window, limit=0: ((1, "Login", "chrome.exe"), items))
     assert tools.fill_in("hunter2", box="Password") == tools.NO_SECRETS
 
 
