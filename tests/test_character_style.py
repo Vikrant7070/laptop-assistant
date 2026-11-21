@@ -2,7 +2,6 @@
 built-in reactions, idle habits, faces, how big and fast she moves, and what she does when clicked or poked.
 The data lives in her folder; nova/avatar/body.py only reads it."""
 import json
-import random
 import types
 
 from nova.avatar import avatar, body

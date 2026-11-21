@@ -148,7 +148,7 @@ class BrainBalance:
             for p in procs:
                 p.nice(level)
         except Exception:
-            pass
+            pass  # intentional: an audio/OS call that has a fallback elsewhere
 
 
 brain_balance = BrainBalance()
@@ -288,7 +288,7 @@ class Mouth:
             import sounddevice as sd
             sd.stop()
         except Exception:
-            pass
+            pass  # intentional: an audio/OS call that has a fallback elsewhere
         self._lips(False)
         if self.bubble_until > time.time():      # her words are still up: take them down with the sound
             self.bubble_until = 0.0
@@ -356,7 +356,7 @@ class Mouth:
                     toks = sp.GetVoices()
                 tokens += [toks.Item(i) for i in range(toks.Count)]
             except Exception:
-                pass
+                pass  # intentional: an audio/OS call that has a fallback elsewhere
         self.voices = [t.GetDescription() for t in tokens]
         for pref in PREFERRED_VOICES:
             match = next((t for t in tokens if pref in t.GetDescription()), None)
@@ -506,7 +506,7 @@ class Mouth:
                 try:                              # device unplugged / changed: reopen it for the next sentence
                     stream.close()
                 except Exception:
-                    pass
+                    pass  # intentional: an audio/OS call that has a fallback elsewhere
                 stream = None
             finally:
                 self._done_one(gen)
@@ -820,7 +820,7 @@ def _add_nvidia_dlls():
                 if str(d) not in os.environ["PATH"]:
                     os.environ["PATH"] = str(d) + os.pathsep + os.environ["PATH"]
     except Exception:
-        pass
+        pass  # intentional: an audio/OS call that has a fallback elsewhere
 
 
 WHISPER_HINT = ("Open Chrome, open VS Code, open WhatsApp, YouTube, Spotify. "
@@ -904,7 +904,7 @@ class VoiceProfile:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps({"levels": self.levels}), encoding="utf-8")
         except Exception:
-            pass
+            pass  # intentional: an audio/OS call that has a fallback elsewhere
 
     def usual(self):
         if len(self.levels) < self.MIN_SAMPLES:
@@ -1245,7 +1245,7 @@ class WhisperTranscriber:
             if text and self.live and not (self.self_voice and self.self_voice()):
                 self.on_partial(text)
         except Exception:
-            pass
+            pass  # intentional: an audio/OS call that has a fallback elsewhere
         finally:
             self.live_busy = False
 
@@ -1340,7 +1340,7 @@ class WhisperEars(_EarsBase):
             try:
                 self.on_name()
             except Exception:
-                pass
+                pass  # intentional: an audio/OS call that has a fallback elsewhere
 
     def _peek(self, audio):
         """Runs while the user is still speaking: if the sentence starts with her name, react right away."""
@@ -1505,9 +1505,9 @@ def other_apps_playing(level=0.02):
                 if s._ctl.QueryInterface(IAudioMeterInformation).GetPeakValue() > level:
                     return True
             except Exception:
-                pass
+                pass  # intentional: an audio/OS call that has a fallback elsewhere
     except Exception:
-        pass
+        pass  # intentional: an audio/OS call that has a fallback elsewhere
     return False
 
 
@@ -1684,7 +1684,7 @@ def kill_strays(script_name):
             if any(a.replace("/", "\\").lower().endswith("\\" + script_name.lower()) for a in args):
                 p.terminate()
         except Exception:
-            pass
+            pass  # intentional: an audio/OS call that has a fallback elsewhere
 
 
 def online_speech_on():

@@ -89,7 +89,7 @@ def dialog_text(hwnd):
                 if len(parts) >= 6:
                     break
         except Exception:
-            pass
+            pass  # intentional: a window that will not answer is skipped
     text = " ".join(dict.fromkeys(parts))           # in order, without repeats
     return re.sub(r"\s+", " ", text)[:MAX_TEXT]
 
