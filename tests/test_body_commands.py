@@ -80,16 +80,16 @@ def test_no_body_on_screen_says_so(body, monkeypatch):
 
 def test_said_dancing_without_react_still_dances(body, monkeypatch):
     played = []
-    monkeypatch.setattr(app, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
-    monkeypatch.setattr(app, "review_turn", lambda *a, **k: None)
+    monkeypatch.setattr(app.body, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
+    monkeypatch.setattr(app.learning, "review_turn", lambda *a, **k: None)
     app.after_turn("can you do something fun", {"reply": "Reacting now... I'm dancing!", "activity": []})
     assert played == ["dance"]
 
 
 def test_asked_move_beats_correction_facepalm(body, monkeypatch):
     played = []
-    monkeypatch.setattr(app, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
-    monkeypatch.setattr(app, "review_turn", lambda *a, **k: None)
+    monkeypatch.setattr(app.body, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
+    monkeypatch.setattr(app.learning, "review_turn", lambda *a, **k: None)
     app.state["react_after"] = {"name": "dance", "repeat": None}
     app.after_turn("you didn't dance", {"reply": "Sorry!", "activity": ["Acted it out"]})
     assert played == ["dance"]

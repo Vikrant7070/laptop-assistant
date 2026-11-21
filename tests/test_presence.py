@@ -162,9 +162,9 @@ def test_welcome_lists_several_things():
 # ------------------------------------------------------------------ in Nova
 
 def test_back_greets_and_wakes(monkeypatch):
-    monkeypatch.setattr(app, "_first_name", lambda: "Vikrant")
+    monkeypatch.setattr(app.integrations, "_first_name", lambda: "Vikrant")
     woke = []
-    monkeypatch.setattr(app, "wake_body", lambda: woke.append(1))
+    monkeypatch.setattr(app.voice_io, "wake_body", lambda: woke.append(1))
     app.nap["asleep"] = True
     app._greeted["at"] = 0
     presence.state.update(away=True, missed=["Reminder: water"])
@@ -187,7 +187,7 @@ def test_lock_event_locks(monkeypatch):
 
 
 def test_talking_to_nova_counts_as_here(monkeypatch):
-    monkeypatch.setattr(app, "user_idle_secs", lambda: 900)
+    monkeypatch.setattr(app.background, "user_idle_secs", lambda: 900)
     app.convo["on"] = True
     assert app.presence_idle() == 0
     app.convo["on"] = False
@@ -198,7 +198,7 @@ def test_talking_to_nova_counts_as_here(monkeypatch):
 
 
 def test_missed_lines_are_kept_only_while_away(monkeypatch):
-    monkeypatch.setattr(app, "user_idle_secs", lambda: 900)
+    monkeypatch.setattr(app.background, "user_idle_secs", lambda: 900)
     app.tell_away("Reminder: one")                          # idle, but presence says not away: no summary entry
     assert presence.state["missed"] == []
     presence.state["away"] = True
@@ -215,7 +215,7 @@ def test_settings_switches(client):
 
 def test_asked_to_sleep_means_coming_back_doesnt_wake_her(monkeypatch):
     """'Nova, go to sleep' is the user's choice: only 'Hey Nova' or a typed message wakes her, not the camera."""
-    monkeypatch.setattr(app, "_first_name", lambda: "Vikrant")
+    monkeypatch.setattr(app.integrations, "_first_name", lambda: "Vikrant")
     app._greeted["at"] = 0
     app.go_to_sleep("asked", quiet=True)
     presence.state.update(away=True, missed=["Reminder: water"])
@@ -227,7 +227,7 @@ def test_asked_to_sleep_means_coming_back_doesnt_wake_her(monkeypatch):
 
 
 def test_napping_after_idle_still_gets_the_welcome(monkeypatch):
-    monkeypatch.setattr(app, "_first_name", lambda: "")
+    monkeypatch.setattr(app.integrations, "_first_name", lambda: "")
     app._greeted["at"] = 0
     app.go_to_sleep("idle", quiet=True)
     app.on_presence("back")
@@ -236,7 +236,7 @@ def test_napping_after_idle_still_gets_the_welcome(monkeypatch):
 
 def test_her_own_voice_is_not_the_user_coming_back(monkeypatch):
     """Live: a notification she read out while the user was away made her think they were back."""
-    monkeypatch.setattr(app, "user_idle_secs", lambda: 400)
+    monkeypatch.setattr(app.background, "user_idle_secs", lambda: 400)
     monkeypatch.setattr(app.mouth, "busy", lambda: True)
     app.convo.update(on=False, thinking=False, last_heard=0.0)
     assert app.presence_idle() == 400

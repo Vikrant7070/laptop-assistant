@@ -7,18 +7,18 @@ from nova.core import app
 
 def test_heard_pushes_what_was_said_before_answering(monkeypatch):
     seen = []
-    monkeypatch.setattr(app, "events", [])
-    monkeypatch.setattr(app, "wants_sleep", lambda t: False)
-    monkeypatch.setattr(app, "note_task", lambda: None)
-    monkeypatch.setattr(app, "help_first", lambda: False)
-    monkeypatch.setattr(app, "take_offer", lambda t: None)
+    monkeypatch.setattr(app.voice_io, "events", [])
+    monkeypatch.setattr(app.voice_io, "wants_sleep", lambda t: False)
+    monkeypatch.setattr(app.voice_io, "note_task", lambda: None)
+    monkeypatch.setattr(app.integrations, "help_first", lambda: False)
+    monkeypatch.setattr(app.integrations, "take_offer", lambda t: None)
     monkeypatch.setattr(app.avatar_client, "send", lambda *a, **k: None)
     monkeypatch.setitem(app.state, "pending", None)
 
     def fake_answer(text):
         seen.extend(dict(e) for e in app.events)          # what the chat could already see
         return {"reply": "ok"}, 200
-    monkeypatch.setattr(app, "answer", fake_answer)
+    monkeypatch.setattr(app.body, "answer", fake_answer)
     app.heard("what time is it", via="silent")
     assert seen == [{"me": "what time is it"}]
     assert app.events[-1] == {"reply": "ok"}               # no second copy of "me" with the answer

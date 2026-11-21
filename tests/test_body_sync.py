@@ -119,7 +119,7 @@ def test_ears_glow_exactly_while_listening(monkeypatch):
     sent = []
     monkeypatch.setattr(app.avatar_client, "send", lambda do, **k: sent.append((do, k.get("on"), k.get("hearing"))))
     fake = type("T", (), {"hearing_at": 0.0})()
-    monkeypatch.setattr(app, "transcriber", fake, raising=False)
+    monkeypatch.setattr(app.voice_io, "transcriber", fake, raising=False)
     def wait_for(ok, secs=5.0, keep_hearing=False):      # polls instead of fixed sleeps, so a busy laptop can't fail it
         end = _time.time() + secs
         while _time.time() < end and not ok():
