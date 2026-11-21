@@ -179,6 +179,7 @@ def test_phone_request_asks_first_even_in_full_access(tg, brain, monkeypatch):
     p = paired_phone(tg)
     wire(p)
     monkeypatch.setattr(app, "phone", p)
+    monkeypatch.setattr(app.tools, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
     fake, ran = brain([("Typing it.", [("type_text", {"text": "hello"})]), ("Typed hello!", [])])
     out = app.phone_message("type hello in notepad")
     assert out.get("pending") and ran == []                    # asked, didn't type

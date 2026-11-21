@@ -70,6 +70,8 @@ from nova.core import app  # noqa: E402
 from nova.actions import skills  # noqa: E402
 from nova.actions import checks  # noqa: E402
 from nova.actions import recorder  # noqa: E402
+from nova.actions import learner  # noqa: E402
+from nova.actions import questions  # noqa: E402
 
 recorder.ENABLED = False          # never install real mouse/keyboard hooks in tests (tests patch recorder's functions)
 
@@ -90,6 +92,10 @@ def _point_data_at(folder):
     router._cache.update(key=None, conf=None)
     skills.DIR = folder / "skills"
     skills._cache.update(key=None, skills=[])
+    learner.EPISODES = folder / "episodes.jsonl"
+    learner.FACTS = folder / "facts.json"
+    questions.FILE = folder / "questions.json"
+    app.learn_state.update(last=0.0)
 
 
 @pytest.fixture(autouse=True)
@@ -101,13 +107,21 @@ def isolated(tmp_path, monkeypatch):
     app.events.clear()
     monkeypatch.setattr(tools.keyboard, "send", lambda *a, **k: None)     # never press real keys
     monkeypatch.setattr(tools.keyboard, "write", lambda *a, **k: None)
+    # typing goes in by pasting: a pretend clipboard, so tests never touch the real one
+    monkeypatch.setattr(tools, "_clip_save", lambda: [])
+    monkeypatch.setattr(tools, "_clip_set_text", lambda text: 1)
+    monkeypatch.setattr(tools, "_clip_restore", lambda saved, seq: None)
+    monkeypatch.setattr(tools, "_focused_text", lambda: None)
     monkeypatch.setattr(tools.webbrowser, "open", lambda *a, **k: True)  # never open real browser tabs
     monkeypatch.setattr(tools, "open_windows_summary", lambda limit=6: "")
+    monkeypatch.setattr(tools, "_windows", lambda: [])      # an empty pretend desktop (a test adds its own windows)
     monkeypatch.setattr(tools, "_screen_allowed", lambda: False)
     monkeypatch.setattr(app, "react_later", lambda *a, **k: None)
     monkeypatch.setattr(app, "review_turn", lambda why: None)
     # skill step checks look at the real desktop: a test says what they find (or patches checks.evaluate itself)
     monkeypatch.setattr(checks, "evaluate", lambda *a, **k: (True, "ok (test)"))
+    # the Judge's "which checks prove this?" brain call would eat a scripted FakeBrain answer: none fit by default
+    monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: "NONE")
     # Phone Link's banner switch lives in the real registry: tests only record what would have been asked
     app.banner_calls = []
     monkeypatch.setattr(app.notifications, "phone_banners", lambda show, **k: (app.banner_calls.append(show), 1)[1])

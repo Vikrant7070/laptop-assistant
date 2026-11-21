@@ -962,6 +962,21 @@ class WhisperTranscriber:
     START_MIN = 0.0003    # ~2x the room's loudest background blips (p90 0.00017), 6x its median
     KEEP_MIN = 0.00025
     MAX_LEN = 10.0        # longest one request may be (⚙ Senses: "Listen at most…")
+    # ⚙ Senses "How loud I must be" (mic_level 1-10, 5 = the levels above). The app sets this; see thresholds().
+    scale = 1.0
+
+    @staticmethod
+    def level_scale(mic_level):
+        """mic_level 1..10 -> how much the "someone is speaking" levels are multiplied by (1 -> x0.25, 5 -> x1,
+        10 -> x5.7, about 15 dB more sound needed)."""
+        return 2 ** ((float(mic_level) - 5) / 2)
+
+    def thresholds(self):
+        """(start_min, start_factor, keep_min, keep_factor) at the current mic_level. The keep-going factor moves
+        more gently (square root) so a loud setting doesn't cut off a sentence's softer ending, and the start
+        factor never drops below 2x the room's noise (steady noise alone must not start a recording)."""
+        s = self.scale
+        return self.START_MIN * s, max(2.0, 3.5 * s), self.KEEP_MIN * s, max(1.5, 2.5 * s ** 0.5)
 
     def __init__(self):
         self.model = None
@@ -994,6 +1009,7 @@ class WhisperTranscriber:
         # Set by the app: True while she is waiting for a yes/no (bare "No." from noise is ignored otherwise).
         self.expect_reply = None
         self.next_floor = None  # set by the app after a barge-in: the room's noise for the next recording
+        self.meter = (0.0, 0.0, 0.0)  # (mic loudness now, level that starts a recording, when) for the live meter
 
     @staticmethod
     def available():
@@ -1062,6 +1078,7 @@ class WhisperTranscriber:
         waited, power = 0.0, 0.0      # power: sum of squared loudness over the voiced blocks
         self.voice_level, self.noise = 0.0, 0.0
         end_pause = end_pause or self.END_PAUSE
+        start_min, start_x, keep_min, keep_x = self.thresholds()
         # Seconds into the sentence at which peek() gets what was said so far. A bare "Hey Nova" lasts only ~0.6 s,
         # so the first look has to come early.
         peeks, spoken = [0.5, 0.9, 1.5], 0.0
@@ -1083,9 +1100,11 @@ class WhisperTranscriber:
                 if floor is None:
                     # (after a barge-in the user is already talking: the room's noise was measured while she spoke)
                     floor, self.next_floor = (self.next_floor or rms), None
+                # For the ⚙ Senses live meter: how loud the mic is now, and the level that starts a recording.
+                self.meter = (rms, max(start_min, floor * start_x), time.time())
                 if not started:
                     chunks = (chunks + [block])[-12:]               # keep ~0.35 s from before speech starts
-                    if rms > max(self.START_MIN, floor * 3.5):
+                    if rms > max(start_min, floor * start_x):
                         loud += 1
                         started = loud >= 3                         # ~0.1 s of sound, not a single click
                     else:
@@ -1104,7 +1123,7 @@ class WhisperTranscriber:
                         peeks.append(spoken + peek_every)
                 n_voice = round(voiced / self.BLOCK)
                 mine = (power / n_voice) ** 0.5 * self.VOICE_DROP if voiced >= 0.3 and n_voice else 0.0
-                if rms < max(self.KEEP_MIN, floor * 2.5, mine):
+                if rms < max(keep_min, floor * keep_x, mine):
                     quiet += self.BLOCK
                 else:
                     quiet, last_sound, voiced = 0.0, spoken, voiced + self.BLOCK
@@ -1557,7 +1576,8 @@ class BargeIn:
     def unexplained(self, t, rms, played):
         """One microphone block. True when there have been NEED blocks of sound her voice can't explain within
         WINDOW seconds (time to check the words). Also keeps learning her echo's gain and the room's noise."""
-        odd = rms > self.EXCESS * self.gain * played + 4 * self.floor and rms > WhisperTranscriber.START_MIN
+        start_min = WhisperTranscriber.START_MIN * getattr(self.w, "scale", 1.0)    # (⚙ Senses mic level)
+        odd = rms > self.EXCESS * self.gain * played + 4 * self.floor and rms > start_min
         if played > 0.02 and not odd:
             self.ratios.append(rms / played)
             if len(self.ratios) >= 50:
