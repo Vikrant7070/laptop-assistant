@@ -42,6 +42,8 @@ FILES = {
     "moves": "moves.json",
     "look": "look.json",
     "voice_profile": "voice_profile.json",
+    "workers": "workers.json",             # coding workers' settings (workers.py, ⚙ Workers)
+    "jobs": "jobs.json",                   # coding job history (workers.py)
 }
 # name -> folder under the data folder
 DIRS = {
@@ -49,6 +51,7 @@ DIRS = {
     "terminal": "terminal",
     "research_chrome": "research-chrome",
     "joint_webview": "joint_check_webview",
+    "job_logs": "jobs",                    # each coding job's raw output (workers.py)
 }
 
 
