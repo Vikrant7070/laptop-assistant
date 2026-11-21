@@ -47,8 +47,10 @@ PORT = int(os.environ.get("PORT", 5055))
 SETTINGS_FILE = tools.DATA / "settings.json"
 DEFAULT_MODEL = "qwen3-vl:4b-instruct"  # fits a 6 GB laptop GPU; tools + vision, no hidden thinking
 ASSISTANT_NAME = "Nova"
-MAX_HISTORY = 12  # the 8K context holds ~5300 tokens of prompt + tools, so only ~2900 are left for these
-MAX_STORED = 120  # messages kept in memory at all (Nova runs for days in the tray; only MAX_HISTORY reach the model)
+MAX_HISTORY = 12  # the 8K context holds ~5300 tokens of prompt + tools, so only ~2900 are left for these (see history_limit)
+MAX_STORED = 120  # messages kept in memory at all (Nova runs for days in the tray; only history_limit() reach the model)
+PROMPT_TOKENS = 5300   # measured: persona + tool schemas + knowledge summary, before a single conversation turn
+CLOUD_HISTORY_MAX = 60  # a cloud window is huge, but a long prompt still costs money and time
 MAX_EVENTS = 50   # voice events waiting for the chat page
 
 
@@ -1393,14 +1395,28 @@ def _is_real_user(m):
     return m["role"] == "user" and not protocol.is_meta_line(m["content"])
 
 
-def trimmed_history():
+def history_limit(model=None):
+    """How many stored messages to send to this model.
+
+    Local models have an 8K window and ~5300 tokens of prompt + tools, so they keep the measured 12.
+    A cloud model's window is far larger; it gets more history (up to CLOUD_HISTORY_MAX) because its
+    older turns are usable, but not unbounded: prompt length is money and latency.
+    """
+    if not cloud.parse(model):
+        return MAX_HISTORY
+    free = max(0, llm.context_size(model) - PROMPT_TOKENS)
+    return max(MAX_HISTORY, min(CLOUD_HISTORY_MAX, free // 1200))
+
+
+def trimmed_history(model=None):
     """Last messages only, starting at a real user message so tool results keep their calls.
     During a long task the request itself must never scroll away, so it is kept in front of the latest steps."""
+    limit = history_limit(model)
     msgs = state["messages"]
     task = state.get("task")
-    cut = max(0, len(msgs) - MAX_HISTORY)
+    cut = max(0, len(msgs) - limit)
     if task and task["start"] < len(msgs) and cut > task["start"]:
-        tail = msgs[-(MAX_HISTORY - 2):]
+        tail = msgs[-(limit - 2):]
         while tail and (tail[0]["role"] == "tool" or tail[0]["content"].startswith(protocol.TOOL_RESULT_START)):
             tail = tail[1:]   # a result whose call was cut off
         return [msgs[task["start"]]] + tail
@@ -1541,7 +1557,7 @@ def _agent_loop(activity):
             break
         turns += 1
         nap["last_task"] = time.time()      # working on it: a long task is not "quiet", so no nap mid-job
-        msgs = [{"role": "system", "content": system_prompt(model)}] + trimmed_history()
+        msgs = [{"role": "system", "content": system_prompt(model)}] + trimmed_history(model)
         # Ordinary questions are spoken while the answer is still being written. During a multi-step screen task
         # she must not talk early - her "done!" may still be corrected by her own check of the screen.
         stream = SpeechStream() if not (task and (task["steps"] or task.get("skill"))) and not state.get("remote") else None   # 📱: no voice
