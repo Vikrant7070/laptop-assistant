@@ -144,7 +144,7 @@ resolves, and on a module over 800 lines.
 
 ## Part B
 
-Done (plan: `docs/part-b-plan-v3.md`; summary: `docs/REVIEW.md` §6): CI, the protocol module,
+Done (plan: `docs/plans/part-b-plan-v3.md`; summary: `docs/REVIEW.md` §6): CI, the protocol module,
 model-aware history, exception logging, the data store, the chat UI split, the vision switch, `@tool`
 and the tools package, the app package, and these docs.
 

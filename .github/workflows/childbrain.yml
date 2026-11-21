@@ -1,0 +1,30 @@
+name: childbrain
+
+# The child brain research project (childbrain/): its own Python setup, so its own job. Runs only when it changes.
+on:
+  push:
+    paths: ["childbrain/**", "requirements-childbrain.txt", ".github/workflows/childbrain.yml"]
+  pull_request:
+    paths: ["childbrain/**", "requirements-childbrain.txt", ".github/workflows/childbrain.yml"]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # requirements-childbrain.txt pins the CUDA build for the laptop; CI has no GPU, so the CPU build of the
+      # same version. GPU-only tests skip themselves; test_gpu.py exists to fail without CUDA, so it's left out.
+      - name: Install CPU PyTorch and pytest
+        run: |
+          $torch = (Select-String -Path requirements-childbrain.txt -Pattern '^torch==([0-9.]+)').Matches[0].Groups[1].Value
+          pip install "torch==$torch" --index-url https://download.pytorch.org/whl/cpu
+          pip install pytest
+
+      - name: Test
+        run: python -m pytest -q childbrain --ignore=childbrain/tests/test_gpu.py

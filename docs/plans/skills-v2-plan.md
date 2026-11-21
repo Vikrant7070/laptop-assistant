@@ -1,3 +1,5 @@
+Status: done — 2026-11-18, phases 1–9 built; phase 10 (browsing habits) dropped unless the user asks.
+
 # Skills v2 — implementation plan
 
 **Status (2026-11-18): all phases 1–9 built and tested** (phase 10, browsing habits, is not built — ask the user first).

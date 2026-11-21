@@ -37,7 +37,7 @@ TARGETS = {
 }
 
 
-# Settings that reached each target alone (WP 1.1, 2026-11-21; see docs/child-brain-dev-plan.md "WP 1.1 result").
+# Settings that reached each target alone (WP 1.1, 2026-11-21; see docs/plans/child-brain-dev-plan.md "WP 1.1 result").
 # Pass them with --set. The two mazes never reached their targets; their best tries are listed instead.
 PASSED_WITH = {
     "catch": {"gamma": 0.9},
