@@ -129,6 +129,8 @@ def test_promise_without_tool_is_caught(text, promise):
 def test_recall_finds_by_meaning_with_model():
     if not (retrieval.CACHE / retrieval.REPO.replace("/", "--") / retrieval.FILES[0]).exists():
         pytest.skip("embedding model not downloaded")
+    pytest.importorskip("onnxruntime", reason="the model is downloaded but onnxruntime isn't installed here")
+    pytest.importorskip("tokenizers", reason="the model is downloaded but tokenizers isn't installed here")
     assert retrieval.load()
     knowledge.update_profile("interests", "Loves watching films on Netflix")
     knowledge.update_profile("interests", "Plays guitar")

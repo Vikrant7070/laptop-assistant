@@ -30,6 +30,9 @@ from nova.core import app
     # Part B audit: the common ways people ask for the four high-traffic goals all get a check...
     ("start notepad", [("window_open", "notepad")], True),
     ("open up the file explorer", [("window_open", "file explorer")], True),  # not "explorer": that runs the taskbar
+    ("open explorer", [("window_open", "file explorer")], True),
+    ("open windows explorer", [("window_open", "file explorer")], True),      # never in a Windows 11 title
+    ("open internet explorer", [("window_open", "internet explorer")], True),
     ("visit github.com", [("window_open", "github")], True),
     ("make youtube full screen", [("fullscreen", "")], True),
     ("enable dark theme", [("dark_mode", "on")], True),
