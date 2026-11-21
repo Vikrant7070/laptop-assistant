@@ -72,7 +72,7 @@ def childbrain_brains():
 
 
 @api.app.post("/api/childbrain/watch")
-def childbrain_watch():
+def childbrain_watch_start():      # not "childbrain_watch": that name is this module's (app.<name> clash)
     """Start (or reuse) a recording. Answers {ready, name} or {working, name}."""
     h = _need_home()
     b = api._body()

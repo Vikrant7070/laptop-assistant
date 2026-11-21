@@ -20,6 +20,14 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   button.danger{background:#3a1626;border-color:#7a2a44;color:#ffd0db}
   button.danger.big{font-weight:700;padding:9px 18px}
+  .tswitch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;font-size:15px}
+  .tswitch input{position:absolute;opacity:0;width:1px;height:1px}
+  .tswitch .track{width:52px;height:28px;border-radius:14px;background:var(--panel2);border:1px solid var(--line);position:relative;transition:background .2s}
+  .tswitch .knob{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--muted);transition:left .2s,background .2s}
+  .tswitch input:checked + .track{background:#1f4a35;border-color:var(--ok)}
+  .tswitch input:checked + .track .knob{left:27px;background:var(--ok)}
+  .tswitch input:focus-visible + .track{outline:2px solid var(--accent2);outline-offset:2px}
+  .tswitch input:disabled + .track{opacity:.45}
   button.small{padding:3px 10px;font-size:12.5px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:12px 0}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -95,6 +103,10 @@
   <!-- Controls -->
   <div class="card">
     <h2>Controls <span class="sp"></span>
+      <label class="tswitch" title="ON: train with the choices in 'Start training' below and keep the laptop awake. OFF: finish, take the exam and save.">
+        <input type="checkbox" id="trainToggle" role="switch"><span class="track"><span class="knob"></span></span>
+        <span><b>Training</b> <span id="trainState">OFF</span></span>
+      </label>
       <button class="danger big" id="offBtn" title="Turn the guard's off switch on and end every child brain process on this laptop">⏻ Stop the child brain completely</button>
     </h2>
     <div class="row small muted">
@@ -104,6 +116,7 @@
       <span id="pyLine"></span>
       <span id="procLine"></span>
     </div>
+    <div class="small muted" id="trainNote" style="margin-top:6px"></div>
   </div>
 
   <!-- Now -->
@@ -278,7 +291,7 @@ async function status() {
   $("stateText").textContent = S.off_switch ? "off switch ON" : running ? j.label : outside ? `${outside} run${outside > 1 ? "s" : ""} going elsewhere` : "idle";
   $("offBanner").style.display = S.off_switch ? "block" : "none";
   $("offSince").textContent = S.off_since ? `(since ${S.off_since.replace("T", " ")})` : "";
-  $("homeSel").innerHTML = S.folders.map(f => `<option value="${esc(f.path)}" ${f.path === S.home ? "selected" : ""}>${esc(f.name)} — ${f.runs} runs${f.learner ? "" : ", no learner"}${f.python ? "" : ", no Python"}</option>`).join("");
+  $("homeSel").innerHTML = S.folders.map(f => `<option value="${esc(f.path)}" ${f.path === S.home ? "selected" : ""}>${esc(f.name)} — ${f.runs} runs${f.learner ? "" : ", no learner"}${!f.python ? ", no Python" : f.python_from ? `, Python from ${esc(f.python_from)}` : ""}</option>`).join("");
   $("pyLine").innerHTML = S.python ? "" : `<span class="bad">The child brain's Python (.venv-childbrain) isn't set up</span>`;
   $("procLine").textContent = S.processes ? `· ${S.processes} child brain process${S.processes > 1 ? "es" : ""} running` : "";
   $("startBtn").disabled = !!running || S.off_switch || !S.python;
@@ -287,6 +300,7 @@ async function status() {
   $("finishBtn").disabled = !(running && j.kind === "train" && j.run) || j.finish_asked;
   $("killBtn").disabled = !running;
   $("offBtn").disabled = S.off_switch && !S.processes;
+  renderTrainSwitch(j, running);
   renderNow(j);
   const state = j ? j.state + (running ? "1" : "0") + j.started : "";
   if (lastJobState !== null && state !== lastJobState) overview();
@@ -393,6 +407,34 @@ function parseVal(s, defJson) {
   if (typeof def === "string") return JSON.stringify(s);
   try { return JSON.stringify(JSON.parse(s)); } catch (e) { return JSON.stringify(s); }
 }
+
+// The Training switch: ON starts a run with the "Start training" choices (the laptop stays awake while it runs),
+// OFF finishes it gently (exam + save). It shows what is really happening, so it flips back by itself when a run ends.
+let switchBusy = false;
+function renderTrainSwitch(j, running) {
+  const training = !!(running && j.kind === "train"), finishing = training && j.finish_asked;
+  const t = $("trainToggle");
+  if (!switchBusy) t.checked = training && !finishing;
+  t.disabled = switchBusy || finishing || (running && !training) || (!running && (S.off_switch || !S.python));
+  $("trainState").textContent = finishing ? "finishing…" : training ? "ON" : "OFF";
+  $("trainNote").textContent = finishing ? "Finishing: it takes its exam and saves, then the switch goes OFF."
+    : training ? `Training ${j.label.replace(/^training /, "")}.` + (S.awake ? " The laptop stays awake until it finishes (closing the lid still sleeps it). Nova still goes first." : "")
+    : S.off_switch ? "The off switch is on: clear it to train again."
+    : running ? `${j.label} is running: the switch works once it's done.`
+    : "Switch ON to train with the choices in “Start training” below. Switch OFF any time: it finishes and saves.";
+}
+$("trainToggle").onchange = async () => {
+  const t = $("trainToggle"), j = S && S.job;
+  switchBusy = true; t.disabled = true;
+  try {
+    if (t.checked) await startTraining();
+    else if (j && j.running && j.kind === "train") {
+      if (j.run) toast((await call("/api/childbrain/finish", {})).msg);
+      else { await call("/api/childbrain/kill", {}); toast("Stopped before it started practising - nothing to save."); }
+    }
+  } catch (e) { toast(e.message, 6000); }
+  finally { switchBusy = false; status(); }
+};
 
 async function startTraining(force = false) {
   const exp = $("exp").value, d = ((O.info.experiments || {})[exp] || {}).defaults || {};
