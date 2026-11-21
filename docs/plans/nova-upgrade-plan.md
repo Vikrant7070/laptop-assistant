@@ -1,3 +1,5 @@
+Status: active — 2026-11-19, B1 (barge-in) done; Part A (A1–A9) and B2–B4 not started.
+
 # Nova upgrade plan: new features and improvements
 
 Written on 2026-11-19 from research on GitHub's `ai-chatbot` topic (jarvis, openai-whisper-talk, ai-chatbot-framework,

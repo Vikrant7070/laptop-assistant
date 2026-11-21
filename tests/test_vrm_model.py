@@ -18,7 +18,8 @@ def test_another_character_can_be_asked_for(client, monkeypatch):
 
 def test_model_file_is_served_from_her_folder(client):
     r = client.get("/characters/lucy/model.vrm")
-    assert r.status_code == 200 and r.data[:4] == b"glTF"
+    # The file itself on a laptop; a Git LFS pointer in CI, which checks out without LFS (roadmap R3).
+    assert r.status_code == 200 and (r.data[:4] == b"glTF" or r.data.startswith(b"version https://git-lfs"))
     assert client.get("/characters/nobody/model.vrm").status_code == 404
 
 
