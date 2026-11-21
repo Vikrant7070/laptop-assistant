@@ -1,4 +1,5 @@
 """Manager plan phase 2: the episode log, the automatic Learner, site facts and the daily question list."""
+import itertools
 import json
 import time
 
@@ -7,8 +8,13 @@ from nova.actions import coworker, learner, questions, skills
 from nova.core import app
 
 
+_TASK_IDS = itertools.count(1)
+
+
 def _task(goal, trace, verdict=None, **extra):
-    t = {"id": extra.pop("id", f"{time.time():.6f}"), "started": time.time() - 5, "goal": goal, "trace": trace}
+    # A counter, not the clock: Windows' clock can tick only every ~15 ms, so two tasks made back to back got the same
+    # id, record() merged them into one episode and the "same task twice" tests failed now and then on CI.
+    t = {"id": extra.pop("id", f"task-{next(_TASK_IDS)}"), "started": time.time() - 5, "goal": goal, "trace": trace}
     if verdict is not None:
         t["verdict"] = {"verdict": verdict, "source": "checks",
                         "results": [{"check": "window_open notepad", "ok": verdict}]}
