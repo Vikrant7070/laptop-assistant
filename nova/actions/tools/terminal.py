@@ -94,7 +94,6 @@ def _read_text(path):
       "stays minimized in the background so the user can keep working; set show=true only if they ask to see or "
       "watch it. Use it for command-line jobs with no app or button (git log/status/remote, ssh, npm, pip, "
       "python scripts...).", friendly="Typed a command in the terminal", risky="Type a command in the terminal",
-      core=True,
       hints="git commit log status branch remote diff last commit of my project repo, ssh npm pip python script "
             "command line terminal run a command",
       props={"command": common.S, "folder": {"type": "string", "description": "folder to run it in (e.g. the project folder)"},

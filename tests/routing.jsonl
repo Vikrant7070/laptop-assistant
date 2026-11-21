@@ -47,3 +47,4 @@
 {"kind": "route", "query": "open notepad", "code": false, "deep": false, "question": false, "note": "everyday brain"}
 {"kind": "route", "query": "what time is it", "code": false, "deep": false, "question": false, "note": "everyday brain"}
 {"kind": "route", "query": "explain recursion", "code": false, "deep": false, "question": true, "note": "question trigger without a code trigger"}
+{"kind": "tool", "query": "what Windows version am I on", "must": ["run_powershell"], "note": "R2: run_powershell is no longer core; its hints must still bring it"}

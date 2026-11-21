@@ -14,6 +14,7 @@ from nova.actions import registry
 from nova.actions import recorder
 from nova.actions import workers
 from nova.actions import tools
+from nova.actions import shell_policy
 
 
 state = {"messages": [], "pending": None}
@@ -119,6 +120,8 @@ def is_risky(call):
     """Does this call need the user's OK under the current autonomy level?"""
     name, args = call["name"], call["args"]
     s = config.settings()
+    if shell_policy.needs_ok(name, args):               # a shell command that changes things: always ask, at every
+        return True                                     # autonomy level, no opt-out (decided 2026-11-21, roadmap R2)
     if name == "power_action" and args.get("action") == "cancel":
         return False
     if name in ("press_keys", "type_text") and conversation.wrong_app(call):
