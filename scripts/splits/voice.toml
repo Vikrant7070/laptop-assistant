@@ -1,0 +1,29 @@
+# Section map for scripts/split_module.py: nova/audio/voice.py -> nova/audio/voice/ (docs/file-split-plan.md, step 1).
+package = "nova.audio.voice"
+
+[ranges]                       # statements starting at/after this line of the old voice.py -> module
+"1" = "speak"                  # Windows voice choice, Kokoro settings, BrainBalance, NeuralVoice, Mouth
+"576" = "windows_ears"         # Windows' own speech recognizer (PowerShell helpers, Transcriber)
+"800" = "whisper"              # Whisper: constants, noise words, VoiceProfile, wake regex, WhisperTranscriber
+"1291" = "wake"                # _EarsBase, WhisperEars
+"1479" = "barge_in"            # talking over her
+"1487" = "wake"                # set_wake
+"1495" = "barge_in"
+"1677" = "windows_ears"        # kill_strays, online_speech_on, command_phrases, Ears
+
+[names]                        # cleaning text for speech, Hinglish, the loudness envelope
+_clean_for_speech = "wording"
+DEVANAGARI = "wording"
+HINGLISH_WORDS = "wording"
+HINGLISH_SURE = "wording"
+_hindi_script = "wording"
+SPEECH_FPS = "wording"
+speech_envelope = "wording"
+
+[docs]
+wording = "Text for her voice: what gets read out (_clean_for_speech), Hindi/Hinglish detection, the loudness envelope."
+speak = "Nova speaking: the Windows voice and Kokoro (NeuralVoice), BrainBalance, and the Mouth that plays sentences."
+windows_ears = "Listening with Windows' own offline recognizer (a PowerShell helper): Transcriber and Ears."
+whisper = "Listening with Whisper on the GPU: noise filters, the voice profile, the wake regex, WhisperTranscriber."
+wake = "The wake-word ears built on Whisper (WhisperEars) and set_wake, which renames the wake word."
+barge_in = "Talking over her: BargeIn hears the user while she speaks and stops her."
