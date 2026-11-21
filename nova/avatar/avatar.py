@@ -43,14 +43,14 @@ import tkinter as tk
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)  # real pixel coordinates
 except Exception:
     pass  # intentional: the 3D window must keep running without it
 
-from nova.avatar import body, hearing  # noqa: E402
+from nova.avatar import body, commands, hearing, win32  # noqa: E402
 from nova import store  # noqa: E402
 from nova.shared import REACTIONS, host_allowed, stand_area  # noqa: E402
 
@@ -61,58 +61,6 @@ LIVE_STALE = 0.5     # seconds without a new live frame before she counts as not
 RENDERER_ORIGINS = {"http://127.0.0.1:5055", "http://localhost:5055"}    # the hidden live renderer's page
 from nova.audio import sfx  # noqa: E402
 
-user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
-
-
-class POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
-
-
-class SIZE(ctypes.Structure):
-    _fields_ = [("cx", ctypes.c_long), ("cy", ctypes.c_long)]
-
-
-class BLENDFUNCTION(ctypes.Structure):
-    _fields_ = [("BlendOp", ctypes.c_ubyte), ("BlendFlags", ctypes.c_ubyte),
-                ("SourceConstantAlpha", ctypes.c_ubyte), ("AlphaFormat", ctypes.c_ubyte)]
-
-
-class BITMAPINFOHEADER(ctypes.Structure):
-    _fields_ = [("biSize", ctypes.c_uint32), ("biWidth", ctypes.c_long), ("biHeight", ctypes.c_long),
-                ("biPlanes", ctypes.c_ushort), ("biBitCount", ctypes.c_ushort), ("biCompression", ctypes.c_uint32),
-                ("biSizeImage", ctypes.c_uint32), ("biXPelsPerMeter", ctypes.c_long), ("biYPelsPerMeter", ctypes.c_long),
-                ("biClrUsed", ctypes.c_uint32), ("biClrImportant", ctypes.c_uint32)]
-
-
-class BITMAPINFO(ctypes.Structure):
-    _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", ctypes.c_uint32 * 3)]
-
-
-VP = ctypes.c_void_p
-user32.GetDC.restype = VP
-user32.GetDC.argtypes = [VP]
-user32.ReleaseDC.argtypes = [VP, VP]
-user32.GetParent.restype = VP
-user32.GetParent.argtypes = [VP]
-user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
-user32.GetWindowLongPtrW.argtypes = [VP, ctypes.c_int]
-user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
-user32.SetWindowLongPtrW.argtypes = [VP, ctypes.c_int, ctypes.c_ssize_t]
-user32.UpdateLayeredWindow.argtypes = [VP, VP, ctypes.POINTER(POINT), ctypes.POINTER(SIZE), VP,
-                                       ctypes.POINTER(POINT), ctypes.c_uint32, ctypes.POINTER(BLENDFUNCTION), ctypes.c_uint32]
-gdi32.CreateCompatibleDC.restype = VP
-gdi32.CreateCompatibleDC.argtypes = [VP]
-gdi32.CreateDIBSection.restype = VP
-gdi32.CreateDIBSection.argtypes = [VP, ctypes.POINTER(BITMAPINFO), ctypes.c_uint, ctypes.POINTER(VP), VP, ctypes.c_uint32]
-gdi32.SelectObject.restype = VP
-gdi32.SelectObject.argtypes = [VP, VP]
-gdi32.DeleteDC.argtypes = [VP]
-gdi32.DeleteObject.argtypes = [VP]
-
-GWL_EXSTYLE = -20
-WS_EX_LAYERED, WS_EX_TRANSPARENT, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_NOACTIVATE = 0x80000, 0x20, 0x80, 0x8, 0x08000000
-BLEND = BLENDFUNCTION(0, 0, 255, 1)
-
 
 def sound_setting():
     """The 'react_to_sound' setting: dance to music and jump at sudden sounds playing on the laptop."""
@@ -120,11 +68,6 @@ def sound_setting():
         return bool(json.loads(store.current().settings.read_text(encoding="utf-8")).get("react_to_sound", True))
     except (OSError, ValueError):
         return True
-
-
-def premultiplied_bgra(img):
-    r, g, b, a = img.split()
-    return Image.merge("RGBA", (ImageChops.multiply(b, a), ImageChops.multiply(g, a), ImageChops.multiply(r, a), a)).tobytes()
 
 
 class Rig:
@@ -156,9 +99,8 @@ class Nova:
         self.root.overrideredirect(True)
         self.root.geometry(f"{self.sp.w}x{self.sp.h}+0+0")
         self.root.update_idletasks()
-        self.hwnd = user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
-        self.base_style = user32.GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE
-        user32.SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, self.base_style)
+        self.hwnd = win32.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+        self.base_style = win32.make_layered(self.hwnd)
         self.root.attributes("-topmost", True)
 
         left, top, right, bottom = stand_area()
@@ -436,133 +378,9 @@ class Nova:
 
     # ------------------------------------------------------------ commands from the assistant
     def handle(self, cmd, done, result):
-        do = cmd.get("do")
-        if do in ("walk_to", "go_point", "carry_to", "_point"):
-            self.last_errand = time.time()           # she goes back to her corner a few seconds after the last one
-        if do == "anim" and cmd.get("name") in self.sp.anims:
-            name = cmd["name"]
-            if self.asleep:
-                name = "nap"     # napping: she stays lying down (her mouth still moves if she talks)
-            self.base = name
-        elif do == "sleep":
-            if cmd.get("on"):
-                self.nap()
-                if cmd.get("deep") and not self.deep:
-                    self.deep = True       # her mic is off now - say so once, quietly
-                    self.think_aloud("💤 mic off - click me to wake me", 8)
-            else:
-                self.wake_up(clicked=bool(cmd.get("clicked")))
-        elif do == "work":
-            on, now = bool(cmd.get("on")), time.time()
-            if on and not self.working and now - self.working_end >= self.WORK_HOLD:
-                self.working_since = now         # a new job (not the next step of the same one): the desk comes out
-            if self.working and not on:
-                self.working_end = now
-            self.working = on
-        elif do == "_doze":
-            if self.asleep:
-                self.base = "nap"
-                self.start_oneshot("yawn", after="liedown")
-        elif do == "say":
-            self.say(cmd.get("text", ""), float(cmd.get("secs", 6)))
-        elif do == "thought":
-            self.think_aloud(cmd.get("text", ""), float(cmd.get("secs", 12)))
-        elif do == "walk_to":
-            ev = self.walk_to(float(cmd["x"]), float(cmd["y"]))
-            threading.Thread(target=lambda: (ev.wait(15), done.set()), daemon=True).start()
+        """Do one command (nova/avatar/commands.py). Unless it finishes `done` itself, say where she is and end it."""
+        if commands.run(self, cmd, done, result):
             return
-        elif do == "go_point":
-            tx, ty = float(cmd["x"]), float(cmd["y"])
-            fx, fy, flip = self.point_spot(tx, ty)
-            ev = self.walk_to(fx, fy)
-
-            def then():
-                ev.wait(15)
-                self.q.put(({"do": "_point", "flip": flip}, done, result))
-            threading.Thread(target=then, daemon=True).start()
-            return
-        elif do == "_point":
-            self.facing_left = cmd["flip"]
-            ev = self.start_oneshot("point", hold_at=self.sp.tap)
-            threading.Thread(target=lambda: (ev.wait(5), done.set()), daemon=True).start()
-            return
-        elif do == "finish_point":
-            if self.oneshot and self.oneshot["name"] == "point":
-                self.oneshot["hold_at"] = None
-                self.oneshot["after"] = "happy"
-            else:
-                self.start_oneshot("happy")
-        elif do in ("happy", "wave"):
-            self.start_oneshot(do)
-            if not cmd.get("quiet"):     # quiet: the microphone is recording right now
-                self.sound(do)
-        elif do == "react":
-            ev = self.react(cmd.get("name", ""), cmd.get("repeat"))
-            result["played"] = bool(ev)
-            result["sound"] = bool(ev) and getattr(self, "last_sound", False)
-            if ev and cmd.get("wait"):
-                threading.Thread(target=lambda: (ev.wait(20), done.set()), daemon=True).start()
-                return
-        elif do == "carry_to":
-            self.oneshot = None
-            self.carrying = True
-            ev = self.walk_to(float(cmd["x"]), float(cmd["y"]))
-
-            def arrived():
-                ev.wait(20)
-                self.carrying = False
-                done.set()
-            threading.Thread(target=arrived, daemon=True).start()
-            return
-        elif do == "clickthrough":
-            style = self.base_style | (WS_EX_TRANSPARENT if cmd.get("on") else 0)
-            user32.SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, style)
-        elif do == "show":
-            self.visible = True
-            self.root.deiconify()
-        elif do == "hide":
-            self.visible = False
-            self.root.withdraw()
-        elif do == "duck":      # step out of a screenshot for a moment
-            self.root.withdraw()
-        elif do == "unduck":
-            if self.visible:
-                self.root.deiconify()
-        elif do == "quit":      # the chat's ⏻ Quit button / tray "Quit Nova": close her for good
-            done.set()
-            threading.Timer(0.3, lambda: os._exit(0)).start()
-            return
-        elif do == "move":
-            move, err = body.clean_move(**{k: cmd.get("move", {}).get(k) for k in ("name", "duration", "keys", "loop")})
-            if err:
-                result["error"] = err
-            else:
-                self.moves[move["name"]] = move
-                result["live"] = self.live_now()
-                if cmd.get("play") is False:          # learn it now, play it later (after she has spoken)
-                    result["played"] = False
-                    if done:
-                        done.set()
-                    return
-                ev = self.react(move["name"], cmd.get("repeat"))
-                result["played"] = bool(ev)
-                if ev and cmd.get("wait"):
-                    threading.Thread(target=lambda: (ev.wait(30), done.set()), daemon=True).start()
-                    return
-        elif do == "forget_move":
-            self.moves.pop(cmd.get("name"), None)
-        elif do == "look":
-            self.look = {**body.DEFAULT_LOOK, **(cmd.get("look") or {})}
-            self.look_v += 1
-            result["live"] = self.live_now()
-        elif do == "speech":
-            self.on_speech(cmd)
-        elif do == "listen":
-            on = bool(cmd.get("on"))
-            self.listen_until = time.time() + float(cmd.get("secs") or 6) if on else 0.0
-            self.hearing = on and bool(cmd.get("hearing"))
-        elif do == "_heard":
-            self.heard(cmd.get("what"))
         if result is not None:       # commands she queues for herself (battery, dozing off) have no caller waiting
             result["pos"] = self.pos
         if done:
@@ -832,9 +650,9 @@ class Nova:
         elif self.bubble or self.thought:     # speaking beats thinking: the cloud waits under the speech bubble
             text, thought = (self.bubble[0], False) if self.bubble else (self.thought[0], True)
             canvas, xoff, yoff = self.compose_bubble(img, text, thought, self.pos[0] - fx, self.bubble_anchor(img))
-            data, w, h = premultiplied_bgra(canvas), canvas.width, canvas.height
+            data, w, h = win32.premultiplied_bgra(canvas), canvas.width, canvas.height
         else:
-            data, w, h, xoff, yoff = premultiplied_bgra(img), sw, sh, 0, 0
+            data, w, h, xoff, yoff = win32.premultiplied_bgra(img), sw, sh, 0, 0
         x = round(self.pos[0] - xoff - fx)
         y = round(self.pos[1] - yoff - fy)
         self.blit(data, w, h, x, y)
@@ -902,26 +720,7 @@ class Nova:
         return canvas, xoff, fy0
 
     def blit(self, data, w, h, x, y):
-        if (w, h) not in self.dibs:
-            bmi = BITMAPINFO()
-            bmi.bmiHeader = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
-            bits = VP()
-            hbmp = gdi32.CreateDIBSection(None, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
-            if len(self.dibs) > 20:  # bubble sizes vary; don't hoard bitmaps
-                for old_bmp, _ in self.dibs.values():
-                    gdi32.DeleteObject(old_bmp)
-                self.dibs.clear()
-            self.dibs[(w, h)] = (hbmp, bits)
-        hbmp, bits = self.dibs[(w, h)]
-        ctypes.memmove(bits, data, len(data))
-        screen = user32.GetDC(None)
-        mem = gdi32.CreateCompatibleDC(screen)
-        old = gdi32.SelectObject(mem, hbmp)
-        user32.UpdateLayeredWindow(self.hwnd, screen, ctypes.byref(POINT(x, y)), ctypes.byref(SIZE(w, h)), mem,
-                                   ctypes.byref(POINT(0, 0)), 0, ctypes.byref(BLEND), 2)
-        gdi32.SelectObject(mem, old)
-        gdi32.DeleteDC(mem)
-        user32.ReleaseDC(None, screen)
+        win32.blit(self.hwnd, self.dibs, data, w, h, x, y)
 
 
 def watch_parent():
