@@ -1,3 +1,5 @@
+Status: done — 2026-11-20, the ⚙ mic loudness slider (tests/test_mic_level.py).
+
 # 🎙 Mic loudness slider — plan (no code yet)
 
 **Goal:** you choose how loud a sound must be before Nova starts recording, with a slider in ⚙ Settings.

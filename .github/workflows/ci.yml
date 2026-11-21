@@ -1,13 +1,18 @@
 name: ci
 
+# Nova itself. Child brain changes alone don't run it (they have their own job in childbrain.yml).
 on:
   push:
+    paths-ignore: ["childbrain/**", "requirements-childbrain.txt", ".github/workflows/childbrain.yml"]
   pull_request:
+    paths-ignore: ["childbrain/**", "requirements-childbrain.txt", ".github/workflows/childbrain.yml"]
 
 jobs:
   test:
     runs-on: windows-latest
     steps:
+      # No LFS download: the 3D models and voice samples aren't needed (tests accept the LFS pointer), and LFS
+      # bandwidth is limited.
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5

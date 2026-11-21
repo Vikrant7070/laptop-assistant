@@ -1,3 +1,5 @@
+Status: done — 2026-11-19, the heard bubble shows sooner (tests/test_heard_latency.py).
+
 # Plan: show what Nova heard sooner
 
 **Problem (user report):** Nova does hear speech, but the bubble showing *what she heard* shows up late, so the

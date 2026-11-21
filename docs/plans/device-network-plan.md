@@ -1,3 +1,5 @@
+Status: active — 2026-11-18, phases 1–3 built (Phone Link notes, Gmail read-only, iPhone web app); live checks are the user's.
+
 # Nova device network — implementation plan
 
 Hand this whole file to the implementing model. Goal (the user's words): *"every electronic device I have comes under

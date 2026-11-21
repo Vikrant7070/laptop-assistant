@@ -1,3 +1,5 @@
+Status: done — 2026-11-21, merged as PRs #8–#18 (tools/ and app/ packages); supersedes v1/v2 in ~/.opencode/plan.
+
 # Nova — Part B, plan v3
 
 Supersedes `nova-part-b-plan.md` (v1) and `nova-part-b-plan-v2.md` (v2) in `~/.opencode/plan/`.

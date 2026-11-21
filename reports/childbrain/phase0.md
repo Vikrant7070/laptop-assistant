@@ -1,7 +1,7 @@
 # Child brain — Phase 0 write-up: ground and guard
 
 Date: 2026-11-20. Branch `claude/child-brain-phase0-411200`. Details per package are in
-[docs/child-brain-dev-plan.md](../../docs/child-brain-dev-plan.md) ("WP 0.x result" sections).
+[docs/plans/child-brain-dev-plan.md](../../docs/plans/child-brain-dev-plan.md) ("WP 0.x result" sections).
 
 ## What exists now
 
