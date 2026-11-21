@@ -69,6 +69,7 @@ the same approval rules as a direct tool call.
 | `nova/shared.py` | ~0.13k | Paths (`ROOT`, `DATA`), PowerShell quoting, host checks |
 | `nova/protocol.py` | ~0.09k | Every text marker: builders, `strip_meta`, vision verdict parsing |
 | `nova/log.py` | ~0.06k | Rate-limited exception breadcrumbs in `data/task_log.txt` |
+| `nova/__main__.py` | ~0.01k | `python -m nova` entry point; `--version` avoids the desktop stack |
 | `nova/brain/retrieval.py` | ~0.13k | Embeddings, with a shared-word fallback |
 | `nova/core/characters.py` | ~0.1k | Character folders / personas |
 | `nova/avatar/joint_check.py` | ~0.09k | 3D joint sanity check |
@@ -122,19 +123,19 @@ embedding model, and re-check the tool cases with embeddings when the model is p
 
 ## Known follow-ups (Part B)
 
-The plan is in `C:\Users\vikra\.opencode\plan\nova-part-b-plan-v2.md` (outside the repo). In short:
+The plan is in `C:\Users\vikra\.opencode\plan\nova-part-b-plan-v2.md` (outside the repo). What is
+left is large and higher-risk, so it was deliberately not attempted in the first pass:
 
 1. `app.py` split: protocol/HTTP, prompt building, tool execution, skills playback, settings.
 2. Tool registry: one place that declares schema + handler + risk, instead of three parallel lists.
 3. `store.py` for settings / notes / reminders instead of module-level file paths.
-4. Model-aware history trimming (token budget, not character count).
-5. Exception logging (no bare `except: pass` on the request path).
-6. Vision advisory instead of silent failure when the screen/camera tool cannot see.
-7. UI split of `static/index.html`.
-8. Packaging and docs.
+4. Vision advisory instead of silent failure when the screen/camera tool cannot see.
+5. UI split of `static/index.html`.
+
+Already done: the protocol module, model-aware history, exception logging, and the packaging/docs
+pass (`python -m nova`, this file, `README.md`, `docs/REVIEW.md` §6).
 
 Smaller known gaps found while writing the golden set:
 
 - `"put chrome in the top-left corner"` reaches `window_action` but not `drag_window`; the hint for
   `drag_window` only knows "left/right side" wording.
-- `toolpick`'s docstring says "64 tools"; there are 101 now. The comment understates the prompt cost.

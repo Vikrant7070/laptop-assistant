@@ -109,3 +109,34 @@ Not changed on purpose: the autonomy design itself (trusted mode lets `run_power
 Live check after restart: typed request — sound and bubble 0.65 s after the reply text; voice request — each sentence's
 bubble appears with its sound (lips within 0.06 s), shown once, cleared ~0.6 s after it ends. `VOICE starts` lines in
 `data/task_log.txt` now record where any delay comes from (synth time, wait, sound device). 120 tests pass.
+
+## 6. Part B: structural cleanup (2026-11-21)
+
+A follow-up review found no product bugs worth chasing, but ten places where changing the code is
+harder than it should be. The work is behaviour-preserving unless a bullet says otherwise, and every
+step keeps the suite green.
+
+Landed so far:
+
+| Area | Change | Where |
+|---|---|---|
+| Safety net | `pyproject.toml` (pytest + ruff `F`/`E9`), `requirements-test.txt` (import-time deps only), `scripts/check.cmd` / `.ps1`, Windows CI | repo root, `.github/` |
+| Routing contract | 49 golden cases (28 tool, 13 skill, 8 route) pinned by `tests/test_routing_golden.py`; deterministic without the optional embedding model | `tests/routing.jsonl` |
+| Protocol | every text marker, builder and parser in one module; `strip_meta` is the gate before speaking | `nova/protocol.py` |
+| History | local models keep the measured 12 messages; cloud models get up to 60, from their real context window | `nova/brain/llm.py`, `nova/core/app.py` |
+| Failure visibility | rate-limited `log_exception` in `data/task_log.txt`; every remaining silent handler carries `# intentional: why`, enforced by a test | `nova/log.py` |
+| Docs | module map, request lifecycle, invariants, "where to change what" | `docs/ARCHITECTURE.md`, `README.md` |
+| Packaging | `python -m nova` starts her; `python -m nova --version` works without pywebview | `nova/__main__.py` |
+
+Also fixed: `tests/joint_report.json` had a stale `inputs` digest, so a fresh clone failed
+`test_joints` without Nova running; two tests depended on suite timing
+(`test_notifications_and_tips`, `test_bubbles`); seven lint findings.
+
+Deliberately not done in this pass: splitting `app.py`, the tool registry, the data store and the
+vision-check rewrite. They are large, higher-risk changes (described in the plan) and the current
+seams are stable. The golden set and the module map exist so those can be reviewed against
+something concrete.
+
+State: **1003 passed, 1 skipped** (`python -m pytest -q`, ~160 s), `ruff check .` clean,
+`scripts\check.cmd` green.
+
