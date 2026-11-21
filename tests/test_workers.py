@@ -10,6 +10,7 @@ import time
 
 import pytest
 
+from nova import store
 from nova.core import app
 from nova.actions import coworker
 from nova.actions import tools
@@ -83,8 +84,7 @@ def fake_worker(tmp_path, monkeypatch):
         "opencode": {**workers.DEFAULTS["opencode"], "model": "first", "fallback_models": ["second"], "timeout_min": 1},
         "claude": {**workers.DEFAULTS["claude"], "budget_usd": 1.0, "timeout_min": 1},
         "daily_budget_usd": 3.0})
-    monkeypatch.setattr(workers, "JOBS", tmp_path / "jobs.json")
-    monkeypatch.setattr(workers, "LOGS", tmp_path / "jobs")
+    monkeypatch.setattr(store.current(), "root", tmp_path)          # workers.json, jobs.json, jobs/ go here
     workers._busy.clear()
     workers._lines.clear()
     monkeypatch.setattr(workers, "claude_signed_in", lambda conf=None, fresh=False: True)
@@ -382,8 +382,7 @@ def test_retry_approvals(monkeypatch):
 
 
 def test_workers_settings_api(tmp_path, monkeypatch):
-    monkeypatch.setattr(workers, "CONFIG", tmp_path / "workers.json")
-    monkeypatch.setattr(workers, "JOBS", tmp_path / "jobs.json")
+    monkeypatch.setattr(store.current(), "root", tmp_path)
     monkeypatch.setattr(workers, "claude_signed_in", lambda conf=None, fresh=False: False)
     c = app.app.test_client()
     j = c.get("/api/workers").get_json()

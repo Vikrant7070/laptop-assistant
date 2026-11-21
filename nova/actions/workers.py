@@ -33,11 +33,9 @@ import threading
 import time
 from pathlib import Path
 
-from nova.shared import DATA
+from nova import store
+from nova.log import log_exception
 
-CONFIG = DATA / "workers.json"
-JOBS = DATA / "jobs.json"
-LOGS = DATA / "jobs"
 KEEP_JOBS = 200
 _lock = threading.RLock()
 _busy = {}                      # folder (normalised) -> coworker job id: one writer per folder
@@ -75,14 +73,14 @@ FREE_LIMIT = re.compile(r"free[- ]?(usage )?limit|rate.?limit|429|quota", re.I)
 def config():
     with _lock:
         try:
-            c = json.loads(CONFIG.read_text(encoding="utf-8"))
+            c = json.loads(store.current().workers.read_text(encoding="utf-8"))
         except Exception:
             c = {}
             try:
-                CONFIG.parent.mkdir(parents=True, exist_ok=True)
-                CONFIG.write_text(json.dumps(DEFAULTS, indent=1), encoding="utf-8")
-            except Exception:
-                pass
+                store.current().workers.parent.mkdir(parents=True, exist_ok=True)
+                store.current().workers.write_text(json.dumps(DEFAULTS, indent=1), encoding="utf-8")
+            except Exception as e:
+                log_exception("workers: write default workers.json", e)
     out = {}
     for k, v in DEFAULTS.items():
         out[k] = {**v, **(c.get(k) or {})} if isinstance(v, dict) else c.get(k, v)
@@ -176,10 +174,11 @@ def save_settings(body):
         else conf["daily_budget_usd"]
     new = {"opencode": oc, "claude": cc, "daily_budget_usd": daily}
     with _lock:
-        CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        tmp = CONFIG.with_suffix(".tmp")
+        path = store.current().workers
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(new, indent=1), encoding="utf-8")
-        tmp.replace(CONFIG)
+        tmp.replace(path)
     SIGNED_IN.update(at=0.0, ok=None)            # a new program path: check the sign-in again
     return overview()
 
@@ -206,7 +205,7 @@ def overview(fresh=False):
 def load_jobs():
     with _lock:
         try:
-            return json.loads(JOBS.read_text(encoding="utf-8"))
+            return json.loads(store.current().jobs.read_text(encoding="utf-8"))
         except Exception:
             return []
 
@@ -214,10 +213,11 @@ def load_jobs():
 def _save_record(rec):
     with _lock:
         recs = [r for r in load_jobs() if r.get("key") != rec["key"]] + [rec]
-        JOBS.parent.mkdir(parents=True, exist_ok=True)
-        tmp = JOBS.with_suffix(".tmp")
+        path = store.current().jobs
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(recs[-KEEP_JOBS:], ensure_ascii=False, indent=1), encoding="utf-8")
-        tmp.replace(JOBS)
+        tmp.replace(path)
 
 
 def spent_today(now=None):
@@ -362,11 +362,11 @@ def _kill(proc):
         subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=15,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except Exception:
-        pass
+        pass  # intentional: the process tree may already be gone; proc.kill() below is the fallback
     try:
         proc.kill()
     except Exception:
-        pass
+        pass  # intentional: already exited - killing a finished process is the expected race
 
 
 def _step_from(event):
@@ -530,7 +530,7 @@ def start(brief, folder, worker="auto", size="small", start_job=None):
         key = f"{int(job['started'])}-{job['id']}"
         rec = {"key": key, "job": job["id"], "worker": w, "model": "", "brief": str(brief)[:2000], "folder": root,
                "status": "queued" if _lines[norm][0] is not ticket else "running", "started": job["started"],
-               "finished": None, "cost": 0.0, "files": [], "result": "", "note": "", "log": str(LOGS / f"{key}.log")}
+               "finished": None, "cost": 0.0, "files": [], "result": "", "note": "", "log": str(store.current().job_logs / f"{key}.log")}
         _save_record(rec)
         before = None
         try:
@@ -546,7 +546,7 @@ def start(brief, folder, worker="auto", size="small", start_job=None):
                 rec.update(status="running", started=time.time())
                 _save_record(rec)
             before = snapshot(root)
-            LOGS.mkdir(parents=True, exist_ok=True)
+            store.current().job_logs.mkdir(parents=True, exist_ok=True)
             models = ([conf[w].get("model")] + list(conf[w].get("fallback_models") or [])) if w == "opencode" \
                 else [conf[w].get("model") or ""]
             out, used = None, ""
@@ -591,8 +591,8 @@ def start(brief, folder, worker="auto", size="small", start_job=None):
                 try:
                     check = after_check(root, before)
                     rec.update(files=check["files"], note=check["note"])
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_exception("workers: after-check of a stopped job", e)
             raise
         except Exception as e:
             rec["status"] = "failed"
