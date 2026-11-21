@@ -12,11 +12,11 @@ import wave
 import numpy as np
 
 
-from nova.shared import DATA, ROOT
+from nova import store
+from nova.shared import ROOT
 
 RATE = 22050
 VERSION = 3                       # bump to rebuild the .wav files after changing a sound
-DIR = DATA / "sfx"
 CLIPS = ROOT / "sounds"     # real voice clips, one per reaction (optional)
 VOLUME = 0.45                     # peak level of every effect (0-1): clearly there, never louder than her voice
 
@@ -252,13 +252,13 @@ def render_notes(notes):
 
 
 def move_sound_path(name):
-    return DIR / f"move_{name}.wav"
+    return store.current().sfx / f"move_{name}.wav"
 
 
 def save_move_sound(name, sound, say=None):
     """Make and save the sound of an invented move. sound = body.clean_sound output; say(text) -> (samples, rate)
     speaks in her own voice (voice.NeuralVoice.synth). Returns the file, or None if it couldn't be made."""
-    DIR.mkdir(parents=True, exist_ok=True)
+    store.current().sfx.mkdir(parents=True, exist_ok=True)
     if sound.get("say"):
         if not say:
             return None
@@ -275,7 +275,7 @@ def save_move_sound(name, sound, say=None):
 
 def _file(name):
     """The .wav for a reaction, or for one of her invented moves (move_<name>.wav)."""
-    return DIR / f"{name}.wav" if name in SOUNDS else move_sound_path(name)
+    return store.current().sfx / f"{name}.wav" if name in SOUNDS else move_sound_path(name)
 
 
 # ------------------------------------------------------------------ files + playback
@@ -290,25 +290,25 @@ def _write(path, samples):
 
 def build(force=False):
     """Write data/sfx/<reaction>.wav for every reaction (only when missing or VERSION changed)."""
-    DIR.mkdir(parents=True, exist_ok=True)
-    stamp = DIR / "version.json"
+    store.current().sfx.mkdir(parents=True, exist_ok=True)
+    stamp = store.current().sfx / "version.json"
     try:
         current = json.loads(stamp.read_text())["version"] == VERSION
     except Exception:
         current = False
     for name in SOUNDS:
-        path, src = DIR / f"{name}.wav", CLIPS / f"{name}.wav"
+        path, src = store.current().sfx / f"{name}.wav", CLIPS / f"{name}.wav"
         stale = src.exists() and path.exists() and src.stat().st_mtime > path.stat().st_mtime
         if force or not current or stale or not path.exists():
             _write(path, make(name))
     stamp.write_text(json.dumps({"version": VERSION}))
-    return DIR
+    return store.current().sfx
 
 
 def enabled():
     """The '🔊 Reaction sounds' switch in Nova's settings (on unless turned off)."""
     try:
-        return bool(json.loads((DATA / "settings.json").read_text(encoding="utf-8")).get("reaction_sounds", True))
+        return bool(json.loads(store.current().settings.read_text(encoding="utf-8")).get("reaction_sounds", True))
     except Exception:
         return True
 

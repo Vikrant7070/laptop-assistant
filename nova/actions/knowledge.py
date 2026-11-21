@@ -16,10 +16,8 @@ import threading
 import time
 
 from nova.brain import retrieval
-from nova.shared import DATA
+from nova import store
 
-FILE = DATA / "knowledge.json"
-OLD_MEMORY = DATA / "memory.json"      # the earlier flat list of facts
 _lock = threading.RLock()
 
 ONE = ("name", "nickname", "work", "city")                        # one value each
@@ -46,11 +44,11 @@ def _blank():
 def load():
     with _lock:
         try:
-            k = json.loads(FILE.read_text(encoding="utf-8"))
+            k = json.loads(store.current().knowledge.read_text(encoding="utf-8"))
         except Exception:
             k = _blank()
             try:   # carry over facts from the earlier memory file
-                k["profile"]["facts"] = [str(x) for x in json.loads(OLD_MEMORY.read_text(encoding="utf-8"))][:MAX_LIST]
+                k["profile"]["facts"] = [str(x) for x in json.loads(store.current().old_memory.read_text(encoding="utf-8"))][:MAX_LIST]
             except Exception:
                 pass  # intentional: the old memory file is optional
         base = _blank()
@@ -63,10 +61,10 @@ def load():
 
 def save(k):
     with _lock:
-        FILE.parent.mkdir(exist_ok=True)
-        tmp = FILE.with_suffix(".tmp")
+        store.current().knowledge.parent.mkdir(exist_ok=True)
+        tmp = store.current().knowledge.with_suffix(".tmp")
         tmp.write_text(json.dumps(k, indent=1, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(FILE)
+        tmp.replace(store.current().knowledge)
 
 
 def _clean(text, limit=220):
@@ -267,7 +265,7 @@ def prompt_block(query="", max_items=8, max_lessons=6, max_chars=1400):
 def seed(name=""):
     """First run: start the bank with what the user has already chosen, so it isn't empty."""
     with _lock:
-        if FILE.exists():
+        if store.current().knowledge.exists():
             return
         k = load()
         p = k["profile"]

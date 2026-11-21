@@ -15,6 +15,7 @@ from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
 import ctypes
 
+from nova import store
 from nova.avatar import avatar_client
 from nova.avatar import body as body_module
 from nova.brain import cloud
@@ -48,7 +49,6 @@ from nova.shared import REACTIONS, host_allowed, ps_escape
 
 ROOT = shared.ROOT
 PORT = int(os.environ.get("PORT", 5055))
-SETTINGS_FILE = tools.DATA / "settings.json"
 DEFAULT_MODEL = "qwen3-vl:4b-instruct"  # fits a 6 GB laptop GPU; tools + vision, no hidden thinking
 ASSISTANT_NAME = "Nova"
 MAX_HISTORY = 12  # the 8K context holds ~5300 tokens of prompt + tools, so only ~2900 are left for these (see history_limit)
@@ -70,7 +70,7 @@ def settings():
          "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
          "skill_screen_checks": False, "skill_teach": True, "barge_in": True, "character": characters.DEFAULT}
     try:
-        s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
+        s.update(json.loads(store.current().settings.read_text(encoding="utf-8")))
     except Exception:
         log_exception("settings.json")     # keep the defaults; the broken file is reported in the task log
     return s
@@ -78,9 +78,9 @@ def settings():
 
 def save_settings(s):
     """Atomic write: every request reads this file, and must never see it half-written."""
-    tmp = SETTINGS_FILE.with_suffix(".tmp")
+    tmp = store.current().settings.with_suffix(".tmp")
     tmp.write_text(json.dumps(s, indent=2), encoding="utf-8")
-    tmp.replace(SETTINGS_FILE)
+    tmp.replace(store.current().settings)
 
 
 def brain(s=None):
@@ -466,14 +466,13 @@ TASK DONE: yes or no (yes if every part of the task has now been done; no if a p
 page with one big player counts as playing - videos start by themselves. A list of search results is NOT playing.)"""
 
 
-TASK_LOG = tools.DATA / "task_log.txt"   # what Nova did and saw, step by step - for working out why a task went wrong
 
 
 def task_log(line):
     try:
-        if TASK_LOG.exists() and TASK_LOG.stat().st_size > 300_000:
-            TASK_LOG.write_text(TASK_LOG.read_text(encoding="utf-8")[-100_000:], encoding="utf-8")
-        with TASK_LOG.open("a", encoding="utf-8") as f:
+        if store.current().task_log.exists() and store.current().task_log.stat().st_size > 300_000:
+            store.current().task_log.write_text(store.current().task_log.read_text(encoding="utf-8")[-100_000:], encoding="utf-8")
+        with store.current().task_log.open("a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%H:%M:%S')} {line}\n")
     except Exception:
         pass        # intentional: this is the log itself; a full disk must not break the turn
@@ -1496,7 +1495,7 @@ def save_offered_skill(data):
     base = data.get("name") or "saved-task"
     name = base
     for n in range(2, 9):
-        if not (skills.DIR / f"{name}.md").exists():
+        if not (store.current().skills_dir / f"{name}.md").exists():
             break
         name = f"{base}-{n}"
     msg = skills.draft_from_steps(name, "", data.get("examples") or [], [dict(st) for st in data.get("steps") or []],
@@ -3078,8 +3077,8 @@ def knowledge_get():
     asks = [{"id": q["id"], "text": q["text"], "why": q["why"], "asked": q["asked"], "urgent": q["urgent"]}
             for q in questions.open_questions()]
     return jsonify(profile=k["profile"], lessons=sorted(k["lessons"], key=lambda l: -l.get("last", 0)),
-                   labels=knowledge.LABELS, one=knowledge.ONE, many=knowledge.MANY, file=str(knowledge.FILE),
-                   facts=facts, questions=asks, facts_file=str(learner.FACTS), questions_file=str(questions.FILE))
+                   labels=knowledge.LABELS, one=knowledge.ONE, many=knowledge.MANY, file=str(store.current().knowledge),
+                   facts=facts, questions=asks, facts_file=str(store.current().facts), questions_file=str(store.current().questions))
 
 
 @app.post("/api/knowledge")

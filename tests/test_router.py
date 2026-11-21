@@ -1,6 +1,7 @@
 """Which local brain does a task: everyday (small), coding, or deep planning (brain/router.py)."""
 import pytest
 
+from nova import store
 from nova.core import app
 from nova.brain import router, retrieval
 
@@ -355,8 +356,8 @@ def test_coding_job_keeps_its_tools(brain):
 
 def test_question_words_are_editable_in_the_file(brain):
     import json
-    conf = json.loads(router.FILE.read_text(encoding="utf-8")) if router.FILE.exists() else dict(router.DEFAULTS)
+    conf = json.loads(store.current().routing.read_text(encoding="utf-8")) if store.current().routing.exists() else dict(router.DEFAULTS)
     conf["question_triggers"] = ["kya galat hai"]
-    router.FILE.write_text(json.dumps(conf), encoding="utf-8")
+    store.current().routing.write_text(json.dumps(conf), encoding="utf-8")
     assert router.code_question("python code mein kya galat hai")
     assert not router.code_question("explain this python code")

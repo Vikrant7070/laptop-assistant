@@ -51,7 +51,8 @@ except Exception:
     pass  # intentional: the 3D window must keep running without it
 
 from nova.avatar import body, hearing  # noqa: E402
-from nova.shared import DATA, REACTIONS, host_allowed, stand_area  # noqa: E402
+from nova import store  # noqa: E402
+from nova.shared import REACTIONS, host_allowed, stand_area  # noqa: E402
 
 PORT = 5056
 SPEED = 420          # walking speed, pixels per second
@@ -116,7 +117,7 @@ BLEND = BLENDFUNCTION(0, 0, 255, 1)
 def sound_setting():
     """The 'react_to_sound' setting: dance to music and jump at sudden sounds playing on the laptop."""
     try:
-        return bool(json.loads((DATA / "settings.json").read_text(encoding="utf-8")).get("react_to_sound", True))
+        return bool(json.loads(store.current().settings.read_text(encoding="utf-8")).get("react_to_sound", True))
     except (OSError, ValueError):
         return True
 

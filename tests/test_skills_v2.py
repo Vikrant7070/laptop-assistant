@@ -3,6 +3,7 @@ import json
 import shutil
 from pathlib import Path
 
+from nova import store
 from nova.actions import checks, skills, tools
 from nova.core import app
 
@@ -10,20 +11,20 @@ SHIPPED = Path(__file__).resolve().parent.parent / "skills"
 
 
 def install(*names):
-    skills.DIR.mkdir(parents=True, exist_ok=True)
+    store.current().skills_dir.mkdir(parents=True, exist_ok=True)
     for n in names:
-        shutil.copy(SHIPPED / f"{n}.md", skills.DIR / f"{n}.md")
+        shutil.copy(SHIPPED / f"{n}.md", store.current().skills_dir / f"{n}.md")
 
 
 def write(name, text):
-    skills.DIR.mkdir(parents=True, exist_ok=True)
-    (skills.DIR / f"{name}.md").write_text(text, encoding="utf-8")
+    store.current().skills_dir.mkdir(parents=True, exist_ok=True)
+    (store.current().skills_dir / f"{name}.md").write_text(text, encoding="utf-8")
 
 
 def set_autonomy(mode):
     s = app.settings()
     s["autonomy"] = mode
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
 
 
 def v2(name, body, extra=""):
@@ -333,19 +334,19 @@ def test_edit_changes_one_step_and_keeps_the_old_version():
     s = skills.get("calm")
     assert [x["id"] for x in s["steps"]] == ["s1", "s3", "s2"] and s["version"] == 2     # ids are never reused
     assert s["steps"][0]["expect"] == {"check": "front_window", "arg": "Settings"} and "calm down" in s["not_for"]
-    assert (skills.DIR / ".history" / "calm.v1.md").exists() and skills.history("calm")[-1]["op"].startswith("added s3")
+    assert (store.current().skills_dir / ".history" / "calm.v1.md").exists() and skills.history("calm")[-1]["op"].startswith("added s3")
     assert "Put back" in skills.undo("calm") and [x["id"] for x in skills.get("calm")["steps"]] == ["s1", "s2"]
     assert "Put back" in skills.undo("calm") and len(skills.get("calm")["steps"]) == 3         # undo again = redo
 
 
 def test_bad_edits_change_nothing():
     write("calm", v2("calm", "s1. set_brightness percent=30\ns2. say Calm."))
-    before = (skills.DIR / "calm.md").read_text(encoding="utf-8")
+    before = (store.current().skills_dir / "calm.md").read_text(encoding="utf-8")
     for op in [{"op": "replace_step", "id": "s9", "step": "wait 1"}, {"op": "insert_step", "after": "s1", "step": "format_drive drive=C"},
                {"op": "insert_step", "after": "s1", "step": "run_skill name=calm"}, {"op": "set_expect", "id": "s1", "expect": "looks_nice"},
                {"op": "set_risk", "level": "read_only"}, {"op": "insert_step", "after": "s1", "step": "say my password is hunter2"}]:
         assert "Nothing was changed" in skills.edit("calm", [op]) or "won't save" in skills.edit("calm", [op]), op
-    assert (skills.DIR / "calm.md").read_text(encoding="utf-8") == before
+    assert (store.current().skills_dir / "calm.md").read_text(encoding="utf-8") == before
     assert "too many" in skills.edit("calm", [{"op": "delete_step", "id": "s2"}] * 6)
 
 
