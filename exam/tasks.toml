@@ -1,0 +1,214 @@
+# Nova's task exam (docs/improvement-roadmap.md R5). Run by the user only:  python -m nova.exam --model <id> --yes
+#
+# Each task:
+#   id, group, request      what the user says ({sandbox} = the exam's own scratch folder, made fresh each run)
+#   setup / teardown        actions run before / after it (see below); teardown runs even if the task failed
+#   success                 checks that must ALL pass afterwards (the real result)
+#   possible = false        a task Nova can't do: passing means she says so, honestly (no checks needed)
+#   approve = true          if she asks "may I...?", the exam says yes (as the user would); otherwise asking ends it
+#
+# Checks: the skill checks from nova/actions/checks.py (window_open, front_window, page_has, page_lacks, fullscreen,
+# dark_mode, process_running) plus the exam's own: no_window, reply_has, reply_lacks, reply_matches (a regex),
+# file_exists, file_missing, file_has "<file>" "<text>", dir_exists.
+# Actions: close_app "<process>", close_window "<title>", start "<program>", dark_mode on|off,
+# file "<name>" "<text>", wait <seconds>. Paths in actions and file checks are inside {sandbox}.
+#
+# Nothing here deletes, uninstalls, shuts down or sends anything. Files are only made inside the sandbox.
+
+# ------------------------------------------------------------------ open and close apps and sites
+
+[[task]]
+id = "open-notepad"
+group = "apps"
+request = "open Notepad"
+setup = ['close_app "notepad"']
+success = ['window_open "Notepad"']
+teardown = ['close_app "notepad"']
+
+[[task]]
+id = "open-calculator"
+group = "apps"
+request = "open the calculator"
+setup = ['close_app "CalculatorApp"']
+success = ['window_open "Calculator"']
+teardown = ['close_app "CalculatorApp"']
+
+[[task]]
+id = "open-youtube"
+group = "apps"
+request = "open YouTube"
+success = ['window_open "YouTube"']
+teardown = ['close_window "YouTube"']
+
+[[task]]
+id = "open-downloads"
+group = "apps"
+request = "open my Downloads folder"
+success = ['window_open "Downloads"']
+teardown = ['close_window "Downloads"']
+
+[[task]]
+id = "close-notepad"
+group = "apps"
+request = "close Notepad"
+setup = ['start "notepad"', "wait 2"]
+success = ['no_window "Notepad"']
+teardown = ['close_app "notepad"']
+approve = true
+
+# ------------------------------------------------------------------ windows and keys
+
+[[task]]
+id = "type-in-notepad"
+group = "windows"
+request = "open Notepad and type hello exam"
+setup = ['close_app "notepad"']
+success = ['page_has "hello exam"']
+teardown = ['close_app "notepad"']
+approve = true
+
+[[task]]
+id = "switch-window"
+group = "windows"
+request = "switch to the calculator"
+setup = ['start "calc"', 'start "notepad"', "wait 3"]
+success = ['front_window "Calculator"']
+teardown = ['close_app "notepad"', 'close_app "CalculatorApp"']
+
+[[task]]
+id = "close-calculator-window"
+group = "windows"
+request = "close the Calculator window"
+setup = ['start "calc"', "wait 3"]
+success = ['no_window "Calculator"']
+teardown = ['close_app "CalculatorApp"']
+approve = true
+
+[[task]]
+id = "what-is-open"
+group = "windows"
+request = "what windows are open right now?"
+setup = ['start "notepad"', "wait 2"]
+success = ['reply_has "Notepad"']
+teardown = ['close_app "notepad"']
+
+# ------------------------------------------------------------------ files (all inside the sandbox)
+
+[[task]]
+id = "make-folder"
+group = "files"
+request = "create a folder called exam-made in {sandbox}"
+success = ['dir_exists "exam-made"']
+approve = true
+
+[[task]]
+id = "write-file"
+group = "files"
+request = "write 'shopping list: milk' into a new file called list.txt in {sandbox}"
+success = ['file_has "list.txt" "milk"']
+approve = true
+
+[[task]]
+id = "read-file"
+group = "files"
+request = "read the file {sandbox}\\note.txt and tell me what it says"
+setup = ['file "note.txt" "The secret word is pineapple."']
+success = ['reply_has "pineapple"']
+
+[[task]]
+id = "rename-file"
+group = "files"
+request = "rename {sandbox}\\old.txt to new.txt"
+setup = ['file "old.txt" "rename me"']
+success = ['file_exists "new.txt"', 'file_missing "old.txt"']
+approve = true
+
+# ------------------------------------------------------------------ settings (the runner restores dark mode at the end)
+
+[[task]]
+id = "dark-mode-on"
+group = "settings"
+request = "turn on dark mode"
+setup = ["dark_mode off", "wait 1"]
+success = ["dark_mode on"]
+approve = true
+
+[[task]]
+id = "light-mode"
+group = "settings"
+request = "switch Windows to light mode"
+setup = ["dark_mode on", "wait 1"]
+success = ["dark_mode off"]
+approve = true
+
+[[task]]
+id = "display-settings"
+group = "settings"
+request = "open the display settings"
+success = ['window_open "Settings"']
+teardown = ['close_app "SystemSettings"']
+
+# ------------------------------------------------------------------ questions and chat
+
+[[task]]
+id = "time"
+group = "questions"
+request = "what time is it?"
+success = ['reply_matches "\\b\\d{1,2}[:.]\\d{2}\\b|\\b\\d{1,2} ?(am|pm|o.clock)\\b"']
+
+[[task]]
+id = "battery"
+group = "questions"
+request = "how much battery do I have?"
+success = ['reply_matches "\\d+ ?(%|percent)|plugged|charging|no battery"']
+
+[[task]]
+id = "arithmetic"
+group = "questions"
+request = "what is 17 times 23?"
+success = ['reply_has "391"']
+
+[[task]]
+id = "windows-version"
+group = "questions"
+request = "what Windows version am I on?"
+success = ['reply_matches "windows 1[01]|\\b2[2-9]h[12]\\b|build \\d{5}"']
+
+# ------------------------------------------------------------------ several steps
+
+[[task]]
+id = "type-and-save"
+group = "multi"
+request = "open Notepad, type 'step one done', and save it as {sandbox}\\multi.txt"
+setup = ['close_app "notepad"']
+success = ['file_has "multi.txt" "step one done"']
+teardown = ['close_app "notepad"']
+approve = true
+
+[[task]]
+id = "two-apps"
+group = "multi"
+request = "open Notepad and the calculator"
+setup = ['close_app "notepad"', 'close_app "CalculatorApp"']
+success = ['window_open "Notepad"', 'window_open "Calculator"']
+teardown = ['close_app "notepad"', 'close_app "CalculatorApp"']
+
+# ------------------------------------------------------------------ can't be done: an honest "I couldn't" passes
+
+[[task]]
+id = "no-such-app"
+group = "impossible"
+request = "open the app called Zorblax Studio"
+possible = false
+
+[[task]]
+id = "no-such-file"
+group = "impossible"
+request = "read me the file {sandbox}\\does-not-exist.txt"
+possible = false
+
+[[task]]
+id = "start-my-car"
+group = "impossible"
+request = "start my car's engine so it warms up"
+possible = false
