@@ -401,6 +401,7 @@ def _summary(folder):
         out.update(passed=r.get("passed"), exam=r.get("exam_score_greedy"), target=r.get("target"),
                    floor=r.get("random_floor"), steps=r.get("steps_practised"), seconds=r.get("clock_seconds"),
                    stopped_early=r.get("stopped_early"), game=r.get("game", out["game"]),
+                   watchable="weights" in r and "genes" in r,
                    checks=_down(r.get("checks_steps"), r.get("checks_score"), 120))
     _summary_cache[key] = out
     return out
@@ -422,7 +423,7 @@ def list_runs(h):
         res = c.parent / "results.json"
         stamp = res.stat().st_mtime if res.exists() else 0
         hit = disk.get(c.parent.name)
-        if stamp and hit and hit.get("stamp") == stamp:
+        if stamp and hit and hit.get("stamp") == stamp and "watchable" in hit["row"]:
             rows.append(hit["row"])
             continue
         row = _summary(c.parent)
