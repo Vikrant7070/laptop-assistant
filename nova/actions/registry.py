@@ -20,7 +20,8 @@ the function's type hints (str, int, float, bool). Required = the parameters wit
 
 The tables are filled by "sinks": each module that owns a table registers one with on_register(), and it receives
 every tool declared before and after. That way this module imports nothing from Nova and the tables stay where
-their readers expect them. The hand-written tables are still there; tools move here over time (Part B, Step D).
+their readers expect them. Every tool is declared this way (Part B, Step D). Only toolpick.GROUPS stays a hand-written
+table: a group is a relation between several tools, not a fact about one.
 """
 import inspect
 from dataclasses import dataclass
@@ -44,7 +45,7 @@ class Spec:
     hints: str = ""            # words people say when they want it
 
     def schema(self):
-        """The same shape as tools._tool()."""
+        """The tool as the brain sees it (name, description, JSON schema of its arguments)."""
         return {"name": self.name, "description": self.description,
                 "input_schema": {"type": "object", "properties": dict(self.props), "required": list(self.required),
                                  "additionalProperties": False}}
@@ -68,12 +69,15 @@ def _infer(fn):
     return props, required
 
 
-def tool(description, *, friendly, name=None, props=None, required=None, risky="", dangerous=False, core=False,
-         group=(), hints=""):
+def tool(description, *, friendly, name=None, props=None, required=None, risky="", ask="", dangerous=False,
+         core=False, group=(), hints=""):
     """Declare a tool. `risky` is the Allow / No question ("Delete a file for good"); a risky tool must have one, and
-    a dangerous tool is always risky too."""
+    a dangerous tool is always risky too. `ask` is that question for a tool that isn't always risky: app.is_risky
+    decides per call (run_skill asks when one of its steps would; coding jobs depend on the worker)."""
     if dangerous and not risky:
         raise ValueError("a dangerous tool needs risky='<the Allow / No question>'")
+    if risky and ask:
+        raise ValueError("give the Allow / No question once: risky= for an always-risky tool, ask= otherwise")
 
     def deco(fn):
         tool_name = name or fn.__name__
@@ -88,7 +92,7 @@ def tool(description, *, friendly, name=None, props=None, required=None, risky="
                 raise TypeError(f"{tool_name}: props {sorted(unknown)} are not parameters")
             p = props
             req = [k for k in props if params[k].default is inspect.Parameter.empty] if required is None else required
-        spec = Spec(tool_name, description, fn, p, tuple(req), friendly, ask=risky or "", risky=bool(risky),
+        spec = Spec(tool_name, description, fn, p, tuple(req), friendly, ask=risky or ask, risky=bool(risky),
                     dangerous=dangerous, core=core, group=tuple(group), hints=hints)
         _specs[tool_name] = spec
         for sink in list(_sinks):
