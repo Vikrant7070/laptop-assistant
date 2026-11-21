@@ -338,7 +338,7 @@ class Capture:
                 if not (m.flags & (LLMHF_INJECTED | LLMHF_LOWER_IL_INJECTED)):
                     self.q.put(("mouse", wp, m.pt.x, m.pt.y, time.time()))
         except Exception:
-            pass
+            pass  # intentional: hook callbacks must never raise into Windows
         return _u.CallNextHookEx(None, n, wp, lp)
 
     def _on_key(self, n, wp, lp):
@@ -348,7 +348,7 @@ class Capture:
                 if not (k.flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED)):
                     self.q.put(("key", wp, k.vkCode, time.time()))
         except Exception:
-            pass
+            pass  # intentional: hook callbacks must never raise into Windows
         return _u.CallNextHookEx(None, n, wp, lp)
 
     def _hook_loop(self, ready):
@@ -559,7 +559,7 @@ class Capture:
                 e["password"] = bool(getattr(c, "IsPassword", False))
                 e["address_bar"] = e["ctype"] == "Edit" and bool(ADDRESS_RE.search(e["name"]))
         except Exception:
-            pass
+            pass  # intentional: hook callbacks must never raise into Windows
         return e
 
     def _editable_focus(self, auto):

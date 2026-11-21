@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+from nova import store
 from nova.actions import checks, judge
 from nova.core import app
 
@@ -80,7 +81,7 @@ def looks(monkeypatch):
     """Screen looks allowed and counted; each returns `answer` ('yes' / 'no'). Clicks run without an Allow box."""
     s = app.settings()
     s["autonomy"] = "trusted"
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
     seen = {"n": 0, "answer": "yes"}
 
     def fake_see(img, question, preferred=None, kind="camera"):

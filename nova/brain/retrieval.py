@@ -112,7 +112,8 @@ def scores(query, texts):
             v = embed([query] + list(texts))
             return [float(x) for x in v[1:] @ v[0]]
         except Exception:
-            pass
+            from nova.log import log_exception
+            log_exception("embeddings")      # fall back to shared words below
     q = words(query)
     return [len(q & words(t)) / max(1, len(q)) if q else 0.0 for t in texts]
 

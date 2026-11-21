@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from nova import store
 from nova.core import app
 from nova.actions import notifications
 from nova.actions import tools
@@ -12,7 +13,7 @@ from nova.actions import tools
 def set_settings(**kw):
     s = app.settings()
     s.update(kw)
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
 
 
 N1 = {"id": 1, "app": "WhatsApp", "title": "Mom", "body": "Call me when you're free", "time": time.time()}
@@ -34,7 +35,7 @@ def test_parse_and_describe():
 
 
 def test_tool_respects_the_switch(monkeypatch):
-    monkeypatch.setattr(notifications, "latest", lambda count=5: [N1])
+    monkeypatch.setattr(notifications, "latest", lambda count=5: [dict(N1, time=time.time())])
     assert "switched off" in tools.read_notifications()
     set_settings(notifications=True)
     out = tools.read_notifications()

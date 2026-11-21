@@ -22,6 +22,26 @@ if not HOST.startswith("http"):
 # Whisper loaded: 12288 -> 8-10 tokens/s and ~12 s per screen look (the card is over-full); 8192 -> 13-14 tokens/s
 # and ~3.4 s per screen look. 16384 crashed CUDA. The system prompt + tools are ~5300 tokens, so history must stay short.
 NUM_CTX = int(os.environ.get("NOVA_NUM_CTX", 8192))
+
+# Context windows (tokens) of the cloud providers, for history trimming only. The prompt never asks a
+# provider for its maximum: a long prompt costs money and time. Nova's own cap is 60 stored turns.
+CLOUD_CONTEXT = {"anthropic": 200_000, "openai": 400_000, "google": 1_000_000}
+DEFAULT_CLOUD_CONTEXT = 128_000
+CLOUD_CTX_ENV = "NOVA_CLOUD_CTX"      # override every provider, e.g. a smaller Azure deployment
+
+
+def context_size(model=None):
+    """The context window to plan for, in tokens: NUM_CTX for a local model, the provider's for a cloud one.
+
+    Unknown names get the same 8K Nova uses locally: guessing high is how a prompt overflows and the
+    model silently forgets the start of the task.
+    """
+    provider = (cloud.parse(model) or (None, None))[0]
+    if not provider:
+        return NUM_CTX
+    if os.environ.get(CLOUD_CTX_ENV):
+        return int(os.environ[CLOUD_CTX_ENV])
+    return CLOUD_CONTEXT.get(provider, DEFAULT_CLOUD_CONTEXT)
 # Ollama decides by itself how much of the model goes on the graphics card (30 of 37 layers here, ~4.4 GB). Do NOT
 # pass "num_gpu": tried 28 and 29 to leave more room next to Whisper - replies took twice as long and a screen look
 # 30 s instead of ~8 s. The cost of leaving it alone: only ~400 MB of the 6 GB card stays free.

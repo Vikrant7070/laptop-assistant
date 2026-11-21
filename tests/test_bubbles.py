@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from nova import store
 from nova.core import app
 from nova.audio import voice
 
@@ -21,7 +22,7 @@ def sent(monkeypatch):
 def set_voice(on):
     s = app.settings()
     s["voice"] = on
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
 
 
 def bubbles(sent):
@@ -62,7 +63,7 @@ def test_pending_question_once(brain, sent):
     set_voice(False)
     s = app.settings()
     s["autonomy"] = "careful"
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
     brain([("", [("kill_process", {"name_or_pid": "x"})])])
     app.heard("close x", via="silent")
     asks = [t for t in bubbles(sent) if t.startswith("May I")]
@@ -119,6 +120,7 @@ def test_bubbles_off_shows_nothing(monkeypatch):
     m, got = bare_mouth(monkeypatch)
     m.bubbles = False
     m._bubble("hi", 1, m.gen)
+    assert m.tells.empty()          # nothing was even queued for the teller
     time.sleep(0.1)
     assert got == []
 

@@ -153,7 +153,7 @@ def main():
             try:
                 f()
             except Exception:
-                pass
+                pass  # intentional: quit continues past a part that is already stopped
         threading.Timer(2, lambda: os._exit(0)).start()
 
     def toggle_hearing(icon, _):

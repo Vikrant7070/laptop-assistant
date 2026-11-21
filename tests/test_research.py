@@ -1,11 +1,12 @@
 """Research and apps the way a person does it: Google in Chrome, reading the page, checking an app is installed."""
+from nova import store
 from nova.actions import coworker, skills, tools
 from nova.brain import toolpick
 from nova.shared import ROOT
 
 
 def _real_skills(monkeypatch):
-    monkeypatch.setattr(skills, "DIR", ROOT / "skills")       # the skill files that ship with Nova
+    monkeypatch.setattr(store.current(), "skills_dir", ROOT / "skills")       # the skill files that ship with Nova
     skills._cache.update(key=None, skills=[])
 
 

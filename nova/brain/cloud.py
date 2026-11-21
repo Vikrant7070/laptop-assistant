@@ -16,7 +16,7 @@ import re
 import urllib.error
 import urllib.request
 from ctypes import wintypes
-from nova.shared import DATA
+from nova import store
 
 PROVIDERS = {
     "google": {"label": "Google Gemini", "env": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
@@ -25,7 +25,6 @@ PROVIDERS = {
     "anthropic": {"label": "Anthropic Claude", "env": ("ANTHROPIC_API_KEY",)},
 }
 DEFAULT_MODELS = {"anthropic": "claude-opus-5-5"}
-KEYS_FILE = DATA / "keys.json"
 MAX_TOKENS = 4096   # room for the model's own (hidden) reasoning; Nova's prompt keeps the spoken answer short
 # A healthy reply takes 2-5 s. Overloaded models (Gemini answers 503 or just hangs) shouldn't keep the user waiting:
 # after this long, give up and let the local model answer.
@@ -80,7 +79,7 @@ def _dpapi(data, protect):
 
 def _load_keys():
     try:
-        return json.loads(KEYS_FILE.read_text(encoding="utf-8"))
+        return json.loads(store.current().keys.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
@@ -91,7 +90,7 @@ def get_key(provider):
         try:
             return _dpapi(base64.b64decode(enc), False).decode()
         except Exception:
-            pass
+            pass  # intentional: a key that will not decrypt is treated as missing
     for var in PROVIDERS.get(provider, {}).get("env", ()):
         if os.environ.get(var):
             return os.environ[var].strip()
@@ -107,10 +106,10 @@ def set_key(provider, key):
         keys[provider] = base64.b64encode(_dpapi(key.encode(), True)).decode()
     else:
         keys.pop(provider, None)
-    KEYS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = KEYS_FILE.with_suffix(".tmp")
+    store.current().keys.parent.mkdir(parents=True, exist_ok=True)
+    tmp = store.current().keys.with_suffix(".tmp")
     tmp.write_text(json.dumps(keys, indent=1), encoding="utf-8")
-    tmp.replace(KEYS_FILE)
+    tmp.replace(store.current().keys)
 
 
 def has_keys():

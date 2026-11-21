@@ -1,6 +1,7 @@
 """Live 3D body: moves the brain invents (checked and saved) and her look."""
 import pytest
 
+from nova import store
 from nova.actions import tools
 from nova.avatar import avatar_client, body
 from nova.core import app
@@ -11,10 +12,10 @@ SHRUG = [{"at": 0.7, "right_arm_out": 45, "left_arm_out": 45}, {"at": 0.3, "righ
 
 @pytest.fixture(autouse=True)
 def clean_files():
-    for f in (body.MOVES_FILE, body.LOOK_FILE):
+    for f in (store.current().moves, store.current().look):
         f.unlink(missing_ok=True)
     yield
-    for f in (body.MOVES_FILE, body.LOOK_FILE):
+    for f in (store.current().moves, store.current().look):
         f.unlink(missing_ok=True)
 
 

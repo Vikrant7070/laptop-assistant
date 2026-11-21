@@ -13,9 +13,9 @@ import json
 import threading
 import time
 
-from nova.shared import DATA
+from nova.log import log_exception
+from nova import store
 
-FILE = DATA / "questions.json"
 DAILY_SECS = 20 * 3600          # a new day's list may start this long after the last one started
 SESSION_SECS = 3 * 3600         # ...and that day's list goes on (next question after each answer) for this long
 MAX_ASKS = 3                    # asked this many times with no answer: not asked again
@@ -30,8 +30,11 @@ def _blank():
 def load():
     with _lock:
         try:
-            d = json.loads(FILE.read_text(encoding="utf-8"))
+            d = json.loads(store.current().questions.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            d = _blank()
         except Exception:
+            log_exception("questions read")     # a broken questions file starts blank; the log says it happened
             d = _blank()
         for k, v in _blank().items():
             d.setdefault(k, v)
@@ -40,10 +43,10 @@ def load():
 
 def _save(d):
     with _lock:
-        FILE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = FILE.with_suffix(".tmp")
+        store.current().questions.parent.mkdir(parents=True, exist_ok=True)
+        tmp = store.current().questions.with_suffix(".tmp")
         tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
-        tmp.replace(FILE)
+        tmp.replace(store.current().questions)
 
 
 def add(kind, text, why, data=None, key="", urgent=False, now=None):
