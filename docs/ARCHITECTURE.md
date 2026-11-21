@@ -49,7 +49,9 @@ the same approval rules as a direct tool call.
 | `nova/actions/registry.py` | ~0.1k | `@tool`: one declaration per tool, fed into TOOLS/FUNCS/RISKY, FRIENDLY/ASK and toolpick |
 | `nova/audio/voice/` | ~1.8k in 6 files (largest ~0.55k) | A package, one module per job: `speak` (Kokoro/SAPI, `Mouth`), `wording` (text for speech, Hinglish), `whisper` (Whisper listening), `wake` (wake-word ears, `set_wake`), `barge_in`, `windows_ears` (Windows recognizer; its PowerShell in `listen.ps1`/`rt_listen.ps1`). `voice.<name>` reads the home module |
 | `nova/actions/skills.py` | ~1.2k | Parse, match, render, run and edit `skills/*.md` |
-| `nova/avatar/avatar.py` | ~0.94k | 3D window, frame bridge, speech gestures |
+| `nova/avatar/avatar.py` | ~0.74k | 3D window, frame bridge, speech gestures |
+| `nova/avatar/commands.py` | ~0.2k | Her commands (`{"do": ...}`): one `cmd_<name>` each, looked up by `Nova.handle` |
+| `nova/avatar/win32.py` | ~0.1k | The layered Win32 window: ctypes structs, styles, `blit` |
 | `nova/actions/coworker.py` | ~0.77k | Background jobs (research, drafts) |
 | `nova/actions/recorder.py` | ~0.65k | "Watch me" recording of user actions |
 | `nova/actions/learner.py` | ~0.42k | Episode log, learned facts, skill offers from repeated tasks |
