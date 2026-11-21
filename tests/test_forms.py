@@ -9,10 +9,6 @@ DETAILS = {"full_name": "Asha Verma", "email": "asha@example.com", "phone": "987
            "pincode": "411001", "address": "12 MG Road"}
 
 
-@pytest.fixture(autouse=True)
-def details_file(tmp_path, monkeypatch):
-    monkeypatch.setattr(forms, "FILE", tmp_path / "form_details.json")
-
 
 @pytest.mark.parametrize("name, want", [
     ("First Name", "first_name"), ("Full Name *", "full_name"), ("Name", "full_name"), ("Email address", "email"),

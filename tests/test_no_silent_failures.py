@@ -2,6 +2,7 @@
 import ast
 from pathlib import Path
 
+from nova import store
 from nova import log
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,7 +32,7 @@ def test_every_silent_handler_says_why():
 
 
 def test_log_writes_a_line_and_a_traceback(tmp_path, monkeypatch):
-    monkeypatch.setattr(log, "FILE", tmp_path / "task_log.txt")
+    monkeypatch.setattr(store.current(), "root", tmp_path)
     log.reset()
     try:
         raise ValueError("boom")
@@ -44,7 +45,7 @@ def test_log_writes_a_line_and_a_traceback(tmp_path, monkeypatch):
 
 
 def test_log_is_rate_limited_per_place(tmp_path, monkeypatch):
-    monkeypatch.setattr(log, "FILE", tmp_path / "task_log.txt")
+    monkeypatch.setattr(store.current(), "root", tmp_path)
     log.reset()
     assert log.log_exception("same", RuntimeError("first")) is True
     assert log.log_exception("same", RuntimeError("second")) is False     # one a minute is enough
@@ -56,15 +57,14 @@ def test_log_is_rate_limited_per_place(tmp_path, monkeypatch):
 
 
 def test_log_never_raises_when_the_log_cannot_be_written(tmp_path, monkeypatch):
-    blocker = tmp_path / "not-a-file"
-    blocker.mkdir()
-    monkeypatch.setattr(log, "FILE", blocker)      # opening a directory fails
+    (tmp_path / "task_log.txt").mkdir()        # opening a directory fails
+    monkeypatch.setattr(store.current(), "root", tmp_path)
     log.reset()
     assert log.log_exception("unwritable", RuntimeError("x")) is False
 
 
 def test_log_uses_the_current_exception(tmp_path, monkeypatch):
-    monkeypatch.setattr(log, "FILE", tmp_path / "task_log.txt")
+    monkeypatch.setattr(store.current(), "root", tmp_path)
     log.reset()
     try:
         raise KeyError("missing")

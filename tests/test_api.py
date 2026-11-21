@@ -1,6 +1,7 @@
 """HTTP API: request validation and protection against other websites driving Nova (CSRF / DNS rebinding)."""
 import pytest
 
+from nova import store
 from nova.core import app
 
 
@@ -50,7 +51,7 @@ def test_setup_ignores_unknown_autonomy(client, monkeypatch):
 def test_setup_write_is_atomic(client, monkeypatch):
     monkeypatch.setattr(app.llm, "list_models", lambda: [])
     client.post("/api/setup", json={"autonomy": "trusted"})
-    assert not list(app.SETTINGS_FILE.parent.glob("*.tmp"))
+    assert not list(store.current().settings.parent.glob("*.tmp"))
     assert app.settings()["autonomy"] == "trusted"
 
 

@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from nova import store
 from nova.actions import notifications
 from nova.core import app
 
@@ -11,7 +12,7 @@ from nova.core import app
 def set_settings(**kw):
     s = app.settings()
     s.update(kw)
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
 
 
 def note(i, body, title="Phone", app_name="Phone Link"):

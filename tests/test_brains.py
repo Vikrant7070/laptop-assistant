@@ -1,4 +1,5 @@
 """Knowledge bank, cloud history conversion, key storage and the local-model text protocol."""
+from nova import store
 from nova.brain import cloud
 from nova.actions import knowledge
 from nova.brain import llm
@@ -43,8 +44,8 @@ def test_forget_and_prompt_block():
 
 
 def test_corrupt_file_recovers():
-    knowledge.FILE.parent.mkdir(parents=True, exist_ok=True)
-    knowledge.FILE.write_text("{not json", encoding="utf-8")
+    store.current().knowledge.parent.mkdir(parents=True, exist_ok=True)
+    store.current().knowledge.write_text("{not json", encoding="utf-8")
     assert knowledge.load()["profile"]["name"] == ""
 
 
@@ -63,7 +64,7 @@ def test_parse_model_ids():
 
 def test_key_roundtrip_is_encrypted():
     cloud.set_key("openai", "sk-test-123")
-    assert "sk-test-123" not in cloud.KEYS_FILE.read_text()
+    assert "sk-test-123" not in store.current().keys.read_text()
     assert cloud.get_key("openai") == "sk-test-123"
     cloud.set_key("openai", "")
     assert cloud.get_key("openai") == ""

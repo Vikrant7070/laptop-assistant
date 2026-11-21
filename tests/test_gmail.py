@@ -10,6 +10,7 @@ import urllib.request
 
 import pytest
 
+from nova import store
 from nova.actions import gmail, tools
 from nova.core import app
 
@@ -259,7 +260,7 @@ def test_the_cloud_brain_is_refused_unless_allowed(monkeypatch):
     assert "only read by the brain on this laptop" in tools.check_email("")
     s = app.settings()
     s["email_cloud"] = True
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
     assert "No mail matches" in tools.check_email("")
     app.state["task"] = None
 
@@ -271,13 +272,13 @@ def test_email_requests_stay_on_the_local_brain(monkeypatch):
     s = app.settings()
     s["model"] = "local-model"
     s["email_cloud"] = False
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
     app.new_task("any important emails today?")
     assert app.state["task"]["model"] == "local-model"
     app.new_task("what's the weather like in Mumbai")
     assert not app.state["task"].get("model")                  # other requests still use the cloud brain
     s["email_cloud"] = True
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
     app.new_task("any important emails today?")
     assert not app.state["task"].get("model")
 

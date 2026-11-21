@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from nova import store
 from nova.actions import skills
 
 HERE = Path(__file__).resolve().parent
@@ -18,9 +19,9 @@ LINES = [json.loads(l) for l in (HERE / "skill_triggers.jsonl").read_text(encodi
 
 @pytest.fixture
 def shipped():
-    skills.DIR.mkdir(parents=True, exist_ok=True)
+    store.current().skills_dir.mkdir(parents=True, exist_ok=True)
     for f in (HERE.parent / "skills").glob("*.md"):
-        shutil.copy(f, skills.DIR / f.name)
+        shutil.copy(f, store.current().skills_dir / f.name)
 
 
 @pytest.mark.parametrize("line", LINES, ids=[f"{l['kind']}: {l['text'][:40]}" for l in LINES])

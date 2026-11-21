@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from nova import store
 from nova.actions import skills, tools
 from nova.brain import retrieval, router, toolpick
 
@@ -39,8 +40,8 @@ def lexical(monkeypatch):
 
 @pytest.fixture
 def repo_skills():
-    """conftest redirects skills.DIR to a temp folder; these cases describe the skills shipped in the repo."""
-    skills.DIR = ROOT / "skills"
+    """conftest redirects store.current().skills_dir to a temp folder; these cases describe the skills shipped in the repo."""
+    store.current().skills_dir = ROOT / "skills"
     skills._cache.update(key=None, skills=[])
     yield
     skills._cache.update(key=None, skills=[])

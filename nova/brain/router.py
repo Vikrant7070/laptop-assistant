@@ -19,7 +19,7 @@ from nova.brain import llm
 
 import json
 
-from nova import shared
+from nova import store
 
 # config/model_routing.json (in the project, so git keeps it) holds every knob below: written with these defaults when
 # missing, then yours to edit by hand or in the Model dialog - changes apply on the next request, no restart.
@@ -69,12 +69,11 @@ DEFAULTS = {
                      "on (my|this) (laptop|pc|computer)", "folder", "my (project|repo|repository|files?)",
                      "[a-z]:[\\/]", "[\\w-]+\\.(py|js|ts|ps1|bat|html|css|json|txt)", "check (my|which|what)"],
 }
-FILE = shared.ROOT / "config" / "model_routing.json"
 _cache = {"key": None, "conf": None}
 
 
 def _file():
-    return FILE
+    return store.current().routing
 
 
 def _load():
