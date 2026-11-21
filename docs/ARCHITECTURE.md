@@ -92,6 +92,9 @@ user's routines, `config/model_routing.json` the routing knobs, `characters/` th
   keyboard, the browser, PowerShell and the 3D body, so the suite is safe on any machine.
 - **Heavy imports stay lazy.** `faster-whisper`, `kokoro`, `cv2`, `uiautomation`, `comtypes` and
   `sounddevice` are imported inside functions, which is why `requirements-test.txt` can be small.
+- **History is sized to the model.** `llm.context_size` knows the local 8K window and the cloud
+  providers' windows; `app.history_limit` keeps local at 12 messages and gives a cloud brain more
+  (bounded, because a long prompt costs money and time).
 
 ## Adding things
 
