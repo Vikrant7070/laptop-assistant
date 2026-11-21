@@ -211,7 +211,7 @@ The code lives in the `nova/` package; `desktop.py` in the project folder is onl
 - `nova/audio/`: `voice.py` speaks and listens, `sfx.py` plays her reaction sounds.
 - `nova/actions/`: `tools.py` holds all the tools, plus `skills.py`, `notifications.py`, `coworker.py` and the knowledge bank (`knowledge.py`). `phone.py` is the Telegram link, `mcp.py` the connector client (stdio + HTTP JSON-RPC, no extra package), `presence.py` the here/away logic, and `watcher.py` spots error boxes and frozen apps.
 - `nova/shared.py` holds the project and data folder paths and small helpers used everywhere.
-- `static/index.html` is the chat window. `data/` stores notes, memories and settings.
+- `static/index.html` is the chat window (styles in `nova.css`, script in `nova.js`, markup helpers in `markup.js`). `data/` stores notes, memories and settings.
 
 Where to change what:
 
@@ -222,7 +222,7 @@ Where to change what:
 | The conversation loop or an API route | `nova/core/app.py`; the module map is in `docs/ARCHITECTURE.md` |
 | The words in the prompt | `PERSONA` / `system_prompt` in `nova/core/app.py`; markers in `nova/protocol.py` |
 | Voice, listening or the wake word | `nova/audio/voice.py` |
-| The chat window | `static/index.html` |
+| The chat window | `static/index.html` (layout), `static/nova.css`, `static/nova.js`; build markup with `` html`...` `` / `put()` from `static/markup.js` |
 | The 3D character | `nova/avatar/avatar.py`, `nova/avatar/body.py`, `static/nova3d.html` |
 
 Clicking uses Windows UI Automation to find buttons by name. It works with most apps, including Settings, Notepad, Office, Explorer and browsers. Games and some custom apps don't expose their buttons this way.
