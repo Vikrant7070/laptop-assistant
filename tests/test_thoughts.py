@@ -21,7 +21,7 @@ def test_steps_are_logged_for_one_request(brain):
 
 def test_reasoning_is_cut_into_lines(monkeypatch):
     got = []
-    monkeypatch.setattr(app, "think", lambda text, cloud_too=True: got.append(text))
+    monkeypatch.setattr(app.session, "think", lambda text, cloud_too=True: got.append(text))
     s = app.ThoughtStream()
     for piece in ["The user wants the ti", "me. I should call get_datetime.\nThen ", "answer briefly"]:
         s.feed(piece)

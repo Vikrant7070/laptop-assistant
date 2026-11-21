@@ -40,7 +40,7 @@ def fresh(monkeypatch):
     monkeypatch.setattr(app.sfx, "play", lambda name: cues.append(name) or True)
     app.events.clear()
     forwarded = []
-    monkeypatch.setattr(app, "tell_away", lambda line: forwarded.append(line))
+    monkeypatch.setattr(app.integrations, "tell_away", lambda line: forwarded.append(line))
     monkeypatch.setattr(app.time, "sleep", lambda s: None)
     set_settings(notifications=True)
     return forwarded
@@ -86,7 +86,7 @@ def test_the_brain_is_the_local_one_even_with_a_cloud_brain_chosen(brain, monkey
     models = []
     real = app.llm.chat
     monkeypatch.setattr(app.llm, "chat", lambda model, *a, **k: (models.append(model), real(model, *a, **k))[1])
-    monkeypatch.setattr(app, "brain", lambda s=None: "cloud:gemini")
+    monkeypatch.setattr(app.config, "brain", lambda s=None: "cloud:gemini")
     set_settings(model="local-model")
     app.on_notifications([RINGING])
     assert models == ["local-model"]
@@ -184,7 +184,7 @@ def test_a_bad_brain_falls_back_to_the_plain_text(brain, script):
 
 def test_a_slow_brain_is_not_waited_for_forever(brain, monkeypatch):
     brain([])
-    monkeypatch.setattr(app, "PHONE_NOTE_SECS", 0.05)
+    monkeypatch.setattr(app.integrations, "PHONE_NOTE_SECS", 0.05)
     monkeypatch.setattr(app.llm, "chat", lambda *a, **k: time.sleep(1) or (None, "late", []))
     monkeypatch.setattr(app.time, "sleep", time.sleep)
     t0 = time.time()

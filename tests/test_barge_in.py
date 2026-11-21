@@ -216,8 +216,8 @@ def test_without_the_room_noise_your_ongoing_voice_was_missed(monkeypatch):
 # ---------------------------------------------------------------- the app
 def test_stop_while_working_stops_the_task(monkeypatch):
     calls = []
-    monkeypatch.setattr(app, "stop_now", lambda: calls.append("stop_now"))
-    monkeypatch.setattr(app, "on_wake", lambda **k: calls.append("listen"))
+    monkeypatch.setattr(app.conversation, "stop_now", lambda: calls.append("stop_now"))
+    monkeypatch.setattr(app.voice_io, "on_wake", lambda **k: calls.append("listen"))
     with app.lock:
         app.on_barge("stop", "Nova stop")
     assert calls == ["stop_now"]
@@ -225,8 +225,8 @@ def test_stop_while_working_stops_the_task(monkeypatch):
 
 def test_her_name_stops_her_and_she_listens(monkeypatch):
     calls = []
-    monkeypatch.setattr(app, "stop_now", lambda: calls.append("stop_now"))
-    monkeypatch.setattr(app, "on_wake", lambda **k: calls.append("listen"))
+    monkeypatch.setattr(app.conversation, "stop_now", lambda: calls.append("stop_now"))
+    monkeypatch.setattr(app.voice_io, "on_wake", lambda **k: calls.append("listen"))
     with app.lock:
         app.on_barge("name", "Nova wait")
     assert calls == ["listen"]                      # her name only stops her talking, not the task
@@ -234,14 +234,14 @@ def test_her_name_stops_her_and_she_listens(monkeypatch):
 
 def test_in_a_conversation_she_keeps_listening_after_stop(monkeypatch):
     calls = []
-    monkeypatch.setattr(app, "on_wake", lambda **k: calls.append("listen"))
+    monkeypatch.setattr(app.voice_io, "on_wake", lambda **k: calls.append("listen"))
     app.convo["on"] = True
     app.on_barge("stop", "stop")
     assert calls == ["listen"]
 
 
 def test_barge_in_needs_ears_voice_and_the_setting(client, monkeypatch):
-    monkeypatch.setattr(app, "set_ears", lambda on: None)        # (never start the real microphone)
+    monkeypatch.setattr(app.voice_io, "set_ears", lambda on: None)        # (never start the real microphone)
     client.post("/api/setup", json={"wake": False})
     assert not app.barge_flags["on"]
     client.post("/api/setup", json={"wake": True, "voice": True, "barge_in": True})
@@ -292,8 +292,8 @@ def test_bare_stop_phrases_are_commands():
 
 def test_nova_stop_goes_nowhere_near_the_brain(monkeypatch):
     calls = []
-    monkeypatch.setattr(app, "answer", lambda *a, **k: calls.append("brain") or ({"reply": "chat"}, 200))
-    monkeypatch.setattr(app, "stop_now", lambda: calls.append("stop_now") or True)
+    monkeypatch.setattr(app.body, "answer", lambda *a, **k: calls.append("brain") or ({"reply": "chat"}, 200))
+    monkeypatch.setattr(app.conversation, "stop_now", lambda: calls.append("stop_now") or True)
     app.heard("Nova, stop.", via="silent")
     assert calls == ["stop_now"]
     assert any("stopped" in str(e.get("reply", "")) for e in app.events)
@@ -302,8 +302,8 @@ def test_nova_stop_goes_nowhere_near_the_brain(monkeypatch):
 
 def test_stop_the_music_still_goes_to_the_brain(monkeypatch):
     calls = []
-    monkeypatch.setattr(app, "answer", lambda *a, **k: calls.append("brain") or ({"reply": "Paused."}, 200))
-    monkeypatch.setattr(app, "stop_now", lambda: calls.append("stop_now") or False)
+    monkeypatch.setattr(app.body, "answer", lambda *a, **k: calls.append("brain") or ({"reply": "Paused."}, 200))
+    monkeypatch.setattr(app.conversation, "stop_now", lambda: calls.append("stop_now") or False)
     app.heard("stop the music", via="silent")
     assert calls == ["brain"]
 

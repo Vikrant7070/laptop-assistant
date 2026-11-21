@@ -165,8 +165,8 @@ def main():
         server.set_autostart(not server.STARTUP_LNK.exists())
 
     window.events.closing += on_closing
-    server.show_window_hook = show
-    server.quit_hook = quit_app
+    server.host.show_window_hook = show
+    server.background.quit_hook = quit_app
     server.ears.set_mode("typing")   # after the wake word, the app listens (silent recognizer, or the bubble)
     threading.Thread(target=server.warm_brain, daemon=True).start()   # so the first answer isn't the slow one
     if server.settings()["wake"]:

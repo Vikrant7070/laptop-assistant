@@ -53,7 +53,7 @@ def test_parse_email_reply():
 
 
 def test_email_drafted_in_background_then_offered(fake_desktop, monkeypatch):
-    monkeypatch.setattr(app, "write_text", lambda p, n=700: "Subject: Project update\n\nHi Priya,\nAll on track.\nThanks")
+    monkeypatch.setattr(app.integrations, "write_text", lambda p, n=700: "Subject: Project update\n\nHi Priya,\nAll on track.\nThanks")
     coworker.configure(write=lambda p, n: app.write_text(p, n), on_done=app.job_done, on_note=lambda t: None)
     out = tools.run_tool("draft_email", {"about": "tell Priya the project is on track", "to": "priya@example.com"})
     assert "background" in out
@@ -182,7 +182,7 @@ def _job(i, title, kind="research"):
 def test_stop_a_running_job(fake_desktop, monkeypatch):
     import threading
     said = []
-    monkeypatch.setattr(app, "announce", lambda line, spoken=None: said.append(line))
+    monkeypatch.setattr(app.voice_io, "announce", lambda line, spoken=None: said.append(line))
     gate = threading.Event()
     coworker.configure(write=lambda p, n: (gate.wait(5), "Subject: x\n\nlong enough body")[1], on_done=app.job_done)
     job, _ = coworker.draft_email(about="the party")
@@ -234,7 +234,7 @@ def test_two_jobs_opening_windows_get_their_own(monkeypatch):
 def test_two_finished_jobs_are_both_offered(monkeypatch):
     shown = []
     monkeypatch.setattr(coworker, "show", lambda j: (shown.append(j), f"Here's {j['title']}.")[1])
-    monkeypatch.setattr(app, "announce", lambda line, spoken=None: None)
+    monkeypatch.setattr(app.voice_io, "announce", lambda line, spoken=None: None)
     a, b = _job(1, "Laptops"), _job(2, "Phones")
     app.job_done(a)
     app.job_done(b)
@@ -247,7 +247,7 @@ def test_two_finished_jobs_are_both_offered(monkeypatch):
 def test_show_button_picks_its_own_job(client, monkeypatch):
     shown = []
     monkeypatch.setattr(coworker, "show", lambda j: (shown.append(j), "Here it is.")[1])
-    monkeypatch.setattr(app, "announce", lambda line, spoken=None: None)
+    monkeypatch.setattr(app.voice_io, "announce", lambda line, spoken=None: None)
     a, b = _job(1, "Laptops"), _job(2, "Phones")
     app.job_done(a)
     app.job_done(b)

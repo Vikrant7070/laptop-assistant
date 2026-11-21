@@ -173,7 +173,7 @@ def test_failed_window_check_cannot_be_made_done_by_vision(brain, looks, monkeyp
 
 def test_cloud_brain_is_held_to_a_failed_check_too(brain, looks, monkeypatch):
     monkeypatch.setattr(checks, "evaluate", lambda c, ctx=None, **k: (False, "no such window"))
-    monkeypatch.setattr(app, "brain", lambda s: "cloud:google:gemini-test")
+    monkeypatch.setattr(app.config, "brain", lambda s: "cloud:google:gemini-test")
     monkeypatch.setattr(app.cloud, "parse", lambda m: ("google", "gemini-test") if str(m).startswith("cloud:") else None)
     brain([("", [("open_app", {"name": "spotify"})]), ("Done!", []), ("Done!", [])])
     out, _ = app.answer("open Spotify")
@@ -191,7 +191,7 @@ def test_vision_no_only_nudges_then_asks(brain, looks):
 
 
 def test_brain_proposed_checks_are_used(brain, looks, monkeypatch):
-    monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: 'page_has "Inbox"')
+    monkeypatch.setattr(app.judging, "ask_for_checks", lambda goal, windows, model: 'page_has "Inbox"')
     brain([("", [("click_element", {"name": "a"})]), ("", [("click_element", {"name": "b"})]), ("There you go.", [])])
     out, _ = app.answer("show me my unread mail in outlook")
     task = app.state["task"]
@@ -202,7 +202,7 @@ def test_brain_proposed_checks_are_used(brain, looks, monkeypatch):
 def test_failed_brain_check_is_only_advice(brain, looks, monkeypatch):
     # Live 2026-11-20: the small brain proposed front_window "Untitled - Notepad", which typing renames - it could
     # never pass, and treating it as the truth made Nova retype the text again and again.
-    monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: 'front_window "Untitled - Notepad"')
+    monkeypatch.setattr(app.judging, "ask_for_checks", lambda goal, windows, model: 'front_window "Untitled - Notepad"')
     monkeypatch.setattr(checks, "evaluate", lambda c, ctx=None, **k: (False, "in front: 'Claude'"))
     monkeypatch.setattr(app.tools.windows, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
     fake, _ = brain([("", [("type_text", {"text": "hi", "into_window": "Untitled - Notepad"})]),

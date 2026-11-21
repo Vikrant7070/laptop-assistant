@@ -16,8 +16,8 @@ def body(monkeypatch):
 @pytest.fixture
 def listening(monkeypatch):
     started = []
-    monkeypatch.setattr(app, "silent_ok", lambda: True)
-    monkeypatch.setattr(app, "silent_loop", lambda: started.append(1))
+    monkeypatch.setattr(app.voice_io, "silent_ok", lambda: True)
+    monkeypatch.setattr(app.voice_io, "silent_loop", lambda: started.append(1))
     return started
 
 
@@ -126,7 +126,7 @@ def test_silent_loop_keeps_listening_through_silence(monkeypatch, body):
             if calls["n"] == 3:      # pretend 5 minutes went by
                 app.nap["last_task"] = app.convo["last_heard"] = time.time() - app.IDLE_NAP - 1
             return "silence", ""
-    monkeypatch.setattr(app, "transcriber", Ears())
+    monkeypatch.setattr(app.voice_io, "transcriber", Ears())
     monkeypatch.setattr(app.time, "sleep", lambda s: None)
     app.silent_loop()
     assert calls["n"] == 3 and not app.convo["on"] and app.nap["asleep"]
@@ -185,7 +185,7 @@ def test_silent_loop_stops_after_sleep(monkeypatch, body):
         def listen(self):
             heard.append(1)
             return ("text", "Noah got to sleep.") if len(heard) == 1 else ("text", "No way.")
-    monkeypatch.setattr(app, "transcriber", Ears())
+    monkeypatch.setattr(app.voice_io, "transcriber", Ears())
     monkeypatch.setattr(app.time, "sleep", lambda s: None)
     app.silent_loop()
     assert heard == [1] and not app.convo["on"]

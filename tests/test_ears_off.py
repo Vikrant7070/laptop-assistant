@@ -8,8 +8,8 @@ from nova.core import app
 def setup(monkeypatch):
     sent, calls = [], []
     s = dict(app.settings(), wake=True)
-    monkeypatch.setattr(app, "settings", lambda: s)
-    monkeypatch.setattr(app, "save_settings", lambda x: s.update(x))
+    monkeypatch.setattr(app.config, "settings", lambda: s)
+    monkeypatch.setattr(app.config, "save_settings", lambda x: s.update(x))
     monkeypatch.setattr(app.avatar_client, "send", lambda do, timeout=20, **a: sent.append((do, a)))
     monkeypatch.setattr(app.ears, "start", lambda: calls.append("start"))
     monkeypatch.setattr(app.ears, "stop", lambda: calls.append("stop"))
