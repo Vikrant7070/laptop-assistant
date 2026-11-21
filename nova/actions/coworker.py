@@ -31,7 +31,7 @@ SW_MINIMIZE, SW_SHOWMINNOACTIVE, SW_RESTORE, SW_MAXIMIZE = 6, 7, 9, 3
 
 jobs = []                      # newest last: {id, kind, title, status, step, hwnd, result, error, started, finished}
 _ids = itertools.count(1)
-_hooks = {"write": None, "on_done": None, "on_note": None, "sites": None}
+_hooks = {"write": None, "write_local": None, "on_done": None, "on_note": None, "sites": None}
 KEEP_JOBS = 30                 # finished jobs remembered (running ones are never dropped)
 _jobs_lock = threading.RLock()  # jobs run on their own threads, so the list is only changed under this
 # New windows are found by "which window of this program wasn't there before?". Two jobs opening Chrome at the same
@@ -47,14 +47,18 @@ MAX_URL_BODY = 1800            # Gmail's compose link: keep the whole URL well u
 LOAD_SECS = 45
 
 
-def configure(write=None, on_done=None, on_note=None, sites=None):
+def configure(write=None, on_done=None, on_note=None, sites=None, write_local=None):
     """write(prompt, max_tokens) -> text   (her brain)
+    write_local(prompt, max_tokens)       (her brain on the laptop only - research when ⚙ Workers says the cloud
+                                           brain may not write the report)
     on_done(job)                          (tell the user)
     on_note(text)                         (her thoughts / task log)
     sites(topic) -> (prefer, avoid)       (research: hosts learned as good / ignored for this topic, learner.py)"""
     _hooks.update(write=write, on_done=on_done, on_note=on_note)
     if sites is not None:
         _hooks["sites"] = sites
+    if write_local is not None:
+        _hooks["write_local"] = write_local
 
 
 def _job():
@@ -90,18 +94,20 @@ def _note(text):
     checkpoint()                                          # every step she notes is a place a stopped job ends
 
 
-def _write(prompt, max_tokens):
-    """Her brain, from inside a job: a stopped job doesn't wait for the (slow) answer - it's thrown away."""
-    if not _hooks["write"]:
+def _write(prompt, max_tokens, local=False):
+    """Her brain, from inside a job: a stopped job doesn't wait for the (slow) answer - it's thrown away.
+    local: only the brain on the laptop may write this (falls back to the normal writer without that hook)."""
+    writer = (local and _hooks.get("write_local")) or _hooks["write"]
+    if not writer:
         raise RuntimeError("my brain isn't connected")
     job = _job()
     if not job:
-        return _hooks["write"](prompt, max_tokens)
+        return writer(prompt, max_tokens)
     box, done = {}, threading.Event()
 
     def call():
         try:
-            box["v"] = _hooks["write"](prompt, max_tokens)
+            box["v"] = writer(prompt, max_tokens)
         except BaseException as e:
             box["e"] = e
         finally:
@@ -736,8 +742,10 @@ def _parse_report(text):
     return first[:200], text
 
 
-def research(topic, focus="", kind="general", max_sources=3):
-    """Start a background research job. Returns (job, sentence for the brain)."""
+def research(topic, focus="", kind="general", max_sources=3, local=False, start_job=None):
+    """Start a background research job. Returns (job, sentence for the brain).
+    local: the report is written by the brain on the laptop only. start_job: replaces start() - workers.research
+    passes one that records the job in the job history (the normal way in: workers.research)."""
     topic, focus = re.sub(r"\s+", " ", str(topic or "")).strip(), str(focus or "").strip()
     if not topic:
         raise ValueError("Tell me what to research.")
@@ -787,7 +795,8 @@ def research(topic, focus="", kind="general", max_sources=3):
         _note(f"✍️ Writing up what I learned from {len(sources)} sources…")
         block = "\n\n".join(f"[{s['n']}] {s['title']} ({s['url']})\n{s['text']}" for s in sources)
         text = _write(RESEARCH_PROMPT.format(
-            topic=topic, focus_line=f"What the user wants to know: {focus}" if focus else "", sources=block), 900)
+            topic=topic, focus_line=f"What the user wants to know: {focus}" if focus else "", sources=block), 900,
+            local=local)
         headline, body = _parse_report(text)
         if len(body) < 20:
             raise RuntimeError("my brain didn't write the report")
@@ -809,7 +818,7 @@ def research(topic, focus="", kind="general", max_sources=3):
         job["result"] = (f"Research on {topic} is done, from {len(sources)} source{'s' if len(sources) != 1 else ''}. "
                          f"{headline}")
 
-    job = start("research", topic, work)
+    job = (start_job or start)("research", topic, work)
     return job, (f"Started background job #{job['id']}: researching '{topic}' in background Chrome windows "
                  "(parked off-screen, so the user's screen and keyboard stay free). Tell the user in one short "
                  "sentence that you're on it and will tell them what you found. Don't open Chrome or search yourself.")

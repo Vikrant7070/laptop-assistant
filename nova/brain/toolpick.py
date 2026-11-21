@@ -40,7 +40,7 @@ GROUPS = [
     {"get_clipboard", "set_clipboard", "read_selection"},
     {"window_action", "minimize_all_windows", "close_all_windows", "drag_window", "list_windows"},
     {"draft_email", "write_document", "research_in_background", "show_finished_work", "background_jobs",
-     "stop_background_job", "start_coding_job", "commit_coding_job"},                                         # co-worker
+     "stop_background_job", "start_coding_job", "commit_coding_job", "retry_coding_job", "research_report"},  # co-worker
     {"run_skill", "save_skill", "edit_skill", "undo_skill_change", "save_task_as_skill", "list_skills", "delete_skill",
      "start_watching", "stop_watching"},                                              # skills
     {"react", "new_move", "forget_move", "change_look"},                                                     # 3D body

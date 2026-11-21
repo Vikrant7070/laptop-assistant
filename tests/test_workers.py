@@ -364,6 +364,8 @@ def test_phone_gets_reply_hints_for_coding_jobs(monkeypatch):
                   "files": ["README.md"], "worker": "opencode"})
     assert "what changed?" in sent[-1] and "commit it" in sent[-1]
     app.job_done({"id": 93, "kind": "research", "title": "t", "status": "done", "result": "Found it."})
+    assert "send the report" in sent[-1]                   # research has its own reply (phase 4 step 0)
+    app.job_done({"id": 94, "kind": "write_document", "title": "t", "status": "done", "result": "Written."})
     assert "on the laptop for when you're back" in sent[-1]
 
 

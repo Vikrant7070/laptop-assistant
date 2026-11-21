@@ -219,20 +219,20 @@ def test_confirm_step_no_stops_the_skill(brain):
 def test_brain_step_fills_a_slot_for_later_steps(brain):
     set_autonomy("trusted")
     write("msg-it", v2("msg-it", 's1. brain "Suggest a short commit message" slot: message\ns2. say Message is {message}'))
-    fake, ran = brain([("", [("run_skill", {"name": "msg-it"})]), ("Fix the typo", [])])
+    fake, ran = brain([("Fix the typo", [])])           # an exact match runs the skill without a brain turn first
     out, _ = app.answer("msg it")
     assert out["reply"] == "Message is Fix the typo"
-    one_step_prompt = fake.seen[1][0]["content"]                           # it saw only its own step, not the chat
-    assert "Suggest a short commit message" in one_step_prompt and "msg it" not in fake.seen[1][1]["content"]
+    one_step_prompt = fake.seen[0][0]["content"]                           # it saw only its own step, not the chat
+    assert "Suggest a short commit message" in one_step_prompt and "msg it" not in fake.seen[0][1]["content"]
 
 
 def test_brain_step_must_really_call_a_tool(brain):
     set_autonomy("trusted")
     write("press-f", v2("press-f", 's1. brain "Press f" tools: press_keys\ns2. say Pressed!'))
-    fake, ran = brain([("", [("run_skill", {"name": "press-f"})]), ("Done, I pressed it!", [])])
+    fake, ran = brain([("Done, I pressed it!", [])])
     out, _ = app.answer("press f")
     assert not ran and "stopped my 'press-f' skill" in out["reply"] and "Pressed!" not in out["reply"]
-    fake, ran = brain([("", [("run_skill", {"name": "press-f"})]), ("", [("press_keys", {"keys": "f"})]), ("Pressed f.", [])])
+    fake, ran = brain([("", [("press_keys", {"keys": "f"})]), ("Pressed f.", [])])
     out, _ = app.answer("press f")
     assert ran == [("press_keys", {"keys": "f"})] and out["reply"] == "Pressed!"
 
@@ -240,9 +240,9 @@ def test_brain_step_must_really_call_a_tool(brain):
 def test_report_step_words_the_ending_from_the_results(brain):
     set_autonomy("trusted")
     write("health", v2("health", 's1. get_datetime\ns2. report "Say the time in a sentence."', "risk: read_only\n"))
-    fake, ran = brain([("", [("run_skill", {"name": "health"})]), ("It is noon.", [])], tool_output="12:00 pm")
+    fake, ran = brain([("It is noon.", [])], tool_output="12:00 pm")
     out, _ = app.answer("health")
-    assert out["reply"] == "It is noon." and "12:00 pm" in fake.seen[1][-1]["content"]
+    assert out["reply"] == "It is noon." and "12:00 pm" in fake.seen[0][-1]["content"]
 
 
 # ------------------------------------------------------------------ never claim what did not happen
@@ -258,11 +258,12 @@ def test_a_recipe_the_model_ignores_is_not_reported_as_done(brain):
 def test_claiming_done_without_calling_anything_is_caught(brain):
     set_autonomy("trusted")
     install("movie-time")
+    # more than the skill ("and then..."), so the brain gets a turn - and claims it's done without doing anything
     fake, ran = brain([("Wah boss, you're all set!", []), ("Wah boss, you're all set!", [])])
-    out, _ = app.answer("movie time")
+    out, _ = app.answer("movie time and then dim the lights")
     assert not ran and "haven't actually done that" in out["reply"]
     fake, ran = brain([("Sure, tell me more about the movie you like.", [])])      # an ordinary reply is left alone
-    out, _ = app.answer("movie time")
+    out, _ = app.answer("movie time and then dim the lights")
     assert "tell me more" in out["reply"]
 
 
@@ -458,3 +459,36 @@ def test_library_cap_and_duplicates(monkeypatch):
     monkeypatch.setattr(skills, "MAX_ACTIVE", 1)
     assert "already have 1 skills" in skills.save("three", "Open the garden gate", "open_app name=Gate", when="garden")
     assert skills.least_used() == "one"
+
+
+# ------------------------------------------------------------------ an exact routine match runs without a brain turn
+
+def test_exact_research_request_runs_the_skill_without_the_brain(brain):
+    """Live 2026-11-21: on 'research the best budget mechanical keyboards' (exact web-research match) the small brain
+    called list_windows and focused the user's Netflix window first. Now code starts the skill."""
+    install("web-research")
+    fake, ran = brain([("This must never be asked for", [])])
+    out, _ = app.answer("research the best budget mechanical keyboards")
+    assert not fake.seen
+    assert ran == [("research_in_background", {"topic": "the best budget mechanical keyboards"})]
+    assert "the best budget mechanical keyboards in the background" in out["reply"]     # the skill's own say step
+    history = json.dumps(app.state["messages"])
+    assert "run_skill" in history                     # stored like the brain's own call, so later turns read it
+
+
+def test_more_than_the_skill_still_goes_to_the_brain(brain):
+    install("web-research")
+    fake, ran = brain([("", [("research_in_background", {"topic": "tea"})]), ("On it.", [])])
+    app.answer("research tea and then email it to Priya")
+    assert fake.seen                                   # the brain plans the rest
+
+
+def test_direct_args_only_for_a_plain_exact_routine():
+    install("web-research")
+    research = skills.get("web-research")
+    assert skills.direct_args(research, "research green tea") == {"name": "web-research", "input": "green tea"}
+    assert skills.direct_args(research, "research green tea, then add it to my notes") is None
+    assert skills.direct_args(research, "research") is None              # needs a topic and the request has none
+    recipe = {"name": "r", "kind": "recipe", "status": "active", "needs_input": False}
+    assert skills.direct_args(recipe, "do r") is None                    # a recipe needs the brain to follow it
+    assert skills.direct_args({**recipe, "kind": "routine", "status": "draft"}, "do r") is None

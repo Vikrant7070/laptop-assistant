@@ -40,12 +40,14 @@ SHOW_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|haan?|show( it| me)?|open 
 OFFER_SECS = 900
 
 
-def write_text(prompt, max_tokens=700):
-    """Her brain as a writer (emails, documents) - no tools, a longer answer than a spoken reply."""
+def write_text(prompt, max_tokens=700, local=False):
+    """Her brain as a writer (emails, documents) - no tools, a longer answer than a spoken reply.
+    local: the laptop's own brain only (⚙ Workers: research reports may not go to the cloud brain)."""
     s = config.settings()
     msgs = [{"role": "system", "content": "You are a skilled writer helping the user. Follow the requested format exactly."},
             {"role": "user", "content": prompt}]
-    _, text, _ = llm.chat(config.brain(s), msgs, [], fallback=s["model"], num_predict=max_tokens)
+    model = s["model"] if local else config.brain(s)
+    _, text, _ = llm.chat(model, msgs, [], fallback=None if local else s["model"], num_predict=max_tokens)
     return text
 
 
@@ -78,7 +80,10 @@ def job_done(job):
 
 
 def _phone_hint(job, failed=False):
-    """What the user can reply from Telegram about a coding job (each reply still asks Yes/No before it acts)."""
+    """What the user can reply from Telegram about a coding or research job (coding replies still ask Yes/No)."""
+    if job.get("kind") == "research":
+        return ("\nReply \"try again\" to run the research again." if failed
+                else "\nReply \"send the report\" to get the findings and sources here.")
     if job.get("kind") != "coding":
         return ""
     if failed:
@@ -132,6 +137,7 @@ def take_offer(text, force=None, job_id=None):
 
 
 coworker.configure(write=write_text, on_done=job_done, on_note=lambda t: session.think(t, cloud_too=False),
+                   write_local=lambda prompt, n: write_text(prompt, n, local=True),
                    sites=lambda topic: learner.sites_for(topic)[:2])
 
 

@@ -484,7 +484,7 @@ $("#formsSave").onclick = async () => {
   try { showForms(await api("/api/forms", {details})); $("#formsNote").textContent = "Saved on this laptop ✓"; }
   catch (e) { put($("#formsNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 };
-/* ---------------- 🧑‍💻 coding workers (workers.py) ---------------- */
+/* ---------------- 🧑‍💻 workers (workers.py): coding + research ---------------- */
 function showWorkers(w) {
   const c = w.config, oc = c.opencode, cc = c.claude;
   const line = (name, ok, extra) => html`<div>${ok ? "✅" : "⚠️"} <b>${name}</b> - ${extra}</div>`;
@@ -498,9 +498,11 @@ function showWorkers(w) {
   $("#wkOcModel").value = oc.model || ""; $("#wkOcFallbacks").value = (oc.fallback_models || []).join(", ");
   $("#wkOcTimeout").value = oc.timeout_min; $("#wkCcModel").value = cc.model || "";
   $("#wkCcBudget").value = cc.budget_usd; $("#wkDaily").value = c.daily_budget_usd; $("#wkCcTimeout").value = cc.timeout_min;
+  const rs = c.research || {};
+  $("#wkRsSources").value = rs.max_sources || 3; $("#wkRsCloud").checked = rs.cloud_report !== false;
   const when = t => t ? new Date(t * 1000).toLocaleString([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) + " · " : "";
   put($("#wkRecent"), w.recent.length > 0 && html`<b>Recent jobs</b>${w.recent.map(r => html`<div>${when(r.started)}#${r.job} ${r.worker} · ${
-    r.status}${r.files > 0 && ` · ${r.files} file${r.files > 1 ? "s" : ""}`}${r.committed && " · committed"}${
+    r.status}${r.files > 0 && ` · ${r.files} file${r.files > 1 ? "s" : ""}`}${r.sources > 0 && ` · ${r.sources} source${r.sources > 1 ? "s" : ""}`}${r.committed && " · committed"}${
     r.cost > 0 && ` · $${(+r.cost).toFixed(2)}`} - ${r.brief}</div>`)}`);
 }
 async function loadWorkers(fresh) { try { showWorkers(await (await fetch("/api/workers" + (fresh ? "?fresh=1" : ""))).json()); } catch (e) {} }
@@ -509,7 +511,8 @@ $("#wkSave").onclick = async () => {
   try {
     showWorkers(await api("/api/workers", {opencode_model: $("#wkOcModel").value, opencode_fallbacks: $("#wkOcFallbacks").value,
       opencode_timeout_min: $("#wkOcTimeout").value, claude_model: $("#wkCcModel").value, claude_budget_usd: $("#wkCcBudget").value,
-      daily_budget_usd: $("#wkDaily").value, claude_timeout_min: $("#wkCcTimeout").value}));
+      daily_budget_usd: $("#wkDaily").value, claude_timeout_min: $("#wkCcTimeout").value,
+      research_max_sources: $("#wkRsSources").value, research_cloud_report: $("#wkRsCloud").checked}));
     $("#wkNote").textContent = "Saved ✓";
   } catch (e) { put($("#wkNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 };
