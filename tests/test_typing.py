@@ -13,12 +13,12 @@ REAL_CLIP_RESTORE = tools._clip_restore
 def desk(monkeypatch):
     """A pretend desk: what was put on the clipboard, which keys were pressed, what was put back."""
     rec = {"clip": [], "sent": [], "written": [], "restored": []}
-    monkeypatch.setattr(tools, "_focused_is_password", lambda: False)
-    monkeypatch.setattr(tools, "_point_at_focus", lambda label: False)
+    monkeypatch.setattr(tools.forms, "_focused_is_password", lambda: False)
+    monkeypatch.setattr(tools.windows, "_point_at_focus", lambda label: False)
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
-    monkeypatch.setattr(tools, "_clip_save", lambda: [(13, "user's own text\0".encode("utf-16-le"))])
-    monkeypatch.setattr(tools, "_clip_set_text", lambda text: (rec["clip"].append(text), 42)[1])
-    monkeypatch.setattr(tools, "_clip_restore", lambda saved, seq: rec["restored"].append((saved, seq)))
+    monkeypatch.setattr(tools.windows, "_clip_save", lambda: [(13, "user's own text\0".encode("utf-16-le"))])
+    monkeypatch.setattr(tools.windows, "_clip_set_text", lambda text: (rec["clip"].append(text), 42)[1])
+    monkeypatch.setattr(tools.windows, "_clip_restore", lambda saved, seq: rec["restored"].append((saved, seq)))
     monkeypatch.setattr(tools.keyboard, "send", lambda keys: rec["sent"].append(keys))
     monkeypatch.setattr(tools.keyboard, "write", lambda text, delay=0: rec["written"].append(text))
     return rec
@@ -47,13 +47,13 @@ def test_the_clipboard_comes_back_even_if_pasting_fails(desk, monkeypatch):
 
 
 def test_busy_clipboard_falls_back_to_slow_keys(desk, monkeypatch):
-    monkeypatch.setattr(tools, "_clip_save", lambda: None)          # another app holds the clipboard
+    monkeypatch.setattr(tools.windows, "_clip_save", lambda: None)          # another app holds the clipboard
     tools.type_text("hi you")
     assert desk["written"] == list("hi you") and "ctrl+v" not in desk["sent"] and desk["clip"] == []
 
 
 def test_a_password_box_is_still_refused_and_nothing_reaches_the_clipboard(desk, monkeypatch):
-    monkeypatch.setattr(tools, "_focused_is_password", lambda: True)
+    monkeypatch.setattr(tools.forms, "_focused_is_password", lambda: True)
     assert tools.type_text("hunter2") == tools.NO_SECRETS
     assert desk["clip"] == [] and desk["sent"] == [] and desk["written"] == []
 
@@ -67,9 +67,9 @@ def test_fill_in_pastes_too(desk, monkeypatch):
     class Ctrl:
         IsPassword = False
     items = [{"name": "Search", "type": "Edit", "x": 1, "y": 1, "offscreen": False, "ctrl": Ctrl()}]
-    monkeypatch.setattr(tools, "_scan", lambda window, limit=0: ((1, "Shop", "chrome.exe"), items))
-    monkeypatch.setattr(tools, "_focus", lambda h: None)
-    monkeypatch.setattr(tools, "_nova_click", lambda *a, **k: None)
+    monkeypatch.setattr(tools.forms, "_scan", lambda window, limit=0: ((1, "Shop", "chrome.exe"), items))
+    monkeypatch.setattr(tools.windows, "_focus", lambda h: None)
+    monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
     tools.fill_in("blue shoes", box="Search")
     assert desk["clip"] == ["blue shoes"] and desk["sent"] == ["ctrl+a", "ctrl+v", "enter"]
 
@@ -78,7 +78,7 @@ def test_waits_for_the_paste_to_land_before_putting_the_clipboard_back(monkeypat
     seen = iter(["", "", "hello"])
     reads = []
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
-    monkeypatch.setattr(tools, "_focused_text", lambda: (reads.append(1), next(seen))[1])
+    monkeypatch.setattr(tools.windows, "_focused_text", lambda: (reads.append(1), next(seen))[1])
     tools._wait_for_paste("")
     assert len(reads) == 3                          # stopped as soon as the box showed the pasted text
 
@@ -106,8 +106,8 @@ class FakeUser32:
 def test_restore_puts_the_users_things_back_kept_out_of_history(monkeypatch):
     u = FakeUser32(seq=42)
     put = []
-    monkeypatch.setattr(tools, "_clip", lambda: (None, u, None))
-    monkeypatch.setattr(tools, "_clip_put", lambda items: put.append(items))
+    monkeypatch.setattr(tools.windows, "_clip", lambda: (None, u, None))
+    monkeypatch.setattr(tools.windows, "_clip_put", lambda items: put.append(items))
     saved = [(13, b"x\0\0\0"), (49999, b"rich")]
     REAL_CLIP_RESTORE(saved, 42)
     assert put == [saved + tools._KEEP_OUT_OF_HISTORY] and u.calls[-1] == "close"
@@ -115,15 +115,15 @@ def test_restore_puts_the_users_things_back_kept_out_of_history(monkeypatch):
 
 def test_restore_leaves_something_the_user_copied_meanwhile(monkeypatch):
     u = FakeUser32(seq=43)                          # the clipboard changed after Nova's paste
-    monkeypatch.setattr(tools, "_clip", lambda: (None, u, None))
-    monkeypatch.setattr(tools, "_clip_put", lambda items: pytest.fail("overwrote the user's new copy"))
+    monkeypatch.setattr(tools.windows, "_clip", lambda: (None, u, None))
+    monkeypatch.setattr(tools.windows, "_clip_put", lambda items: pytest.fail("overwrote the user's new copy"))
     REAL_CLIP_RESTORE([(13, b"x\0\0\0")], 42)
     assert u.calls == []
 
 
 def test_restore_of_an_empty_clipboard_empties_it(monkeypatch):
     u = FakeUser32(seq=7)
-    monkeypatch.setattr(tools, "_clip", lambda: (None, u, None))
+    monkeypatch.setattr(tools.windows, "_clip", lambda: (None, u, None))
     REAL_CLIP_RESTORE([], 7)
     assert u.calls == ["open", "empty", "close"]
 
@@ -131,8 +131,8 @@ def test_restore_of_an_empty_clipboard_empties_it(monkeypatch):
 def test_pasted_text_is_unicode_and_kept_out_of_clipboard_history(monkeypatch):
     u = FakeUser32(seq=5)
     put = []
-    monkeypatch.setattr(tools, "_clip", lambda: (None, u, None))
-    monkeypatch.setattr(tools, "_clip_put", lambda items: put.append(items))
+    monkeypatch.setattr(tools.windows, "_clip", lambda: (None, u, None))
+    monkeypatch.setattr(tools.windows, "_clip_put", lambda items: put.append(items))
     assert REAL_CLIP_SET_TEXT("café ✓") == 5
     (items,) = put
     assert items[0] == (13, "café ✓\0".encode("utf-16-le"))

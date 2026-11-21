@@ -247,7 +247,7 @@ def test_only_the_last_50_events_are_kept(m):
 
 def test_phone_app_requests_ask_first_even_in_full_access(brain, monkeypatch):
     app.save_settings({**app.settings(), "autonomy": "full"})
-    monkeypatch.setattr(app.tools, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
+    monkeypatch.setattr(app.tools.windows, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
     fake, ran = brain([("Typing it.", [("type_text", {"text": "hello"})]), ("Typed hello!", [])])
     out = app.mobile_message("type hello in notepad")
     assert out.get("pending") and ran == []                                # asked, didn't type

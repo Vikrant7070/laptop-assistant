@@ -1,6 +1,6 @@
 """Shared constants and utilities used by multiple Nova modules.
 
-Avoids duplicating definitions across tools.py, avatar.py, desktop.py, knowledge.py and cloud.py.
+Avoids duplicating definitions across the tools package, avatar.py, desktop.py, knowledge.py and cloud.py.
 """
 import ctypes
 import os

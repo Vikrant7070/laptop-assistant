@@ -128,7 +128,7 @@ def test_without_a_model_the_camera_is_not_opened(monkeypatch, tmp_path):
     monkeypatch.setattr(presence, "_det", {"yunet": None, "haar": [], "failed": "", "loading": True})
     monkeypatch.setattr(presence.threading, "Thread", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no download in tests")))
     from nova.actions import tools
-    monkeypatch.setattr(tools, "_camera_users", lambda: [])
+    monkeypatch.setattr(tools.eyes, "_camera_users", lambda: [])
     import cv2
     monkeypatch.setattr(cv2, "VideoCapture", lambda *a: (_ for _ in ()).throw(AssertionError("camera opened")))
     assert presence.look() is None and "downloading" in presence.state["note"]
@@ -179,7 +179,7 @@ def test_back_greets_and_wakes(monkeypatch):
 
 def test_lock_event_locks(monkeypatch):
     locked = []
-    monkeypatch.setattr(app.tools, "lock_screen", lambda: locked.append(1) or "Locked.")
+    monkeypatch.setattr(app.tools.system, "lock_screen", lambda: locked.append(1) or "Locked.")
     app.on_presence("lock_warn")
     assert "lock the laptop" in app.mouth.said[-1].lower() or "locking" in app.mouth.said[-1].lower()
     app.on_presence("lock")

@@ -114,7 +114,14 @@ script if it has one.
 Do not start D or E until `feat/manager-phase3` is committed and merged (or explicitly parked by the user). Otherwise
 one of the two pieces of work gets rewritten by hand.
 
-### Step D — Tool registry + `tools.py` package (Phase 2, L, risk medium) — groundwork done 2026-11-21, in review
+### Step D — Tool registry + `tools.py` package (Phase 2, L, risk medium) — done 2026-11-21
+
+Result: #13 (`@tool` + sinks), #16 (every tool declared, hand-written tables gone, all tables identical by a
+before/after dump), then the package: `nova/actions/tools/` with 10 area modules + `common` + `__init__` (tables,
+`run_tool`), largest ~600 lines. Names read across modules as `windows._focus(...)` at call time; `tools.<name>`
+is resolved from the home module by `__getattr__`, so app.py & co. didn't change (one hook: `tools.notes.email_ok`).
+Tests patch the home module; `tests/test_tools_package.py` fails on a patch or assignment on `tools` itself.
+Below is the original plan, kept for the record.
 
 Groundwork (agreed while manager Phase 4 is editing the same files): `nova/actions/registry.py` with `@tool`, and
 sinks that add declared tools to `tools.TOOLS/FUNCS/RISKY/DANGEROUS`, `app.FRIENDLY/ASK` and `toolpick.CORE/GROUPS/

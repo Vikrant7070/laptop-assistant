@@ -140,8 +140,8 @@ def looks(monkeypatch):
     def fake_see(img, question, preferred=None, kind="camera"):
         seen["n"] += 1
         return f"SCREEN: a window\nSTEP WORKED: yes\nTASK DONE: {seen['answer']}"
-    monkeypatch.setattr(app.tools, "_screen_allowed", lambda: True)
-    monkeypatch.setattr(app.tools, "_grab_screen_jpeg", lambda: "img")
+    monkeypatch.setattr(app.tools.eyes, "_screen_allowed", lambda: True)
+    monkeypatch.setattr(app.tools.eyes, "_grab_screen_jpeg", lambda: "img")
     monkeypatch.setattr(app.llm, "see", fake_see)
     return seen
 
@@ -204,7 +204,7 @@ def test_failed_brain_check_is_only_advice(brain, looks, monkeypatch):
     # never pass, and treating it as the truth made Nova retype the text again and again.
     monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: 'front_window "Untitled - Notepad"')
     monkeypatch.setattr(checks, "evaluate", lambda c, ctx=None, **k: (False, "in front: 'Claude'"))
-    monkeypatch.setattr(app.tools, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
+    monkeypatch.setattr(app.tools.windows, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
     fake, _ = brain([("", [("type_text", {"text": "hi", "into_window": "Untitled - Notepad"})]),
                      ("", [("press_keys", {"keys": "enter", "into_window": "Untitled - Notepad"})]),
                      ("Typed it.", [])])

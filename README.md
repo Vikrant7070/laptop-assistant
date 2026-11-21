@@ -209,7 +209,7 @@ The code lives in the `nova/` package; `desktop.py` in the project folder is onl
 - `nova/avatar/body.py` checks and stores the moves she invents (`data/moves.json`) and her look (`data/look.json`), and picks her speech gestures. `nova/avatar/hearing.py` finds the beat in what the laptop plays.
 - `nova/brain/`: `llm.py` talks to Ollama, `cloud.py` to Gemini, OpenAI and Claude; `router.py` decides which local model does a task; `toolpick.py` and `retrieval.py` pick the tools and knowledge that matter for each request.
 - `nova/audio/`: `voice.py` speaks and listens, `sfx.py` plays her reaction sounds.
-- `nova/actions/`: `tools.py` holds all the tools, plus `skills.py`, `notifications.py`, `coworker.py` and the knowledge bank (`knowledge.py`). `phone.py` is the Telegram link, `mcp.py` the connector client (stdio + HTTP JSON-RPC, no extra package), `presence.py` the here/away logic, and `watcher.py` spots error boxes and frozen apps.
+- `nova/actions/`: the `tools/` package holds all the tools (one module per area: system, apps, files, windows, forms, eyes, notes, routines, body, terminal), plus `skills.py`, `notifications.py`, `coworker.py` and the knowledge bank (`knowledge.py`). `phone.py` is the Telegram link, `mcp.py` the connector client (stdio + HTTP JSON-RPC, no extra package), `presence.py` the here/away logic, and `watcher.py` spots error boxes and frozen apps.
 - `nova/shared.py` holds the project and data folder paths and small helpers used everywhere.
 - `static/index.html` is the chat window (styles in `nova.css`, script in `nova.js`, markup helpers in `markup.js`). `data/` stores notes, memories and settings.
 
@@ -217,7 +217,7 @@ Where to change what:
 
 | I want to change... | Start here |
 |---|---|
-| What Nova can do | one function with `@tool(...)` (`nova/actions/registry.py`): schema, labels, risk and hints in one place. Most tools are in `nova/actions/tools.py`. Then a case in `tests/routing.jsonl` |
+| What Nova can do | one function with `@tool(...)` (`nova/actions/registry.py`): schema, labels, risk and hints in one place. Put it in the area module under `nova/actions/tools/` it belongs to. Then a case in `tests/routing.jsonl` |
 | How a request is understood | `nova/brain/router.py` (model choice), `nova/brain/toolpick.py` (tools), `nova/actions/skills.py` (routines) |
 | The conversation loop or an API route | `nova/core/app.py`; the module map is in `docs/ARCHITECTURE.md` |
 | The words in the prompt | `PERSONA` / `system_prompt` in `nova/core/app.py`; markers in `nova/protocol.py` |
