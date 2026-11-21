@@ -135,10 +135,9 @@ not attempted in the first pass:
 
 1. Tool registry: one place that declares schema + handler + risk, and `tools.py` as a package.
 2. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
-3. Vision close-out: an on/off switch for the one screen look. (Vision is already advisory: the
-   Judge in `nova/actions/judge.py` trusts deterministic checks first.)
 
-Already done: the protocol module, model-aware history, exception logging, the data store, the chat UI split, and the packaging/docs
+Already done: the protocol module, model-aware history, exception logging, the data store, the chat UI split, the vision close-out (`NOVA_VISION_CHECK=0` turns the Judge's one screen look
+off for A/B runs; vision was already advisory), and the packaging/docs
 pass (`python -m nova`, this file, `README.md`, `docs/REVIEW.md` §6).
 
 Smaller known gaps found while writing the golden set:
