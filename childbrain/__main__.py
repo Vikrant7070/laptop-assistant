@@ -3,6 +3,7 @@
     python -m childbrain run sanity [--seed 0] [--device cpu|cuda] [--set steps=500 ...]
     python -m childbrain rerun childbrain/runs/<folder>
     python -m childbrain list
+    python -m childbrain watch childbrain/runs/<folder> [--game snake] [--board exam|new] [--seed 0] [--steps 300]
 """
 
 import argparse
@@ -45,6 +46,13 @@ def main(argv: list[str] | None = None) -> int:
     rr.add_argument("folder")
     rr.add_argument("--tolerance", type=float, default=0.0)
     sub.add_parser("list", help="list saved runs")
+    w = sub.add_parser("watch", help="record a saved brain playing one game, move by move (childbrain/watch.py)")
+    w.add_argument("folder")
+    w.add_argument("--game", default=None)
+    w.add_argument("--board", default="exam", choices=["exam", "new"])
+    w.add_argument("--seed", type=int, default=0)
+    w.add_argument("--steps", type=int, default=300)
+    w.add_argument("--out", default=None)
     a = p.parse_args(argv)
 
     if a.cmd == "run":
@@ -52,6 +60,11 @@ def main(argv: list[str] | None = None) -> int:
         results = json.loads((folder / RESULTS_FILE).read_text(encoding="utf-8"))
         print(f"saved {folder}")
         print(json.dumps({k: v for k, v in results.items() if not isinstance(v, (list, dict))}, indent=2))
+        return 0
+    if a.cmd == "watch":
+        from .watch import main as watch
+
+        print(f"saved {watch(a.folder, a.game, a.board, a.seed, a.steps, a.out)}")
         return 0
     if a.cmd == "rerun":
         report = rerun(a.folder, a.tolerance)
