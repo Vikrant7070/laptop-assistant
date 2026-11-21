@@ -405,5 +405,8 @@ def test_workers_settings_api(tmp_path, monkeypatch):
 
 
 def test_settings_page_has_the_workers_tab():
-    html = (workers.Path(__file__).resolve().parent.parent / "static" / "index.html").read_text(encoding="utf-8")
-    assert 'data-tab="workers"' in html and 'data-pane="workers"' in html and "loadWorkers()" in html
+    static = workers.Path(__file__).resolve().parent.parent / "static"
+    page = (static / "index.html").read_text(encoding="utf-8")
+    js = (static / "nova.js").read_text(encoding="utf-8")
+    assert 'data-tab="workers"' in page and 'data-pane="workers"' in page
+    assert "loadWorkers();" in js and "function showWorkers" in js and "innerHTML" not in js.split("function showWorkers")[1][:3000]
