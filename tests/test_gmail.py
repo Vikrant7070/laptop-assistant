@@ -26,7 +26,7 @@ def clean(monkeypatch):
         f.unlink()
     gmail._access.update(token="", until=0.0)
     gmail.connecting.update(on=False, error="")
-    monkeypatch.setattr(tools, "email_ok", lambda: True)
+    monkeypatch.setattr(tools.notes, "email_ok", lambda: True)
     yield
     if f.exists():
         f.unlink()
@@ -254,8 +254,8 @@ def test_mail_tools_are_read_only_and_not_risky():
 def test_the_cloud_brain_is_refused_unless_allowed(monkeypatch):
     connect_account(monkeypatch)
     monkeypatch.setattr(gmail, "search", lambda q, c: [])
-    monkeypatch.setattr(tools, "email_ok", app.email_allowed)
-    monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-x")
+    monkeypatch.setattr(tools.notes, "email_ok", app.email_allowed)
+    monkeypatch.setattr(app.config, "brain", lambda s=None: "cloud:google:gemini-x")
     app.state["task"] = {"goal": "x"}
     assert "only read by the brain on this laptop" in tools.check_email("")
     s = app.settings()
@@ -268,7 +268,7 @@ def test_the_cloud_brain_is_refused_unless_allowed(monkeypatch):
 # ---------------------------------------------------------------- routing and settings
 
 def test_email_requests_stay_on_the_local_brain(monkeypatch):
-    monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-x")
+    monkeypatch.setattr(app.config, "brain", lambda s=None: "cloud:google:gemini-x")
     s = app.settings()
     s["model"] = "local-model"
     s["email_cloud"] = False

@@ -67,8 +67,8 @@ def test_the_setting_is_clamped_and_reaches_her_ears():
 def test_setup_saves_the_mic_level(monkeypatch):
     saved = {}
     s = dict(app.settings())
-    monkeypatch.setattr(app, "settings", lambda: s)
-    monkeypatch.setattr(app, "save_settings", lambda x: saved.update(x))
+    monkeypatch.setattr(app.config, "settings", lambda: s)
+    monkeypatch.setattr(app.config, "save_settings", lambda x: saved.update(x))
     client = app.app.test_client()
     client.post("/api/setup", json={"mic_level": 8})
     assert saved["mic_level"] == 8

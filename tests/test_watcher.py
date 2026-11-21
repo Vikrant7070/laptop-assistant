@@ -183,7 +183,13 @@ def test_reads_a_real_message_box():
             hwnd = ctypes.windll.user32.FindWindowW("#32770", "Nova test error")
             time.sleep(0.1)
         assert hwnd, "the message box didn't appear"
-        assert "Access is denied" in watcher.dialog_text(hwnd)
+        # The dialog window exists a moment before the Static child that holds its message (CI, 2026-11-21: read
+        # too early, it came back ''), so wait for the text too, as the watcher's own repeated scans do.
+        text = ""
+        while time.time() < end and "Access is denied" not in text:
+            text = watcher.dialog_text(hwnd)
+            time.sleep(0.1)
+        assert "Access is denied" in text
         w = watcher.Watcher()
         w.known = set()                                   # pretend it opened after Nova started
         w.seen = set()

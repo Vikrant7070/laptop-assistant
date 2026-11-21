@@ -137,14 +137,14 @@ def test_voice_yes_no(text, yes):
 def test_speech_stream_hides_window_list():
     said = []
     orig = app.speak
-    app.speak = said.append
+    app.voice_io.speak = said.append
     try:
         s = app.SpeechStream()
         s.feed("Done boss! [open windows, front first: 'secret.txt'] ")
         s.feed("All good.")
         s.flush()
     finally:
-        app.speak = orig
+        app.voice_io.speak = orig
     assert not any("secret" in x for x in said) and "Done boss!" in said
 
 
@@ -162,7 +162,7 @@ def test_review_triggers():
 
 def test_deep_cloud_task_gets_more_steps_and_offers_to_keep_going(brain, monkeypatch):
     fake, ran = brain([("", [("scroll", {"direction": "down"})])] * 80)
-    monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-test")
+    monkeypatch.setattr(app.config, "brain", lambda s=None: "cloud:google:gemini-test")
     s = app.settings()
     s["reasoning"] = "max"
     store.current().settings.write_text(json.dumps(s), encoding="utf-8")
@@ -181,7 +181,7 @@ def test_long_task_does_not_count_as_quiet_time(brain):
 def test_command_only_task_gets_task_steps_not_question_limit(brain, monkeypatch):
     # A job done with commands (git, PowerShell) has no on-screen clicks; it used to stop after 10 turns.
     fake, ran = brain([("", [("get_datetime", {"n": i})]) for i in range(80)])
-    monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-test")
+    monkeypatch.setattr(app.config, "brain", lambda s=None: "cloud:google:gemini-test")
     s = app.settings()
     s["reasoning"] = "max"
     store.current().settings.write_text(json.dumps(s), encoding="utf-8")
@@ -215,7 +215,7 @@ TEXT = "Line one of the paragraph.\nLine two goes on.\nAnd the last line."
 def test_read_selected_text_is_read_out_in_full(brain, monkeypatch):
     fake, ran = brain([], tool_output=TEXT)
     said = []
-    monkeypatch.setattr(app, "speak", said.append)
+    monkeypatch.setattr(app.voice_io, "speak", said.append)
     out, _ = app.answer("[spoken; speech recognition may have misheard words] Can you read what is selected on my screen?")
     assert ran == [("read_selection", {})] and not fake.seen      # copied the text; no screenshot, no brain
     assert out["reply"] == TEXT and said == [TEXT]
@@ -237,7 +237,7 @@ def test_read_selection_restores_the_clipboard(monkeypatch):
     clip = {"v": "my old clipboard"}
     monkeypatch.setattr(app.tools.pyperclip, "paste", lambda: clip["v"])
     monkeypatch.setattr(app.tools.pyperclip, "copy", lambda t: clip.update(v=t))
-    monkeypatch.setattr(app.tools, "_target_window", lambda w: (1, "Notepad", "notepad.exe"))
+    monkeypatch.setattr(app.tools.forms, "_target_window", lambda w: (1, "Notepad", "notepad.exe"))
     monkeypatch.setattr(app.tools._user32, "GetForegroundWindow", lambda: 1)
     monkeypatch.setattr(app.tools.keyboard, "send", lambda k: clip.update(v="the selected words"))
     assert app.tools.read_selection() == "the selected words"

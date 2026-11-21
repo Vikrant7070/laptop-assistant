@@ -107,7 +107,7 @@ def test_same_result_with_a_different_step_note_is_still_a_loop(brain, monkeypat
     """Live bug: qwen2.5-coder ran `python --version` 24 times; each result ended in a new "[check after step N]"."""
     fake, ran = brain([("", [("get_system_status", {})])] * 30)
     n = iter(range(1, 100))
-    monkeypatch.setattr(app, "execute", lambda calls, approved, activity, model: (
+    monkeypatch.setattr(app.judging, "execute", lambda calls, approved, activity, model: (
         ran.append(calls[0]["name"]),
         app.state.update(last_outs=[f"Python 3.12.10\n[check after step {next(n)}] Windows now: none."]),
         [app.llm.tool_result_message(model, calls[0], app.state["last_outs"][0])])[2])

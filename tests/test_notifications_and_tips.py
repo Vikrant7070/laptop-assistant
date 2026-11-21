@@ -104,9 +104,9 @@ def test_setup_switch_starts_and_stops_the_watcher(client, monkeypatch):
 @pytest.fixture
 def screen(monkeypatch):
     sent = []
-    monkeypatch.setattr(tools, "_screen_allowed", lambda: True)
-    monkeypatch.setattr(tools, "_grab_screen_jpeg", lambda *a, **k: "IMG")
-    monkeypatch.setattr(app, "_front_title", lambda: "report.docx - Word")
+    monkeypatch.setattr(tools.eyes, "_screen_allowed", lambda: True)
+    monkeypatch.setattr(tools.eyes, "_grab_screen_jpeg", lambda *a, **k: "IMG")
+    monkeypatch.setattr(app.background, "_front_title", lambda: "report.docx - Word")
     monkeypatch.setattr(app.avatar_client, "send", lambda do, timeout=20, **a: sent.append((do, a)))
     app.suggest_state.update(last=0.0, title="", running=False)
     return sent
@@ -149,11 +149,11 @@ def test_no_suggestions_without_screen_permission(monkeypatch):
 
 def test_never_about_novas_own_window(screen, monkeypatch):
     monkeypatch.undo()                     # the real _front_title, with a made-up window list
-    monkeypatch.setattr(tools, "_windows", lambda: [(1, "Nova 3D", "pythonw.exe"), (2, "Nova", "pythonw.exe"),
+    monkeypatch.setattr(tools.windows, "_windows", lambda: [(1, "Nova 3D", "pythonw.exe"), (2, "Nova", "pythonw.exe"),
                                                     (3, "budget.xlsx - Excel", "EXCEL.EXE")])
     assert app._front_title() == "budget.xlsx - Excel"
-    monkeypatch.setattr(tools, "_windows", lambda: [(1, "Nova 3D", "pythonw.exe")])
-    monkeypatch.setattr(tools, "_screen_allowed", lambda: True)
+    monkeypatch.setattr(tools.windows, "_windows", lambda: [(1, "Nova 3D", "pythonw.exe")])
+    monkeypatch.setattr(tools.eyes, "_screen_allowed", lambda: True)
     monkeypatch.setattr(app.llm, "see", lambda *a, **k: pytest.fail("looked at Nova herself"))
     assert app.suggest_now() is None
 

@@ -89,8 +89,8 @@ def test_settings_reach_her_ears(monkeypatch):
 def test_setup_saves_the_listening_times(monkeypatch):
     saved = {}
     s = dict(app.settings())
-    monkeypatch.setattr(app, "settings", lambda: s)
-    monkeypatch.setattr(app, "save_settings", lambda x: saved.update(x))
+    monkeypatch.setattr(app.config, "settings", lambda: s)
+    monkeypatch.setattr(app.config, "save_settings", lambda x: saved.update(x))
     app.app.test_client().post("/api/setup", json={"listen_pause": 0.5, "listen_max": 8})
     assert saved["listen_pause"] == 0.5 and saved["listen_max"] == 8
     st = app.app.test_client().get("/api/status").get_json()

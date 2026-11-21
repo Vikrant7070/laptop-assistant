@@ -14,7 +14,7 @@ EVIL = ["x'; calc; '", 'x" & calc & "', "x$(calc)", "x`calc`", "x; Start-Process
 @pytest.fixture
 def ps(monkeypatch):
     seen = []
-    monkeypatch.setattr(tools, "_ps", lambda cmd, timeout=30: (seen.append(cmd), "(done, no output)")[1])
+    monkeypatch.setattr(tools.common, "_ps", lambda cmd, timeout=30: (seen.append(cmd), "(done, no output)")[1])
     return seen
 
 
@@ -78,8 +78,8 @@ def test_open_app_no_shell(popen, monkeypatch, payload):
 
 
 def test_open_website_encodes_and_no_shell(popen, monkeypatch):
-    monkeypatch.setattr(tools, "_browser_in_use", lambda: "chrome.exe")
-    monkeypatch.setattr(tools, "_exe_path", lambda name: r"C:\Chrome\chrome.exe")
+    monkeypatch.setattr(tools.apps, "_browser_in_use", lambda: "chrome.exe")
+    monkeypatch.setattr(tools.apps, "_exe_path", lambda name: r"C:\Chrome\chrome.exe")
     out = tools.open_website('c++ & "rock" music')
     args, kw = popen[-1]
     assert not kw.get("shell")
@@ -87,7 +87,7 @@ def test_open_website_encodes_and_no_shell(popen, monkeypatch):
 
 
 def test_open_website_plain_url(popen, monkeypatch):
-    monkeypatch.setattr(tools, "_browser_in_use", lambda: None)
+    monkeypatch.setattr(tools.apps, "_browser_in_use", lambda: None)
     opened = []
     monkeypatch.setattr(tools.webbrowser, "open", opened.append)
     tools.open_website("youtube.com")
@@ -122,7 +122,7 @@ def test_kill_process_never_kills_nova(monkeypatch):
 
 def test_set_autostart_quotes_paths(ps, monkeypatch, tmp_path):
     from nova.core import app
-    monkeypatch.setattr(app, "STARTUP_LNK", tmp_path / "O'Brien" / "Nova.lnk")
+    monkeypatch.setattr(app.host, "STARTUP_LNK", tmp_path / "O'Brien" / "Nova.lnk")
     app.set_autostart(True)
     assert "O''Brien" in ps[-1]
 

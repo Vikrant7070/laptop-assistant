@@ -226,6 +226,11 @@ What the user sees when they say "research X" stays the same.
 - **Phone:** a finished research job's away message ends with *Reply "send the report"*; a failed one ends with
   *Reply "try again"*.
 - **`pick_worker(worker, size, kind)`** returns `"research"` for `worker="research"` or `kind="research"`.
+- **Where the code is (after master's package refactor, merged 2026-11-21):**
+  - Tools: `nova/actions/tools/notes.py` (`@tool`).
+  - Writer and phone hints: `nova/core/app/integrations.py`.
+  - Retry approval: `nova/core/app/session.py`.
+  - `research_report` is also listed in the `notes` table in `tools/__init__.py`.
 - **Tests:** `tests/test_research_worker.py`.
 - **Live check (2026-11-21):** the ⚙ Workers tab showed the Research settings (3 pages, cloud on) on the real Nova,
   started from the worktree.

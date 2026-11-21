@@ -96,20 +96,20 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(tools.keyboard, "send", lambda *a, **k: None)     # never press real keys
     monkeypatch.setattr(tools.keyboard, "write", lambda *a, **k: None)
     # typing goes in by pasting: a pretend clipboard, so tests never touch the real one
-    monkeypatch.setattr(tools, "_clip_save", lambda: [])
-    monkeypatch.setattr(tools, "_clip_set_text", lambda text: 1)
-    monkeypatch.setattr(tools, "_clip_restore", lambda saved, seq: None)
-    monkeypatch.setattr(tools, "_focused_text", lambda: None)
+    monkeypatch.setattr(tools.windows, "_clip_save", lambda: [])
+    monkeypatch.setattr(tools.windows, "_clip_set_text", lambda text: 1)
+    monkeypatch.setattr(tools.windows, "_clip_restore", lambda saved, seq: None)
+    monkeypatch.setattr(tools.windows, "_focused_text", lambda: None)
     monkeypatch.setattr(tools.webbrowser, "open", lambda *a, **k: True)  # never open real browser tabs
-    monkeypatch.setattr(tools, "open_windows_summary", lambda limit=6: "")
-    monkeypatch.setattr(tools, "_windows", lambda: [])      # an empty pretend desktop (a test adds its own windows)
-    monkeypatch.setattr(tools, "_screen_allowed", lambda: False)
-    monkeypatch.setattr(app, "react_later", lambda *a, **k: None)
-    monkeypatch.setattr(app, "review_turn", lambda why: None)
+    monkeypatch.setattr(tools.apps, "open_windows_summary", lambda limit=6: "")
+    monkeypatch.setattr(tools.windows, "_windows", lambda: [])      # an empty pretend desktop (a test adds its own windows)
+    monkeypatch.setattr(tools.eyes, "_screen_allowed", lambda: False)
+    monkeypatch.setattr(app.body, "react_later", lambda *a, **k: None)
+    monkeypatch.setattr(app.learning, "review_turn", lambda why: None)
     # skill step checks look at the real desktop: a test says what they find (or patches checks.evaluate itself)
     monkeypatch.setattr(checks, "evaluate", lambda *a, **k: (True, "ok (test)"))
     # the Judge's "which checks prove this?" brain call would eat a scripted FakeBrain answer: none fit by default
-    monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: "NONE")
+    monkeypatch.setattr(app.judging, "ask_for_checks", lambda goal, windows, model: "NONE")
     # Phone Link's banner switch lives in the real registry: tests only record what would have been asked
     app.banner_calls = []
     monkeypatch.setattr(app.notifications, "phone_banners", lambda show, **k: (app.banner_calls.append(show), 1)[1])
@@ -163,7 +163,7 @@ def brain(monkeypatch):
         monkeypatch.setattr(app.llm, "chat", fake)
         monkeypatch.setattr(app.llm, "supports_tools", lambda m: True)
         monkeypatch.setattr(app.tools, "run_tool", lambda n, a: (ran.append((n, a)), tool_output)[1])
-        monkeypatch.setattr(app, "settle", lambda *a, **k: "")
+        monkeypatch.setattr(app.judging, "settle", lambda *a, **k: "")
         return fake, ran
     return install
 

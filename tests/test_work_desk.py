@@ -60,7 +60,7 @@ def test_app_tells_her_body_when_busy(monkeypatch):
     monkeypatch.setattr(app.avatar_client, "send", lambda do, **k: sent.append((do, k.get("on"))) or {"ok": True})
     monkeypatch.setattr(app.time, "sleep", lambda s: (_ for _ in ()).throw(SystemExit) if len(sent) >= 2 else None)
     busy = iter([True, True, False])
-    monkeypatch.setattr(app, "busy_now", lambda: next(busy))
+    monkeypatch.setattr(app.background, "busy_now", lambda: next(busy))
     try:
         app.work_watch()
     except SystemExit:
