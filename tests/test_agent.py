@@ -3,13 +3,14 @@ import json
 
 import pytest
 
+from nova import store
 from nova.core import app
 
 
 def set_autonomy(mode):
     s = app.settings()
     s["autonomy"] = mode
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
 
 
 def test_plain_answer(brain):
@@ -164,7 +165,7 @@ def test_deep_cloud_task_gets_more_steps_and_offers_to_keep_going(brain, monkeyp
     monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-test")
     s = app.settings()
     s["reasoning"] = "max"
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
     out, _ = app.answer("find my github username and set up the repo")
     assert app.MAX_TASK_TURNS < len(ran) <= app.DEEP_TASK_TURNS
     assert "lot of steps" in out["reply"] and "keep going" in out["reply"]
@@ -183,7 +184,7 @@ def test_command_only_task_gets_task_steps_not_question_limit(brain, monkeypatch
     monkeypatch.setattr(app, "brain", lambda s=None: "cloud:google:gemini-test")
     s = app.settings()
     s["reasoning"] = "max"
-    app.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
     out, _ = app.answer("connect the new github branch to my local repo")
     assert app.MAX_TASK_TURNS < len(ran) <= app.DEEP_TASK_TURNS
     assert app.state["task"]["paused"]

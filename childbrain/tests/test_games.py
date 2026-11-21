@@ -5,7 +5,7 @@ import pytest
 torch = pytest.importorskip("torch")  # skipped under Nova's Python
 
 from childbrain.worlds import make, play_once, random_actions
-from childbrain.worlds.base import DOWN, ENEMIES, GOAL, ITEMS, LEFT, ME, RIGHT, STAY, UP, USE
+from childbrain.worlds.base import DOWN, ENEMIES, GOAL, LEFT, ME, RIGHT, STAY, UP, USE
 from childbrain.worlds.connect4 import four_in_a_row
 
 A = torch.tensor

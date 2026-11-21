@@ -31,7 +31,7 @@ import re
 
 from nova.core import characters
 
-from nova.shared import DATA
+from nova import store
 
 ROAM_MODES = ("corner", "edge", "free")
 ROAM_DEFAULT = "corner"
@@ -44,7 +44,7 @@ def roam_mode(settings=None):
     right of the screen; free = anywhere on the bottom edge or the screen (the old behaviour)."""
     if settings is None:
         try:
-            settings = json.loads((DATA / "settings.json").read_text(encoding="utf-8"))
+            settings = json.loads(store.current().settings.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             settings = {}
     mode = settings.get("avatar_roam")
@@ -64,8 +64,6 @@ def roam_spot(mode, area, frame_w, frame_h, rnd):
     return rnd(left + 150, right - 150), rnd(top + frame_h, bottom)      # ... or anywhere
 
 
-MOVES_FILE = DATA / "moves.json"
-LOOK_FILE = DATA / "look.json"
 
 ANGLES = {   # name: (lowest, highest)
     "right_arm_out": (-20, 140), "left_arm_out": (-20, 140),
@@ -172,7 +170,7 @@ def clean_move(name, duration, keys, loop=False):
 
 def load_moves():
     try:
-        moves = json.loads(MOVES_FILE.read_text(encoding="utf-8"))
+        moves = json.loads(store.current().moves.read_text(encoding="utf-8"))
         return {k: v for k, v in moves.items() if isinstance(v, dict) and v.get("keys")}
     except (OSError, ValueError):
         return {}
@@ -181,22 +179,22 @@ def load_moves():
 def save_move(move):
     moves = load_moves()
     moves[move["name"]] = move
-    MOVES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    MOVES_FILE.write_text(json.dumps(moves, indent=1), encoding="utf-8")
+    store.current().moves.parent.mkdir(parents=True, exist_ok=True)
+    store.current().moves.write_text(json.dumps(moves, indent=1), encoding="utf-8")
 
 
 def forget_move(name):
     moves = load_moves()
     if moves.pop(name, None) is None:
         return False
-    MOVES_FILE.write_text(json.dumps(moves, indent=1), encoding="utf-8")
+    store.current().moves.write_text(json.dumps(moves, indent=1), encoding="utf-8")
     return True
 
 
 def load_look():
     look = dict(DEFAULT_LOOK)
     try:
-        saved = json.loads(LOOK_FILE.read_text(encoding="utf-8"))
+        saved = json.loads(store.current().look.read_text(encoding="utf-8"))
         look.update({k: v for k, v in saved.items() if k in DEFAULT_LOOK and type(v) is type(DEFAULT_LOOK[k])})
     except (OSError, ValueError):
         pass
@@ -224,8 +222,8 @@ def change_look(changes, preset=None):
             look[k] = v if isinstance(v, bool) else str(v).lower() in ("true", "yes", "on", "1")
         elif v not in (None, ""):
             problems.append(f"I don't have '{k}'. I can change: {', '.join(COLOURS + SWITCHES)}.")
-    LOOK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LOOK_FILE.write_text(json.dumps(look, indent=1), encoding="utf-8")
+    store.current().look.parent.mkdir(parents=True, exist_ok=True)
+    store.current().look.write_text(json.dumps(look, indent=1), encoding="utf-8")
     return look, problems
 
 
@@ -476,7 +474,7 @@ def character_style(cid=None):
     edit to character.json shows without restarting Nova."""
     if cid is None:
         try:
-            cid = json.loads((DATA / "settings.json").read_text(encoding="utf-8")).get("character")
+            cid = json.loads(store.current().settings.read_text(encoding="utf-8")).get("character")
         except (OSError, ValueError):
             cid = None
     ch = characters.get(cid)

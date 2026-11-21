@@ -23,6 +23,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
+from nova import store
 from nova.actions import tools
 
 _user32 = ctypes.windll.user32
@@ -85,7 +86,7 @@ def _note(text):
         try:
             _hooks["on_note"](text)
         except Exception:
-            pass
+            pass  # intentional: window/focus is best effort; the job continues
     checkpoint()                                          # every step she notes is a place a stopped job ends
 
 
@@ -316,7 +317,7 @@ def _watcher():
             try:
                 user_took(hwnd)
             except Exception:
-                pass
+                pass  # intentional: window/focus is best effort; the job continues
 
 
 def _bring_on_screen(hwnd):
@@ -333,7 +334,7 @@ def _bring_on_screen(hwnd):
     try:
         tools._focus(hwnd)
     except Exception:
-        pass
+        pass  # intentional: window/focus is best effort; the job continues
 
 
 def user_took(hwnd):
@@ -357,7 +358,7 @@ def user_took(hwnd):
     try:
         _bring_on_screen(hwnd)
     except Exception:
-        pass
+        pass  # intentional: window/focus is best effort; the job continues
     _note("🪟 You pulled my window up - it's yours now, I'll leave it open.")
     return True
 
@@ -375,7 +376,7 @@ def keep_hidden(hwnd, front=None):
         try:
             tools._focus(front)          # give the user their window back
         except Exception:
-            pass
+            pass  # intentional: window/focus is best effort; the job continues
 
 
 def _title(hwnd):
@@ -539,7 +540,7 @@ def park(hwnd, front=None):
         try:
             tools._focus(front)
         except Exception:
-            pass
+            pass  # intentional: window/focus is best effort; the job continues
 
 
 def close_window(hwnd):
@@ -611,7 +612,6 @@ def result_links(links, limit=6):
 
 def _open_parked(url, proc, exe, wait_title=None, secs=PAGE_SECS):
     """Open a URL in a new Chrome window parked off-screen and wait for it to load. Returns the window handle."""
-    from nova.shared import DATA
     front = _user32.GetForegroundWindow()
     x = _offscreen_x()
     checkpoint()
@@ -619,7 +619,7 @@ def _open_parked(url, proc, exe, wait_title=None, secs=PAGE_SECS):
         before = _windows_of(proc)
         si = subprocess.STARTUPINFO()
         si.dwFlags, si.wShowWindow = 1, 4                     # STARTF_USESHOWWINDOW, SW_SHOWNOACTIVATE
-        subprocess.Popen([exe, f"--user-data-dir={PROFILE or DATA / 'research-chrome'}", *CHROME_FLAGS,
+        subprocess.Popen([exe, f"--user-data-dir={PROFILE or store.current().research_chrome}", *CHROME_FLAGS,
                           f"--window-position={x},0", "--window-size=1280,900", "--new-window", url], startupinfo=si)
         hwnd, end = None, time.time() + 30
         while time.time() < end and not hwnd:

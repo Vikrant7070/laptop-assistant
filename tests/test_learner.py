@@ -2,7 +2,8 @@
 import json
 import time
 
-from nova.actions import coworker, learner, questions, skills, tools
+from nova import store
+from nova.actions import coworker, learner, questions, skills
 from nova.core import app
 
 
@@ -48,7 +49,7 @@ def test_episodes_are_updated_in_place_and_old_ones_pruned():
     learner.record(learner.episode_from_task(t))
     eps = learner.load()
     assert [e["id"] for e in eps] == ["t1"] and len(eps[0]["steps"]) == 2
-    assert len(learner.EPISODES.read_text(encoding="utf-8").splitlines()) == 1     # the 40-day-old one is gone
+    assert len(store.current().episodes.read_text(encoding="utf-8").splitlines()) == 1     # the 40-day-old one is gone
 
 
 def test_worked_is_strict():

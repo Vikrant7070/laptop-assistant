@@ -17,6 +17,8 @@ import re
 import sys
 from pathlib import Path
 
+from nova import store
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -63,7 +65,7 @@ def main():
             best = f
     skills.FUZZY_FLOOR, skills.FUZZY_FLOOR_WORDS = keep
     print(f"\nlowest floor with no false trigger: {best if best is not None else 'none in range'}")
-    log = ROOT / "data" / "task_log.txt"
+    log = store.current().task_log
     if log.exists():
         recent = [l for l in log.read_text(encoding="utf-8", errors="ignore").splitlines() if re.search(r"SKILL (NO )?MATCH|SKILL DENIED", l)]
         print(f"\nlast decisions on real requests ({len(recent)} in the log):")

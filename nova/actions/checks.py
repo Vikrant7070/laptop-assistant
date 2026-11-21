@@ -65,13 +65,13 @@ def _page_has(arg, ctx):
         if q in (t.page_text(w[0], 20000) or "").lower():
             return True, f"'{w[1]}' shows it"
     except Exception:
-        pass
+        pass  # intentional: a check that cannot look is not evidence of failure
     try:
         _, items = t._scan(w[1], limit=300)
         if any(q in str(i["name"]).lower() for i in items):
             return True, f"'{w[1]}' has a control called it"
     except Exception:
-        pass
+        pass  # intentional: a check that cannot look is not evidence of failure
     return False, f"'{w[1]}' doesn't show it"
 
 

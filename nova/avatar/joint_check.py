@@ -14,7 +14,8 @@ import sys
 import time
 import urllib.request
 
-from nova.shared import DATA, ROOT
+from nova import store
+from nova.shared import ROOT
 
 URL = "http://127.0.0.1:5055/static/nova3d.html?check=1"
 REPORT = ROOT / "tests" / "joint_report.json"      # kept with the tests: they read it (no Nova needed when it is current)
@@ -77,7 +78,7 @@ def run(timeout=240):
         window.destroy()
 
     # its own browser profile: Nova's running windows keep theirs
-    webview.start(wait, gui="edgechromium", private_mode=False, storage_path=str(DATA / "joint_check_webview"))
+    webview.start(wait, gui="edgechromium", private_mode=False, storage_path=str(store.current().joint_webview))
     return done["ok"]
 
 

@@ -20,18 +20,17 @@ from pathlib import Path
 
 import psutil
 
-from nova.shared import DATA, REACTIONS, ps_escape, work_area
+from nova import store
+from nova.shared import REACTIONS, ps_escape, work_area
 
 try:  # real pixel coordinates, so clicks land where UI Automation says
     import ctypes as _c
     _c.windll.shcore.SetProcessDpiAwareness(2)
 except Exception:
-    pass
+    pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
 
 HOME = Path.home()
-DATA.mkdir(parents=True, exist_ok=True)
-NOTES_FILE = DATA / "notes.json"
-REMINDERS_FILE = DATA / "reminders.json"
+store.current().root.mkdir(parents=True, exist_ok=True)
 
 
 def _load(path, default):
@@ -512,7 +511,7 @@ def page_text(hwnd, limit=10000):
                     try:
                         n = ctrl.GetValuePattern().Value.strip() or n
                     except Exception:
-                        pass
+                        pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
                 if not n or n in seen:
                     continue
                 seen.add(n)
@@ -715,7 +714,7 @@ def clean_temp_files():
             shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
             freed += size
         except Exception:
-            pass
+            pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
     return f"Cleaned temporary files and freed about {_fmt_bytes(freed)}. Files in use were skipped."
 
 
@@ -919,7 +918,7 @@ def _caption_button(hwnd, which):
                 if r.right > r.left and r.top - top < 90:
                     return (r.left + r.right) // 2, (r.top + r.bottom) // 2
     except Exception:
-        pass
+        pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
     scale = (_user32.GetDpiForWindow(hwnd) or 96) / 96
     return int(right - CAPTION_SLOT[which] * 46 * scale), int(top + 16 * scale)
 
@@ -1678,7 +1677,7 @@ def fill_form(window=""):
         return f"I don't see any form boxes in '{w[1]}'."
     to_fill, left, unknown = forms.plan(boxes, details)
     if not to_fill:
-        return (f"Nothing on this form matches the details I have. Boxes I see: "
+        return ("Nothing on this form matches the details I have. Boxes I see: "
                 + ", ".join(b["name"] for b in boxes)[:400])
     from nova.avatar import avatar_client
     _focus(w[0])
@@ -1748,7 +1747,7 @@ def help_login(window="", wait_secs=150):
     try:
         target["ctrl"].SetFocus()       # the box is ready at once, before she has walked over
     except Exception:
-        pass
+        pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
     _nova_click(x, y, label="Login")
     time.sleep(0.4)
     if avatar_client.running():
@@ -1792,7 +1791,7 @@ def wait_for_code(window="", wait_secs=180):
     try:
         first["ctrl"].SetFocus()        # the cursor is in the box at once - the user may type before she walks over
     except Exception:
-        pass
+        pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
     _nova_click(x, y, label="Code box")
     if avatar_client.running():
         avatar_client.send("say", text="Type the code from your phone here 🔢 - I'll wait.", secs=8)
@@ -1962,7 +1961,7 @@ LAST_IMAGE = {"jpg_b64": None}  # shown in the chat so the user always sees what
 
 
 def _setting(name, default=None):
-    return _load(DATA / "settings.json", {}).get(name, default)
+    return _load(store.current().settings, {}).get(name, default)
 
 
 def _camera_allowed():
@@ -2102,29 +2101,29 @@ def toggle_wifi(on):
 
 def add_note(text):
     with _files_lock:
-        notes = _load(NOTES_FILE, [])
+        notes = _load(store.current().notes, [])
         notes.append({"text": text, "at": get_datetime()})
-        _save(NOTES_FILE, notes)
+        _save(store.current().notes, notes)
     return f"Saved note #{len(notes)}."
 
 
 def list_notes():
-    notes = _load(NOTES_FILE, [])
+    notes = _load(store.current().notes, [])
     return "\n".join(f"{i+1}. {n['text']} ({n['at']})" for i, n in enumerate(notes)) or "No notes yet."
 
 
 def set_reminder(text, minutes_from_now):
     due = time.time() + float(minutes_from_now) * 60
     with _files_lock:
-        rems = _load(REMINDERS_FILE, [])
+        rems = _load(store.current().reminders, [])
         rems.append({"text": text, "due": due, "done": False})
-        _save(REMINDERS_FILE, rems)
+        _save(store.current().reminders, rems)
     return f"I'll remind you at {dt.datetime.fromtimestamp(due).strftime('%I:%M %p')}: {text}"
 
 
 def list_reminders():
     with _files_lock:
-        rems = [r for r in _load(REMINDERS_FILE, []) if not r.get("done")]
+        rems = [r for r in _load(store.current().reminders, []) if not r.get("done")]
     if not rems:
         return "No reminders are waiting."
     rems.sort(key=lambda r: r.get("due", 0))
@@ -2134,14 +2133,14 @@ def list_reminders():
 
 def due_reminders():
     with _files_lock:
-        rems = _load(REMINDERS_FILE, [])
+        rems = _load(store.current().reminders, [])
         now, due = time.time(), []
         for r in rems:
             if not r.get("done") and r.get("due", now + 1) <= now:
                 r["done"] = True
                 due.append(r.get("text", ""))
         if due:
-            _save(REMINDERS_FILE, rems[-200:])    # finished reminders don't pile up forever
+            _save(store.current().reminders, rems[-200:])    # finished reminders don't pile up forever
     return due
 
 
@@ -2286,7 +2285,7 @@ def mute_notifications(app="", mute=True):
     """Stop (mute=True) or resume (mute=False) reading one app's notifications; no app = say which are muted."""
     from nova.actions import notifications
     with _files_lock:
-        path = DATA / "settings.json"
+        path = store.current().settings
         s = _load(path, {})
         muted = list(s.get("notif_muted") or [])
         spoken = str(app or "").strip()
@@ -2623,7 +2622,6 @@ def change_look(preset="", hair="", hair_tips="", eyes="", skin="", hoodie="", p
 # output. Start-Transcript copies the session to a file and the prompt function counts finished commands, so she
 # knows when it is done and can read what it printed.
 TERM_TITLE = "Nova terminal"
-TERM_DIR = DATA / "terminal"
 TERM_WAIT = 120
 # The visible terminal runs this loop: it waits for a command from Nova (cmd.json), types it out on screen, runs it,
 # shows the output and saves it (out_<id>.txt), then marks it done (done_<id>.txt). Typing it out from inside avoids
@@ -2663,11 +2661,11 @@ def _terminal():
 
 
 def _open_terminal():
-    TERM_DIR.mkdir(parents=True, exist_ok=True)
-    for old in TERM_DIR.glob("*.txt"):
+    store.current().terminal.mkdir(parents=True, exist_ok=True)
+    for old in store.current().terminal.glob("*.txt"):
         old.unlink(missing_ok=True)
-    script = TERM_DIR / "nova_terminal.ps1"
-    script.write_text(TERM_SCRIPT.replace("__DIR__", str(TERM_DIR).replace("'", "''"))
+    script = store.current().terminal / "nova_terminal.ps1"
+    script.write_text(TERM_SCRIPT.replace("__DIR__", str(store.current().terminal).replace("'", "''"))
                       .replace("__HOME__", str(HOME).replace("'", "''")), encoding="utf-8-sig")
     si = subprocess.STARTUPINFO()                 # opens minimized and never takes the focus from what the user is doing
     si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -2708,12 +2706,12 @@ def run_in_terminal(command, folder="", show=False):
             _user32.ShowWindow(hwnd, 9)
         _focus(hwnd)
     job = f"{int(time.time() * 1000)}"
-    out, done = TERM_DIR / f"out_{job}.txt", TERM_DIR / f"done_{job}.txt"
+    out, done = store.current().terminal / f"out_{job}.txt", store.current().terminal / f"done_{job}.txt"
     if avatar_client.running():
         avatar_client.send("say", text="Running it in my terminal…", secs=3)
-    tmp = TERM_DIR / "cmd.tmp"
+    tmp = store.current().terminal / "cmd.tmp"
     tmp.write_text(json.dumps({"id": job, "command": command, "folder": where}), encoding="utf-8")
-    tmp.replace(TERM_DIR / "cmd.json")            # whole file at once: the loop never reads half a command
+    tmp.replace(store.current().terminal / "cmd.json")            # whole file at once: the loop never reads half a command
     end = time.time() + TERM_WAIT
     while time.time() < end and not done.exists():
         time.sleep(0.2)

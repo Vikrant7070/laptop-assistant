@@ -25,7 +25,7 @@ import time
 import urllib.error
 import urllib.request
 
-from nova.actions import tools
+from nova import store
 
 PROTOCOL = "2025-06-18"
 CLIENT = {"name": "nova", "version": "1.0"}
@@ -41,7 +41,7 @@ class MCPError(Exception):
 
 
 def config_file():
-    return tools.DATA / "mcp.json"
+    return store.current().mcp
 
 
 def load_config():
@@ -254,7 +254,7 @@ class _Stdio:
                 self.proc.stdin.close()
                 self.proc.wait(3)
             except Exception:
-                pass
+                pass  # intentional: the connector may already be gone
             if self.proc.poll() is None:
                 self.proc.kill()
 

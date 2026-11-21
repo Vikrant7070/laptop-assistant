@@ -48,10 +48,11 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)  # real pixel coordinates
 except Exception:
-    pass
+    pass  # intentional: the 3D window must keep running without it
 
 from nova.avatar import body, hearing  # noqa: E402
-from nova.shared import DATA, REACTIONS, host_allowed, stand_area  # noqa: E402
+from nova import store  # noqa: E402
+from nova.shared import REACTIONS, host_allowed, stand_area  # noqa: E402
 
 PORT = 5056
 SPEED = 420          # walking speed, pixels per second
@@ -116,7 +117,7 @@ BLEND = BLENDFUNCTION(0, 0, 255, 1)
 def sound_setting():
     """The 'react_to_sound' setting: dance to music and jump at sudden sounds playing on the laptop."""
     try:
-        return bool(json.loads((DATA / "settings.json").read_text(encoding="utf-8")).get("react_to_sound", True))
+        return bool(json.loads(store.current().settings.read_text(encoding="utf-8")).get("react_to_sound", True))
     except (OSError, ValueError):
         return True
 
@@ -430,7 +431,7 @@ class Nova:
                 elif not low and self.base == "sleepy" and not self.asleep:
                     self.q.put(({"do": "anim", "name": "idle"}, None, None))
             except Exception:
-                pass
+                pass  # intentional: the 3D window must keep running without it
             time.sleep(60)
 
     # ------------------------------------------------------------ commands from the assistant
@@ -688,7 +689,7 @@ class Nova:
             try:
                 urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:5055/api/show_window", method="POST"), timeout=1)
             except Exception:
-                pass
+                pass  # intentional: the 3D window must keep running without it
         self.drag = None
         if not self.asleep:
             self.next_wander = time.time() + random.uniform(20, 40)
@@ -712,7 +713,7 @@ class Nova:
         try:
             urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:5055/api/wake", method="POST"), timeout=3)
         except Exception:
-            pass
+            pass  # intentional: the 3D window must keep running without it
 
     # ------------------------------------------------------------ main loop
     def tick(self):
@@ -722,7 +723,7 @@ class Nova:
             try:                                         # ... and so does a switched character or an edited style
                 self.style = body.character_style()
             except Exception:
-                pass
+                pass  # intentional: the 3D window must keep running without it
         try:
             while True:
                 self.handle(*self.q.get_nowait())

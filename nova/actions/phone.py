@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.request
 
-from nova.actions import tools
+from nova import store
 
 API = os.environ.get("NOVA_TELEGRAM_API", "https://api.telegram.org")   # tests point this at a fake server
 POLL_SECS = 25           # long poll: Telegram holds the request open until a message arrives (or this many seconds)
@@ -35,7 +35,7 @@ HELP = ("I'm Nova, on your laptop 💻 Just message me what you need, like \"wha
 
 
 def _file():
-    return tools.DATA / "phone.json"
+    return store.current().phone
 
 
 def _load():

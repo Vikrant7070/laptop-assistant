@@ -1,7 +1,8 @@
 """Which tools the local brain sees for one request.
 
-All 64 tool descriptions are ~4,700 of the ~6,400 prompt tokens. On the 6 GB laptop GPU a long prompt makes every
-reply slower (measured: ~9-10 tokens/s with all tools, ~16-19 with 15). So each request gets:
+All 101 tool descriptions are roughly 9,400 prompt tokens on their own - more than the local 8K window can
+hold. On the 6 GB laptop GPU a long prompt also makes every reply slower (measured: ~9-10 tokens/s with
+all tools, ~16-19 with 15). So each request gets:
   CORE           - always there (opening things, windows, keys, memory, her body, PowerShell as the catch-all)
   the best match - the tools closest to the request (retrieval.scores), each with its GROUP (e.g. a web-page click
                    brings the other page tools, since a task on a page needs several of them)
@@ -10,7 +11,7 @@ reply slower (measured: ~9-10 tokens/s with all tools, ~16-19 with 15). So each 
 
 The set is chosen once per request and kept for the whole task: Ollama re-reads the prompt from the first changed
 token, so changing tools between steps would throw away its cache every step.
-Cloud brains get every tool (they have room, and they are smart enough not to get confused by 64).
+Cloud brains get every tool (they have room, and they are smart enough not to get confused by 101).
 """
 import re
 
