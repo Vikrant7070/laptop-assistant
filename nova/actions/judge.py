@@ -51,11 +51,12 @@ def _target(words):
     """'my downloads folder' -> 'downloads'; '' when what's left is too vague to check by window title."""
     if _DOMAIN.search(words):
         return _DOMAIN.search(words).group(1).lower()
-    if re.search(r"\bfile\s+explorer\b", words, re.I):
-        # "file" alone is too vague, this isn't. Windows 11 titles these windows "Downloads - File Explorer"; the bare
-        # word "explorer" would also match every titled window of explorer.exe, which runs the taskbar.
-        return "file explorer"
     left = [w for w in re.findall(r"[\w'+.-]+", words.lower()) if w not in _FILLER]
+    if left in (["explorer"], ["file", "explorer"], ["windows", "explorer"]):
+        # Windows 11 titles these windows "Downloads - File Explorer". "explorer" alone would also match every titled
+        # window of explorer.exe, which runs the taskbar (done too early), and "windows explorer" is never in a title
+        # (a failed check: "not done" when it was). "file" alone is too vague; "file explorer" isn't.
+        return "file explorer"
     if not left or len(left) > 3 or any(w in _VAGUE for w in left):
         return ""
     return " ".join(left)
