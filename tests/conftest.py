@@ -72,6 +72,7 @@ from nova.actions import checks  # noqa: E402
 from nova.actions import recorder  # noqa: E402
 from nova.actions import learner  # noqa: E402
 from nova.actions import questions  # noqa: E402
+from nova import log  # noqa: E402
 
 recorder.ENABLED = False          # never install real mouse/keyboard hooks in tests (tests patch recorder's functions)
 
@@ -88,6 +89,8 @@ def _point_data_at(folder):
     cloud.KEYS_FILE = folder / "keys.json"
     app.SETTINGS_FILE = folder / "settings.json"
     app.TASK_LOG = folder / "task_log.txt"
+    log.FILE = folder / "task_log.txt"     # log_exception's breadcrumbs, same file as the task log
+    log.reset()
     router.FILE = folder / "model_routing.json"
     router._cache.update(key=None, conf=None)
     skills.DIR = folder / "skills"
