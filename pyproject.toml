@@ -4,6 +4,31 @@ version = "0.1.0"
 description = "A local-first Windows desktop assistant: chat, voice, 3D avatar and tools."
 requires-python = ">=3.12"
 readme = "README.md"
+# Core: what `python -m nova` needs to start (chat window, tray, tools). Windows only.
+# Exact versions live in requirements*.txt (the lock); tests/test_packaging.py keeps both lists in step.
+dependencies = [
+    "flask", "psutil", "keyboard", "pyperclip", "pillow", "numpy",
+    "pywebview", "pystray", "uiautomation", "comtypes",
+]
+
+[project.optional-dependencies]
+voice = ["faster-whisper", "ctranslate2", "sounddevice", "kokoro-onnx", "soundfile"]   # hearing and her own voice
+gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12"]                                      # Whisper on the NVIDIA card
+camera = ["opencv-python-headless"]                                                    # seeing you (off by default)
+cloud = ["anthropic"]                       # the Claude brain; Gemini and OpenAI need no package
+test = ["pytest", "ruff", "opencv-python-headless", "anthropic"]   # the suite reaches these two lazy imports
+dev = ["nova[test]", "pyflakes"]
+all = ["nova[voice,gpu,camera,cloud]"]
+
+[project.scripts]
+nova-doctor = "nova.doctor:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["nova*"]            # the app; childbrain/ has its own setup (requirements-childbrain.txt)
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
