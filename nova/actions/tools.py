@@ -23,7 +23,32 @@ import psutil
 from nova import store
 from nova.actions import registry
 from nova.log import note
+from nova.actions.registry import tool
 from nova.shared import REACTIONS, ps_escape, work_area
+
+# Schema shorthands for the @tool declarations below.
+# How a brain writes a new_move: joint angles in degrees from her own point of view (nova/avatar/body.py).
+ANGLE_HELP = ('"keys": a list of poses over time, each {"at": 0..1 (when, as a fraction of the duration), and any of: '
+              'right_arm_out/left_arm_out (0 arm down at her side, 90 straight out sideways, 135 raised high - the most; '
+              'her big head hides arms raised higher), '
+              'right_arm_forward/left_arm_forward (0 down, 90 pointing ahead, 160 up past her head), '
+              'head_nod (+ looks down, - up, max 40), head_turn (+ to her left, max 70), head_tilt (+ to her left, '
+              'max 35), lean_forward (+ bows, max 30), lean_side (max 25), turn (whole body, 360 = full spin), '
+              'jump (0..100), right_leg_lift/left_leg_lift (0..90 kick forward), '
+              'right_elbow/left_elbow (0 straight..150 fully bent; arm_forward + elbow = 90 points the forearm ahead), '
+              'right_wrist/left_wrist (+ bends the hand to the palm, - opens it, max 75), right_wrist_side/left_wrist_side '
+              '(a little wave from the wrist, max 50), right_elbow_side/left_elbow_side (forearm curls up/out +, in/behind -), '
+              'right_hand/left_hand (relaxed, open, fist, point, hold, soft), hands_behind / right_hand_on_hip / '
+              'left_hand_on_hip (0..1: clasp hands behind her back, hand on hip), '
+              'eyes (open, closed, happy, half, up, wide, sad, angry, side_left, side_right), mouth (smile, open, grin, '
+              'frown, o), blush (0..1), symbol (none, question, exclaim, note, heart, z, drop)}. '
+              'Unset joints rest at 0; she starts and ends standing. Her right = the viewer\'s left. '
+              'Example shrug: [{"at":0.3,"right_arm_out":45,"left_arm_out":45,"right_arm_forward":30,'
+              '"left_arm_forward":30,"head_tilt":15,"eyes":"up","mouth":"o"},{"at":0.7,"right_arm_out":45,'
+              '"left_arm_out":45,"right_arm_forward":30,"left_arm_forward":30,"head_tilt":15}]')
+S = {"type": "string"}
+N = {"type": "number"}
+B = {"type": "boolean"}
 
 try:  # real pixel coordinates, so clicks land where UI Automation says
     import ctypes as _c
@@ -100,6 +125,8 @@ def stats():
     }
 
 
+@tool("CPU, RAM, disk, battery and uptime of this laptop.", friendly="Checked system health", core=True,
+      hints="battery charge cpu ram memory disk", props={}, required=[])
 def get_system_status():
     vm = psutil.virtual_memory()
     disk = psutil.disk_usage(str(HOME.anchor))
@@ -118,6 +145,9 @@ def get_system_status():
     return "\n".join(lines)
 
 
+@tool("Programs using the most memory or CPU.", friendly="Looked at running programs",
+      hints="what is slowing my laptop, using memory, hogging cpu",
+      props={"sort_by": {"type": "string", "enum": ["memory", "cpu"]}, "limit": N}, required=[])
 def list_top_processes(sort_by="memory", limit=10):
     procs = []
     for p in psutil.process_iter(["pid", "name", "memory_info", "cpu_percent"]):
@@ -152,6 +182,8 @@ def _nova_pids():
     return pids
 
 
+@tool("Close a running program by name (e.g. chrome) or pid.", friendly="Closed a program", risky="Close a program",
+      hints="close force quit end task kill app", props={"name_or_pid": S}, required=["name_or_pid"])
 def kill_process(name_or_pid):
     killed, mine = [], _nova_pids()
     target = str(name_or_pid).lower().removesuffix(".exe")
@@ -167,6 +199,8 @@ def kill_process(name_or_pid):
     return ("Closed: " + ", ".join(killed)) if killed else f"No running process matched '{name_or_pid}'."
 
 
+@tool("Internet status, local IP and Wi-Fi details.", friendly="Checked the network",
+      hints="internet wifi connected ip speed", props={}, required=[])
 def network_info():
     ip = "unknown"
     try:
@@ -181,6 +215,7 @@ def network_info():
     return f"Internet: {online}\nLocal IP: {ip}\n{wifi}"
 
 
+@tool("Current local date and time.", friendly="Checked the time", core=True, props={}, required=[])
 def get_datetime():
     return dt.datetime.now().strftime("%A, %d %B %Y, %I:%M %p")
 
@@ -265,6 +300,8 @@ def _app_path_exe(target):
     return None
 
 
+@tool("Open an app installed on the laptop (anything in the Start menu), e.g. notepad, calculator, chrome, settings, vscode, spotify, task manager. If it fails, check with find_app.",
+      friendly="Opened an app", core=True, props={"name": S}, required=["name"])
 def open_app(name):
     key = str(name).strip().lower()
     target = APPS.get(key, str(name).strip())
@@ -310,6 +347,11 @@ def _installed_names(contains):
     return sorted(out, key=len)
 
 
+@tool("Check whether an app is installed on this laptop before using it (e.g. 'zoom', 'notion', "
+      "'obs'). If it's missing it also finds the winget Id, so you can ASK the user whether to install it.",
+      friendly="Checked if an app is installed",
+      hints="do I have this app, is it installed, open an app I may not have, need an app for this",
+      props={"name": S}, required=["name"])
 def find_app(name, search_store=True):
     """Is an app on this laptop? If yes, how to open it; if not, what to offer the user to install."""
     raw = str(name or "").strip()
@@ -368,6 +410,8 @@ def _browser_in_use():
     return None
 
 
+@tool("Open a URL, or search Google if given words.", friendly="Opened the browser", core=True,
+      hints="open youtube google netflix website", props={"url_or_search": S}, required=["url_or_search"])
 def open_website(url_or_search):
     q = str(url_or_search).strip()
     if " " in q or "." not in q or q.lower().startswith(("file:", "javascript:")):
@@ -413,6 +457,14 @@ def _wait_for_window(words, secs=8.0):
     return None
 
 
+@tool("Google something ON SCREEN in Chrome (a new tab in front of the user) and get the result "
+      "titles. Only when the user wants to watch or browse it themselves ('show me', 'open google for', 'search "
+      "it on my screen') - for plain research use research_in_background. "
+      "Then open results with click_element and read them with read_page. site narrows it: github, "
+      "stackoverflow, reddit, wikipedia, youtube, pypi, npm, mdn or a domain like docs.python.org.",
+      friendly="Searched Google in Chrome",
+      hints="show me google on my screen, open a google search, search it in chrome in front of me",
+      props={"query": S, "site": S}, required=["query"])
 def web_research(query, site=""):
     """Research like a person: open Google in Chrome (a new tab), search, and return the results Nova sees."""
     q = re.sub(r"\s+", " ", str(query or "")).strip()
@@ -471,6 +523,11 @@ def _search_results(w, limit=8):
     return (web + [n for n in out if n not in web])[:limit]
 
 
+@tool("Read the text of a web page or app window (default: the one in front) - an article, docs, a "
+      "search results page, a document. Use it after web_research or click_element to actually read.",
+      friendly="Read the page",
+      hints="read this page article website docs, what does the page say, summarise the page",
+      props={"window": S, "max_chars": N}, required=[])
 def read_page(window="", max_chars=5000):
     """Read the text of the page (or app window) in front - like a person reading it, using Windows' accessibility
     view of the app, so it works in Chrome, Edge, Word, VS Code... without any command line."""
@@ -562,6 +619,8 @@ def open_windows_summary(limit=6):
     return "; ".join(f"'{n}'" for n in names[:limit])
 
 
+@tool("Open a file or folder. Shortcuts: desktop, downloads, documents, pictures, music, videos.",
+      friendly="Opened a file/folder", core=True, props={"path": S}, required=["path"])
 def open_path(path):
     p = _resolve(path)
     if not p.exists():
@@ -572,6 +631,8 @@ def open_path(path):
 
 # ---------------------------------------------------------------- files
 
+@tool("List a folder's contents, newest first.", friendly="Looked inside a folder", props={"path": S},
+      required=["path"])
 def list_folder(path="downloads"):
     p = _resolve(path)
     if not p.is_dir():
@@ -588,6 +649,9 @@ def list_folder(path="downloads"):
     return f"{p} (newest first):\n" + "\n".join(rows)
 
 
+@tool("Find files/folders whose name contains text.", friendly="Searched files",
+      hints="find my file, where is the document", props={"name_contains": S, "folder": S},
+      required=["name_contains"])
 def search_files(name_contains, folder="home", max_results=25):
     root = _resolve(folder)
     needle = name_contains.lower()
@@ -605,6 +669,8 @@ def search_files(name_contains, folder="home", max_results=25):
     return "\n".join(hits) or f"Nothing named like '{name_contains}' in {root}."
 
 
+@tool("Find big files that take up space.", friendly="Hunted big files", hints="free up space, disk full, big files",
+      props={"folder": S, "min_mb": N}, required=[])
 def find_large_files(folder="home", min_mb=200):
     root = _resolve(folder)
     big, start = [], time.time()
@@ -645,6 +711,8 @@ def _organize_plan(folder):
     return p, plan
 
 
+@tool("Show how a folder's loose files would be sorted into category folders (no changes).",
+      friendly="Planned a cleanup", props={"folder": S}, required=[])
 def preview_organize_folder(folder="downloads"):
     p, plan = _organize_plan(folder)
     if not plan:
@@ -655,6 +723,8 @@ def preview_organize_folder(folder="downloads"):
     return f"{len(plan)} files in {p} would be sorted into: " + ", ".join(f"{k} ({v})" for k, v in counts.items())
 
 
+@tool("Sort a folder's loose files into Images/Documents/Videos/... subfolders.", friendly="Organized files",
+      risky="Move files into category folders", props={"folder": S}, required=[])
 def organize_folder(folder="downloads"):
     p, plan = _organize_plan(folder)
     moved = 0
@@ -673,12 +743,15 @@ def organize_folder(folder="downloads"):
     return f"Moved {moved} files in {p} into category folders."
 
 
+@tool("Create a folder.", friendly="Created a folder", props={"path": S}, required=["path"])
 def create_folder(path):
     p = _resolve(path)
     p.mkdir(parents=True, exist_ok=True)
     return f"Created {p}"
 
 
+@tool("Move a file or folder to the Recycle Bin.", friendly="Moved to Recycle Bin",
+      risky="Move something to the Recycle Bin", props={"path": S}, required=["path"])
 def delete_to_recycle_bin(path):
     p = _resolve(path)
     if not p.exists():
@@ -690,6 +763,7 @@ def delete_to_recycle_bin(path):
     return f"Moved {p} to the Recycle Bin. {out if 'ERR' in out else ''}".strip()
 
 
+@tool("How much space temporary files use.", friendly="Measured temp files", props={}, required=[])
 def temp_files_size():
     total = 0
     for root in {os.environ.get("TEMP", ""), r"C:\Windows\Temp"}:
@@ -702,6 +776,8 @@ def temp_files_size():
     return f"Temporary files take about {_fmt_bytes(total)}."
 
 
+@tool("Delete old temporary files to free space.", friendly="Cleaned temp files", risky="Delete old temp files",
+      hints="clean up junk temp files, free space", props={}, required=[])
 def clean_temp_files():
     root = os.environ.get("TEMP", "").strip()
     # Without a real TEMP folder, Path("") would be the current folder - never clean that (or a drive or home).
@@ -725,12 +801,17 @@ def clean_temp_files():
     return f"Cleaned temporary files and freed about {_fmt_bytes(freed)}. Files in use were skipped."
 
 
+@tool("Permanently empty the Recycle Bin.", friendly="Emptied Recycle Bin",
+      risky="Permanently empty the Recycle Bin", dangerous=True, props={}, required=[])
 def empty_recycle_bin():
     return _ps("Clear-RecycleBin -Force -ErrorAction SilentlyContinue; 'Recycle Bin emptied.'")
 
 
 # ---------------------------------------------------------------- controls
 
+@tool("Change system volume.", friendly="Adjusted volume",
+      hints="volume louder quieter sound mute unmute turn it up down",
+      props={"action": {"type": "string", "enum": ["up", "down", "mute", "unmute"]}, "steps": N}, required=["action"])
 def set_volume(action, steps=5):
     keys = {"up": 175, "down": 174, "mute": 173, "unmute": 173}
     if action not in keys:
@@ -740,6 +821,9 @@ def set_volume(action, steps=5):
     return f"Volume {action}" + (f" by {n} steps." if n > 1 else ".")
 
 
+@tool("Play/pause, next or previous track.", friendly="Controlled media",
+      hints="play pause next song previous track music spotify",
+      props={"action": {"type": "string", "enum": ["play_pause", "next", "previous", "stop"]}}, required=["action"])
 def media_control(action):
     keys = {"play_pause": 179, "next": 176, "previous": 177, "stop": 178}
     if action not in keys:
@@ -748,17 +832,24 @@ def media_control(action):
     return f"Media: {action.replace('_', '/')}."
 
 
+@tool("Set screen brightness 0-100.", friendly="Adjusted brightness", hints="brightness screen dimmer brighter",
+      props={"percent": N}, required=["percent"])
 def set_brightness(percent):
     pct = max(0, min(100, int(percent)))
     out = _ps(f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{pct})")
     return f"Brightness set to {pct}%." if "ERR" not in out else f"Couldn't change brightness here: {out}"
 
 
+@tool("Lock the computer.", friendly="Locked the screen", hints="lock my laptop", props={}, required=[])
 def lock_screen():
     subprocess.Popen("rundll32.exe user32.dll,LockWorkStation")
     return "Locked the screen."
 
 
+@tool("Shutdown, restart, sleep, or cancel a pending shutdown. Shutdown/restart first closes "
+      "all open windows and clears notifications.", friendly="Power action", risky="Change power state",
+      hints="shut down turn off restart sleep the laptop computer pc",
+      props={"action": {"type": "string", "enum": ["shutdown", "restart", "sleep", "cancel"]}}, required=["action"])
 def power_action(action):
     cmds = {"shutdown": "shutdown /s /t 30", "restart": "shutdown /r /t 30",
             "sleep": "rundll32.exe powrprof.dll,SetSuspendState 0,1,0", "cancel": "shutdown /a"}
@@ -818,6 +909,15 @@ def ui_way(command):
     return None
 
 
+@tool("Last resort, HIDDEN from the user: a PowerShell command for system jobs no app or other "
+      "tool can do (system settings and info). The user wants to watch you work, so commands an on-screen tool "
+      "can do (listing/reading files, opening/closing apps, git, command-line programs) come back not run, with "
+      "the tool to use. NOT for web research (web_research/read_page), NOT for git/coding (VS Code). "
+      "as_admin=true runs it elevated (Windows shows a UAC prompt).", friendly="Ran a command",
+      risky="Run a PowerShell command", core=True,
+      props={"command": S, "as_admin": B,
+      "no_ui_way": {"type": "string", "description": "only after a 'Not run' answer: why no on-screen way works"}},
+      required=["command"])
 def run_powershell(command, as_admin=False, no_ui_way=""):
     if not as_admin:
         hint = ui_way(command)
@@ -872,6 +972,7 @@ def _windows():
     return found
 
 
+@tool("List open windows and their apps.", friendly="Looked at open windows", core=True, props={}, required=[])
 def list_windows():
     return "\n".join(f"{t}  [{p}]" for _, t, p in _windows()) or "No open windows."
 
@@ -978,6 +1079,10 @@ def _window_by_hand(hwnd, title, action):
     return True, ""
 
 
+@tool("Focus, minimize, maximize or close an open window (match by title or app name).", friendly="Managed a window",
+      risky="Control a window", core=True,
+      props={"title_or_app": S, "action": {"type": "string", "enum": ["focus", "minimize", "maximize", "close"]}},
+      required=["title_or_app", "action"])
 def window_action(title_or_app, action):
     w = _find_window(title_or_app)
     if not w:
@@ -1005,6 +1110,9 @@ SKIP_PROCS = {"textinputhost.exe", "applicationframehost.exe", "shellexperienceh
               "startmenuexperiencehost.exe", "lockapp.exe"}      # Windows' own invisible/helper windows
 
 
+@tool("Close every open app window (not Nova). Apps with unsaved work may ask to save.",
+      friendly="Closed all windows", risky="Close all windows",
+      hints="close all windows, close everything, close all apps", props={}, required=[])
 def close_all_windows():
     """Close every open app window except Nova's own and the Windows shell - one by one, Nova walking to each X
     (the top window first). Stops at an app that asks whether to save: that choice is the user's."""
@@ -1027,6 +1135,7 @@ def close_all_windows():
     return f"Closed {closed} window{'s' if closed != 1 else ''}." if closed else "No windows were open."
 
 
+@tool("Show the desktop.", friendly="Showed the desktop", props={}, required=[])
 def minimize_all_windows():
     keyboard.send("windows+d")
     return "Showing the desktop."
@@ -1233,6 +1342,10 @@ def _type_into_focus(text):
     return "paste"
 
 
+@tool("Type text into an app that is already open; into_window = that app's name, e.g. 'notepad' "
+      "(it is brought to the front first). If the app isn't in the open windows list, call open_app first.",
+      friendly="Typed text", risky="Type on your keyboard", core=True, props={"text": S, "into_window": S},
+      required=["text"])
 def type_text(text, into_window=None):
     if into_window:
         msg = window_action(into_window, "focus")
@@ -1250,6 +1363,9 @@ def type_text(text, into_window=None):
     return f"Typed {len(text)} characters."
 
 
+@tool("Press a key or shortcut in the window in front, e.g. 'ctrl+s', 'enter', 'windows+e'. Never "
+      "use it to open or switch apps (alt+tab, ctrl+n): use open_app or window_action focus.",
+      friendly="Pressed keys", risky="Press keys", core=True, props={"keys": S}, required=["keys"])
 def press_keys(keys):
     keyboard.send(keys)
     return f"Pressed {keys}."
@@ -1341,6 +1457,7 @@ def app_guard(tool, args, app, wait=0.0):
             f"Use type_text(text=..., into_window='{app}') - it brings '{mine[1][:60]}' to the front first.")
 
 
+@tool("Read the clipboard text.", friendly="Read the clipboard", props={}, required=[])
 def get_clipboard():
     return pyperclip.paste()[:4000] or "(clipboard is empty)"
 
@@ -1348,6 +1465,11 @@ def get_clipboard():
 SELECTION_MAX = 6000    # about a page and a half - longer is better copied into a file
 
 
+@tool("Get the text the user has highlighted/selected in their app (copies it for you, "
+      "then restores their clipboard). Use it for 'read this', 'what does the selected text say', "
+      "'summarise/translate what I selected'. When asked to read it, say it word for word.",
+      friendly="Read the selected text",
+      hints="read this selected highlighted text out loud what does it say read it to me", props={}, required=[])
 def read_selection():
     """The text highlighted in the user's app: copy it (Ctrl+C in that window), then put their clipboard back.
     If Nova's own chat window is in front, the app behind it is brought forward first - it keeps its selection."""
@@ -1376,11 +1498,14 @@ def read_selection():
     return text[:SELECTION_MAX] + ("\n[... cut here: the selection was longer]" if cut else "")
 
 
+@tool("Put text on the clipboard.", friendly="Copied to clipboard", props={"text": S}, required=["text"])
 def set_clipboard(text):
     pyperclip.copy(text)
     return "Copied to the clipboard."
 
 
+@tool("Save a screenshot to Pictures/Nova Screenshots.", friendly="Took a screenshot",
+      hints="screenshot capture the screen", props={}, required=[])
 def take_screenshot():
     from PIL import ImageGrab
     folder = HOME / "Pictures" / "Nova Screenshots"
@@ -1392,6 +1517,8 @@ def take_screenshot():
 
 # ---------------------------------------------------------------- files (read / write / move)
 
+@tool("Read a text file (txt, md, csv, code, logs).", friendly="Read a file", props={"path": S, "max_chars": N},
+      required=["path"])
 def read_text_file(path, max_chars=6000):
     p = _resolve(path)
     if not p.is_file():
@@ -1399,6 +1526,8 @@ def read_text_file(path, max_chars=6000):
     return p.read_text(encoding="utf-8", errors="replace")[: int(max_chars)]
 
 
+@tool("Create/overwrite or append to a text file.", friendly="Wrote a file", risky="Write a file",
+      props={"path": S, "content": S, "append": B}, required=["path", "content"])
 def write_text_file(path, content, append=False):
     p = _resolve(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -1407,6 +1536,8 @@ def write_text_file(path, content, append=False):
     return f"{'Appended to' if append else 'Wrote'} {p}"
 
 
+@tool("Move or rename a file or folder.", friendly="Moved/renamed", risky="Move/rename",
+      props={"source": S, "destination": S}, required=["source", "destination"])
 def move_or_rename(source, destination):
     src, dst = _resolve(source), _resolve(destination)
     if not src.exists():
@@ -1419,6 +1550,8 @@ def move_or_rename(source, destination):
     return f"Moved {src} -> {dst}"
 
 
+@tool("Copy a file or folder.", friendly="Copied files", props={"source": S, "destination": S},
+      required=["source", "destination"])
 def copy_path(source, destination):
     src, dst = _resolve(source), _resolve(destination)
     if not src.exists():
@@ -1433,15 +1566,22 @@ def copy_path(source, destination):
 
 # ---------------------------------------------------------------- apps & Windows settings
 
+@tool("Search winget for apps that can be installed.", friendly="Searched for apps", props={"query": S},
+      required=["query"])
 def search_installable_apps(query):
     return _ps(f"winget search --accept-source-agreements -- '{ps_escape(query)}' | Select-Object -First 15", timeout=90)
 
 
+@tool("Install an app with winget by its exact Id (find it with search_installable_apps).",
+      friendly="Installed an app", risky="Install an app", hints="install download an app program",
+      props={"winget_id": S}, required=["winget_id"])
 def install_app(winget_id):
     return _ps(f"winget install --id '{ps_escape(winget_id)}' -e --silent --accept-package-agreements "
                "--accept-source-agreements", timeout=900)
 
 
+@tool("Uninstall an app with winget.", friendly="Uninstalled an app", risky="Uninstall an app", dangerous=True,
+      hints="uninstall remove an app program", props={"name_or_id": S}, required=["name_or_id"])
 def uninstall_app(name_or_id):
     return _ps(f"winget uninstall --silent --accept-source-agreements -- '{ps_escape(name_or_id)}'", timeout=600)
 
@@ -1451,6 +1591,8 @@ def _like_literal(text):
     return re.sub(r"([*?\[\]`])", r"`\1", str(text or ""))
 
 
+@tool("List installed programs, optionally filtered.", friendly="Listed installed apps", props={"name_contains": S},
+      required=[])
 def list_installed_apps(name_contains=""):
     cmd = ("Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*,"
            "HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*,"
@@ -1470,12 +1612,16 @@ SETTINGS_PAGES = {
 }
 
 
+@tool("Open a Windows Settings page: " + ", ".join(SETTINGS_PAGES), friendly="Opened Settings", props={"page": S},
+      required=["page"])
 def open_settings_page(page):
     key = SETTINGS_PAGES.get(page.lower().strip(), page.lower().strip())
     os.startfile(f"ms-settings:{key}")
     return f"Opened Settings > {page}."
 
 
+@tool("Turn Windows dark mode on or off.", friendly="Changed theme", hints="dark mode light mode theme",
+      props={"enabled": B}, required=["enabled"])
 def set_dark_mode(enabled):
     v = 0 if enabled in (True, "true", "on", 1) else 1
     for name in ("AppsUseLightTheme", "SystemUsesLightTheme"):
@@ -1483,6 +1629,8 @@ def set_dark_mode(enabled):
     return f"Dark mode {'on' if v == 0 else 'off'}."
 
 
+@tool("Set the desktop wallpaper from an image file.", friendly="Changed wallpaper", risky="Change your wallpaper",
+      props={"image_path": S}, required=["image_path"])
 def set_wallpaper(image_path):
     p = _resolve(image_path)
     if not p.is_file():
@@ -1545,6 +1693,10 @@ def _scan(window, limit=200, offscreen=False, contains=""):
     return w, items
 
 
+@tool("List buttons, links, tabs and text boxes in a window (default: the window in front), numbered "
+      "in page order. 'contains' filters by text; contains='video' lists only videos (YouTube etc.).",
+      friendly="Looked at the buttons", hints="what can I click on this page, buttons links",
+      props={"window": S, "contains": S}, required=[])
 def list_clickable(window="", contains=""):
     w, items = _scan(window, limit=300, contains=contains)
     if not w:
@@ -1571,6 +1723,9 @@ def _bring_into_view(item, w):
     return (r.left + r.right) // 2, (r.top + r.bottom) // 2
 
 
+@tool("Scroll a window up or down with the mouse wheel (amount 5 ≈ half a page).", friendly="Scrolled",
+      props={"direction": {"type": "string", "enum": ["up", "down"]}, "amount": N, "window": S},
+      required=["direction"])
 def scroll(direction="down", amount=5, window=""):
     """Turn the mouse wheel over a window (amount = wheel notches; ~5 is about half a page)."""
     w = _target_window(window)
@@ -1586,6 +1741,11 @@ def scroll(direction="down", amount=5, window=""):
     return f"Scrolled {direction} {amount} notches" + (f" in '{w[1]}'." if w else ".")
 
 
+@tool("Type into a text box in a window and press Enter - use this to SEARCH on a website (YouTube, Google, "
+      "Amazon...) or fill a form field. 'box' is the box's name; leave it empty for the page's search box.",
+      friendly="Typed into a box", risky="Type into a box",
+      hints="search for something on a website, type in the search box",
+      props={"text": S, "box": S, "window": S, "press_enter": B}, required=["text"])
 def fill_in(text, box="", window="", press_enter=True):
     """Click a text box (e.g. a website's Search box), replace its text, and press Enter - one reliable step."""
     w, items = _scan(window, limit=500)
@@ -1667,6 +1827,13 @@ def _form_boxes(window):
     return w, boxes
 
 
+@tool("Fill in a form on the screen (sign-up, application, delivery address...) with the user's saved "
+      "details - name, email, phone, birth date, address, city, state, PIN code, company... You never see the "
+      "values; they stay on the laptop. Passwords, codes and ID/card numbers are left for the user. It never "
+      "submits: ask the user to check the form before you press Submit.", friendly="Filled in the form",
+      risky="Fill in the form with your saved details",
+      hints="fill in this form, fill out the form with my details, sign up form, application form, my address "
+            "name email", props={"window": S}, required=[])
 def fill_form(window=""):
     from nova.actions import forms
     details = forms.load()
@@ -1732,6 +1899,11 @@ def _title_of(hwnd):
     return buf.value
 
 
+@tool("Help the user sign in to a website: you click the login box so their browser / password "
+      "manager offers the saved login, then wait while they pick it and sign in. You never ask for, see or type "
+      "a password.", friendly="Helped you sign in",
+      hints="log in sign in login to the site account, my password, help me log in",
+      props={"window": S, "wait_secs": N}, required=[])
 def help_login(window="", wait_secs=150):
     """Open a site's login box so the password manager offers the saved login; wait while the user signs in."""
     w, boxes = _form_boxes(window)
@@ -1774,6 +1946,11 @@ def help_login(window="", wait_secs=150):
 LOGIN_RX = re.compile(r"e-?mail|user|login|phone|mobile|account|sign\s*in", re.I)
 
 
+@tool("A site asks for a one-time code (OTP / verification code from SMS, email or an "
+      "authenticator): point at the code box and wait while the user types it. You don't read or keep the code.",
+      friendly="Waited for your code",
+      hints="otp verification code one time password two factor 2fa sms code authenticator code enter the code",
+      props={"window": S, "wait_secs": N}, required=[])
 def wait_for_code(window="", wait_secs=180):
     """Point at the one-time-code (OTP) box and wait while the user types the code. The code itself is not read."""
     from nova.actions import forms
@@ -1841,6 +2018,10 @@ def _video_window():
     return None
 
 
+@tool("Control a playing video (YouTube etc.) with its own player buttons: make the VIDEO full screen "
+      "(not the browser window), exit full screen, play, pause, next video, mute, unmute, captions, theater mode.",
+      friendly="Pressed a video button", hints="youtube video full screen pause play next video captions subtitles",
+      props={"action": {"type": "string", "enum": list(VIDEO_BUTTONS)}}, required=["action"])
 def video_control(action):
     """Press a video player's own button: fullscreen, exit_fullscreen, play, pause, next, mute, unmute, captions, theater."""
     if action not in VIDEO_BUTTONS:
@@ -1881,6 +2062,10 @@ def video_control(action):
     return f"Pressed '{match['name']}' on '{w[1][:60]}'."
 
 
+@tool("Click the Nth item (1 = first) whose name contains some text, scrolling to it if needed. "
+      "To play a video: contains='video' (e.g. 'play the first video' -> number=1, 'the 7th video' -> number=7).",
+      friendly="Clicked an item", risky="Click an item", hints="play the first video, open the second result",
+      props={"contains": S, "number": N, "window": S}, required=["contains", "number"])
 def click_nth(contains, number, window=""):
     """Click the Nth clickable item (in page order) whose name contains some text - e.g. the 7th YouTube video."""
     w, items = _scan(window, limit=500, offscreen=True, contains=contains)
@@ -1934,6 +2119,11 @@ def _nova_click(x, y, button="left", double=False, label=""):
         avatar_client.send("finish_point")
 
 
+@tool("Click a button/menu/link/tab/text box by its name in a window. Nova walks over and presses it. "
+      "Call list_clickable first if you don't know the exact name.", friendly="Clicked a button",
+      risky="Click something",
+      props={"name": S, "window": S, "button": {"type": "string", "enum": ["left", "right"]}, "double": B},
+      required=["name"])
 def click_element(name, window="", button="left", double=False):
     w, items = _scan(window, limit=500, offscreen=True)
     if not w:
@@ -1953,6 +2143,9 @@ def click_element(name, window="", button="left", double=False):
     return f"Clicked '{match['name']}' ({match['type']}) in '{w[1]}'."
 
 
+@tool("Click at screen coordinates (pixels).", friendly="Clicked on screen", risky="Click on the screen",
+      props={"x": N, "y": N, "button": {"type": "string", "enum": ["left", "right"]}, "double": B},
+      required=["x", "y"])
 def click_at(x, y, button="left", double=False):
     _nova_click(int(x), int(y), button, double)
     return f"Clicked at ({int(x)}, {int(y)})."
@@ -2033,6 +2226,10 @@ def _grab_camera_jpeg(max_width=768):
     return base64.b64encode(buf.tobytes()).decode()
 
 
+@tool("Look at the user through the webcam and answer a question about what you see "
+      "(e.g. 'how do I look?', 'what am I holding?', 'do I look tired?'). Only works if the user switched the camera on.",
+      friendly="Looked through the camera", hints="how do I look, what am I holding, see me", props={"question": S},
+      required=["question"])
 def look_through_camera(question="What do you see?"):
     if not _camera_allowed():
         return "The camera is switched off. The user can allow it in Nova's settings (⚙ Model → Camera)."
@@ -2085,6 +2282,11 @@ def _grab_screen_jpeg(what="screen", window="", max_width=1400):
     return base64.b64encode(buf.getvalue()).decode()
 
 
+@tool("Look at the user's screen (or one window) and answer a question about it - read an error, "
+      "explain what's open, summarize a page, find something. Only works if the user switched screen viewing on.",
+      friendly="Looked at your screen", hints="what's on my screen, read this error, look at this",
+      props={"question": S, "what": {"type": "string", "enum": ["screen", "window"]}, "window": S},
+      required=["question"])
 def look_at_screen(question="What's on my screen?", what="screen", window=""):
     if not _screen_allowed():
         return "Screen viewing is switched off. The user can allow it in Nova's settings (⚙ Model → Screen)."
@@ -2095,6 +2297,8 @@ def look_at_screen(question="What's on my screen?", what="screen", window=""):
     return "On the screen: " + llm.see(img, question, preferred=model, kind="screen")
 
 
+@tool("Turn the Wi-Fi adapter on or off (needs admin approval).", friendly="Switched Wi-Fi",
+      risky="Switch Wi-Fi (admin)", dangerous=True, hints="turn wifi on off", props={"on": B}, required=["on"])
 def toggle_wifi(on):
     state = "enabled" if on in (True, "true", "on", 1) else "disabled"
     return run_powershell(f'netsh interface set interface name="Wi-Fi" admin={state}', as_admin=True)
@@ -2102,6 +2306,8 @@ def toggle_wifi(on):
 
 # ---------------------------------------------------------------- notes, reminders, memory
 
+@tool("Save a note.", friendly="Saved a note", hints="write this down, note that, jot", props={"text": S},
+      required=["text"])
 def add_note(text):
     with _files_lock:
         notes = _load(store.current().notes, [])
@@ -2110,11 +2316,14 @@ def add_note(text):
     return f"Saved note #{len(notes)}."
 
 
+@tool("Read saved notes.", friendly="Read notes", props={}, required=[])
 def list_notes():
     notes = _load(store.current().notes, [])
     return "\n".join(f"{i+1}. {n['text']} ({n['at']})" for i, n in enumerate(notes)) or "No notes yet."
 
 
+@tool("Remind the user after some minutes.", friendly="Set a reminder", hints="remind me in minutes, alarm, timer",
+      props={"text": S, "minutes_from_now": N}, required=["text", "minutes_from_now"])
 def set_reminder(text, minutes_from_now):
     due = time.time() + float(minutes_from_now) * 60
     with _files_lock:
@@ -2124,6 +2333,9 @@ def set_reminder(text, minutes_from_now):
     return f"I'll remind you at {dt.datetime.fromtimestamp(due).strftime('%I:%M %p')}: {text}"
 
 
+@tool("List the reminders that are still waiting (what did I ask you to remind me of).",
+      friendly="Checked your reminders", hints="what reminders do I have, my reminders, upcoming reminders",
+      props={}, required=[])
 def list_reminders():
     with _files_lock:
         rems = [r for r in _load(store.current().reminders, []) if not r.get("done")]
@@ -2147,11 +2359,16 @@ def due_reminders():
     return due
 
 
+@tool("Remember a lasting fact about the user that fits no profile field.", friendly="Remembered something",
+      hints="remember that, don't forget", props={"fact": S}, required=["fact"])
 def remember_fact(fact):
     from nova.actions import knowledge
     return knowledge.update_profile("facts", fact)
 
 
+@tool("Forget everything in your knowledge bank (profile or lessons) containing some text.",
+      friendly="Forgot something", hints="forget that, delete what you know", props={"fact_contains": S},
+      required=["fact_contains"])
 def forget_fact(fact_contains):
     from nova.actions import knowledge
     return knowledge.forget(fact_contains)
@@ -2162,16 +2379,28 @@ def memories():
     return knowledge.facts()
 
 
+@tool("Save something you learned about the user in your knowledge bank, so you know them better "
+      "next time. Use it whenever they tell you about themselves.", friendly="Updated your profile", core=True,
+      props={"field": {"type": "string", "enum": ["name", "nickname", "work", "city", "interests", "favourite_apps",
+      "preferences", "routines", "people", "facts"]},
+      "value": S, "remove": B}, required=["field", "value"])
 def update_profile(field, value, remove=False):
     from nova.actions import knowledge
     return knowledge.update_profile(field, value, remove in (True, "true"))
 
 
+@tool("Write down a mistake you made (or a better way you found) and what to do next time. Use it "
+      "when the user corrects you, when a task failed, or when you discover what works on this laptop.",
+      friendly="Saved a lesson", core=True,
+      props={"situation": S, "lesson": S, "kind": {"type": "string", "enum": ["mistake", "improvement", "preference"]}},
+      required=["situation", "lesson"])
 def learn_lesson(situation, lesson, kind="mistake"):
     from nova.actions import knowledge
     return knowledge.learn_lesson(situation, lesson, kind)
 
 
+@tool("Read your knowledge bank: what you know about the user and your lessons. Optionally only "
+      "about one topic.", friendly="Checked my knowledge bank", core=True, props={"about": S}, required=[])
 def recall_knowledge(about=""):
     from nova.actions import knowledge
     return knowledge.recall(about)
@@ -2190,6 +2419,10 @@ def _ago(secs):
     return f"{secs // 86400} days ago"
 
 
+@tool("Read the user's newest Windows notifications (messages, mail, reminders from apps).",
+      friendly="Read your notifications",
+      hints="read my notifications, any new messages, what did I miss, alerts, whatsapp mail", props={"count": N},
+      required=[])
 def read_notifications(count=5):
     if not _setting("notifications"):
         return ("Reading notifications is switched off. The user can switch it on in Nova's settings "
@@ -2226,6 +2459,11 @@ def _email_gate():
     return ""
 
 
+@tool("Look in the user's Gmail (read-only): the newest mail, or a Gmail search like 'is:unread', "
+      "'from:amazon', 'newer_than:1d', 'subject:invoice'. Returns sender, subject and a snippet. Never sends mail.",
+      friendly="Looked in your Gmail",
+      hints="check my email gmail inbox unread mail any important emails today did someone email me find the "
+            "email from", props={"query": S, "count": N}, required=[])
 def check_email(query="", count=5):
     """The newest mail matching a Gmail search ("" = the inbox). Read-only."""
     from nova.actions import gmail
@@ -2245,6 +2483,11 @@ def check_email(query="", count=5):
     return EMAIL_WARN + more + " Newest first (use read_email with an id for the whole mail):\n" + "\n".join(lines)
 
 
+@tool("Connect Nova to the user's Gmail (opens Google's sign-in in the browser). Use for 'connect Gmail', "
+      "'link my Gmail', 'sign in to Gmail for Nova' - NOT draft_email, which writes a new email.",
+      friendly="Opened the Gmail sign-in",
+      hints="connect gmail link my gmail sign in to gmail set up gmail for nova give nova access to my email",
+      props={}, required=[])
 def connect_gmail():
     """Open Google's sign-in so the user can connect Gmail (they approve it on Google's own page)."""
     from nova.actions import gmail
@@ -2270,6 +2513,9 @@ def connect_gmail():
             "Do NOT draft an email for this.")
 
 
+@tool("Read the whole text of one Gmail mail (an id from check_email). Read-only.", friendly="Read an email",
+      hints="read the email open that mail summarise the email what does the email say", props={"id": S},
+      required=["id"])
 def read_email(id):
     """The text of one mail, found with check_email. Read-only."""
     from nova.actions import gmail
@@ -2284,6 +2530,14 @@ def read_email(id):
             + gmail.hide_codes(m["text"]))
 
 
+@tool("Stop or resume reading out one app's notifications, and keep it: 'don't read "
+      "notifications from Claude' = mute true; 'resume / start reading Claude notifications again' = mute false; "
+      "app 'all' with mute false unmutes every app; no app = list the muted apps.",
+      friendly="Changed which apps' notifications I read",
+      hints="don't read notifications from an app, stop reading ignore mute silence that app's notifications, "
+            "resume start reading unmute its notifications again",
+      props={"app": {"type": "string", "description": "the app's name as the user said it, e.g. Claude, WhatsApp"},
+      "mute": {"type": "boolean", "description": "true = stop reading it, false = read it again"}}, required=[])
 def mute_notifications(app="", mute=True):
     """Stop (mute=True) or resume (mute=False) reading one app's notifications; no app = say which are muted."""
     from nova.actions import notifications
@@ -2323,11 +2577,23 @@ def _norm_all(words):
     return words.lower().strip(" .") in ("all", "all apps", "everything", "every app", "everyone", "all of them")
 
 
+@tool("Co-worker job in the BACKGROUND: you write an email and draft it in Gmail in a hidden browser "
+      "window (never sent). The user keeps working; you tell them when it's ready. Use for 'draft/write an email'.",
+      friendly="Started drafting an email",
+      hints="draft write compose an email mail gmail to someone in the background",
+      props={"about": {"type": "string", "description": "what the email should say, with every detail the user gave"},
+      "to": {"type": "string", "description": "email address, or the person's name if no address"},
+      "subject": S}, required=["about"])
 def draft_email(about, to="", subject=""):
     from nova.actions import coworker
     return coworker.draft_email(to=to, about=about, subject=subject)[1]
 
 
+@tool("Co-worker job in the BACKGROUND: write a document/notes/letter/list, save it in "
+      "Documents\\Nova (nothing pops up); you tell the user when it's ready.", friendly="Started writing a document",
+      hints="write a document letter notes essay list report in the background, make a doc",
+      props={"about": {"type": "string", "description": "what to write, with every detail the user gave"}, "title": S},
+      required=["about"])
 def write_document(about, title=""):
     from nova.actions import coworker
     return coworker.write_document(title=title, about=about)[1]
@@ -2337,6 +2603,16 @@ LOCAL_TOPIC = re.compile(r"\b[a-z]:\\|\\users\\|\bmy (project|repo|repository|fo
                          r"|\b(last|latest) commit\b|\bgit (log|status|diff|branch)\b", re.I)
 
 
+@tool("Co-worker job in the BACKGROUND - the normal way to research: you Google the "
+      "topic in Chrome windows parked off-screen, read the best 2-3 pages, and write a report with sources in "
+      "Documents\\Nova while the user keeps working on their own screen; you tell them the main finding when "
+      "it's done. Use for 'research', 'look up', 'find out about', 'what's the best...', 'compare'. kind='code' "
+      "searches the docs, GitHub and Stack Overflow.", friendly="Started researching in the background",
+      hints="research look up find out about search the web google it docs documentation github stack overflow "
+            "learn about compare best library how to tutorial in the background",
+      props={"topic": {"type": "string", "description": "what to research, as a search query"},
+      "focus": {"type": "string", "description": "what exactly the user wants to know, if they said"},
+      "kind": {"type": "string", "enum": ["general", "code"]}, "max_sources": N}, required=["topic"])
 def research_in_background(topic, focus="", kind="general", max_sources=3):
     from nova.actions import coworker
     if LOCAL_TOPIC.search(f"{topic} {focus}"):
@@ -2356,42 +2632,89 @@ def research_in_background(topic, focus="", kind="general", max_sources=3):
     return coworker.research(topic=topic, focus=focus, kind=kind, max_sources=max_sources)[1]
 
 
+@tool("Bring a finished background job (drafted email, written document) to the front.",
+      friendly="Showed finished work", hints="show me the email, show it, open what you wrote, let me see the draft",
+      props={"which": {"type": "string", "description": "'latest' or words from its title"}}, required=[])
 def show_finished_work(which="latest"):
     from nova.actions import coworker
     return coworker.show(coworker.find(which or "latest"))
 
 
+@tool("Go to sleep: stop listening and nap in the corner of the screen. Call it whenever the user "
+      "tells you to sleep, rest, stop listening, or says goodnight/bye.", friendly="Went to sleep", core=True,
+      props={}, required=[])
 def go_to_sleep():
     # app._execute_one handles this one itself (it ends the voice conversation); this is only the fallback.
     return "Okay."
 
 
+@tool("List your background co-worker jobs, whether they're done, and what each running "
+      "one is doing right now. Use it to answer 'how's the research going?' or 'is the email ready?'.",
+      friendly="Checked background jobs",
+      hints="is the email ready, what are you working on, background jobs status, how's the research going",
+      props={}, required=[])
 def background_jobs():
     from nova.actions import coworker
     return coworker.summary()
 
 
+@tool("Stop a running background co-worker job (research, email draft, document) when "
+      "the user says to stop, cancel or forget it.", friendly="Stopped a background job",
+      hints="stop the research, cancel the email, forget that job, stop working on that in the background",
+      props={"which": {"type": "string", "description": "'all', the job number, or words from it like 'research'"}},
+      required=[])
 def stop_background_job(which="all"):
     from nova.actions import coworker
     return coworker.stop(which or "all")
 
 
+@tool("Hand a CODING job to a coding agent that works in the BACKGROUND in a project folder "
+      "(a git project): fix a bug, change code, edit a README, build a page or app. You don't write the code "
+      "yourself. The worker never commits - you tell the user when it's done and they decide. Ask for the folder "
+      "if you don't know it. Check its progress with background_jobs, stop it with stop_background_job.",
+      friendly="Started a coding job", ask="Start a coding job in the background",
+      hints="fix the bug in my code project repo, change the code, edit the readme, build a website page app "
+            "feature, refactor, add tests, coding job, use opencode deepseek claude code",
+      props={"brief": {"type": "string", "description": "the whole job for the worker: what to change and why, every "
+      "detail the user gave, and what 'done' means"},
+      "folder": {"type": "string", "description": "the project folder, full path"},
+      "worker": {"type": "string", "enum": ["auto", "opencode", "claude"],
+      "description": "auto = the cheap worker (OpenCode + DeepSeek) for small jobs, Claude Code for "
+      "big ones; 'claude' only if the user asked for it or the cheap one failed"},
+      "size": {"type": "string", "enum": ["small", "big"],
+      "description": "big = a new site/app or a multi-file feature"}}, required=["brief", "folder"])
 def start_coding_job(brief, folder="", worker="auto", size="small"):
     # workers.py: a coding agent (OpenCode/DeepSeek or Claude Code) does the job in the background, never commits.
     from nova.actions import workers
     return workers.start(brief, folder, worker or "auto", size or "small")
 
 
+@tool("Commit (git, locally - never pushes) the files a finished coding job changed, only "
+      "when the user says to commit it.", friendly="Committed the changes",
+      ask="Commit the changes (git, not pushed)",
+      hints="commit it, commit the changes, commit what the worker changed, git commit",
+      props={"which": {"type": "string", "description": "'latest' or the job number"},
+      "message": {"type": "string", "description": "the commit message, if the user gave one"}}, required=[])
 def commit_coding_job(which="latest", message=""):
     from nova.actions import workers
     return workers.commit(which or "latest", message or "")
 
 
+@tool("Show what a finished coding job changed (files and the diff), e.g. 'what changed?', "
+      "'show me the changes'.", friendly="Looked at the changes",
+      hints="what changed, show me the changes, the diff, what did the worker change",
+      props={"which": {"type": "string", "description": "'latest' or the job number"}}, required=[])
 def show_coding_changes(which="latest"):
     from nova.actions import workers
     return workers.changes(which or "latest")
 
 
+@tool("Give the last coding job (usually one that failed) to another worker with the same "
+      "brief and folder, e.g. 'try it with Claude Code'.", friendly="Gave the job to another worker",
+      ask="Give the coding job to another worker",
+      hints="try it with claude code, try again with the other worker, give it to claude",
+      props={"which": {"type": "string", "description": "'latest' or the job number"},
+      "worker": {"type": "string", "enum": ["claude", "opencode"]}}, required=[])
 def retry_coding_job(which="latest", worker="claude"):
     from nova.actions import workers
     return workers.retry(which or "latest", worker or "claude")
@@ -2399,6 +2722,10 @@ def retry_coding_job(which="latest", worker="claude"):
 
 # ---------------------------------------------------------------- skills (skills/*.md - see skills.py)
 
+@tool("Run one of your saved skills (a routine or recipe the user taught you) by its name.", friendly="Ran a skill",
+      ask="Run a skill", hints="run my routine, do the usual, use your skill",
+      props={"name": S, "input": {"type": "string", "description": "what it's for this time, if the skill needs it "
+      "(e.g. the song or search words)"}}, required=["name"])
 def run_skill(name, input=""):
     # app.execute runs skills itself (each step needs the approval rules and the screen settling); this is only
     # the fallback when called outside a conversation.
@@ -2411,12 +2738,37 @@ def run_skill(name, input=""):
     return f"Skill '{s['name']}' can only run inside a conversation."
 
 
+@tool("Save a NEW skill when the user teaches you a routine, e.g. 'when I say movie time, close "
+      "everything and open Netflix'. Write steps one per line. Steps you can run exactly make a routine: "
+      "'open_app name=Spotify', 'set_volume action=up, steps=5', 'say Enjoy!', 'wait 2' ('{input}' = what the "
+      "user asks for each time). Plain-English steps make a recipe you follow (weaker - prefer steps you can "
+      "run). To CHANGE a skill that exists, use edit_skill, not this.", friendly="Learned a new skill",
+      hints="when I say this do that, learn this routine, teach you a new skill, remember how to do it, shortcut",
+      props={"name": {"type": "string", "description": "short, like movie-time"},
+      "description": {"type": "string", "description": "what it does and when to use it, in a sentence"},
+      "steps": {"type": "string", "description": "one step per line"},
+      "when": {"type": "string", "description": "phrases the user will say to start it, comma-separated"},
+      "not_for": {"type": "string", "description": "similar requests that must NOT start it, comma-separated"},
+      "kind": {"type": "string", "enum": ["routine", "recipe"]},
+      "replace": {"type": "boolean", "description": "true only to overwrite a skill that already exists"}},
+      required=["name", "description", "steps"])
 def save_skill(name, description, steps, when="", kind="", replace=False, not_for="", requires_any=""):
     from nova.actions import skills
     return skills.save(name, description, steps, when, kind, replace=bool(replace), author="brain",
                        not_for=not_for, requires_any=requires_any)
 
 
+@tool("Change a saved skill a little: add, change or remove ONE step, a check, or a trigger phrase. "
+      "ops is a JSON list, e.g. [{\"op\":\"insert_step\",\"after\":\"s2\",\"step\":\"set_volume action=up, "
+      "steps=5\"}] or [{\"op\":\"replace_step\",\"id\":\"s4\",\"step\":\"press_keys keys=f\",\"expect\":\"fullscreen\"}] "
+      "or [{\"op\":\"delete_step\",\"id\":\"s3\"}] or [{\"op\":\"add_not_for\",\"text\":\"latest anime\"}]. "
+      "Other ops: set_expect (id, expect), set_on_fail (id, on_fail), add_example (text), set_description (text). "
+      "The old version is kept. Use this when the user corrects a skill - never retype the whole skill.",
+      friendly="Changed a skill",
+      hints="change my skill, fix the skill, update the skill, add a step to the skill, the skill should also, "
+            "undo skill change",
+      props={"name": S, "ops": {"type": "string", "description": "JSON list of changes (max 5)"}},
+      required=["name", "ops"])
 def edit_skill(name, ops):
     """Change one saved skill a little (add / change / remove a step, a check, a trigger phrase) - and keep the old
     version so the change can be undone."""
@@ -2424,20 +2776,37 @@ def edit_skill(name, ops):
     return skills.edit(name, ops, author="brain")
 
 
+@tool("Go back to the version of a skill before its last change.", friendly="Undid a skill change",
+      props={"name": S}, required=["name"])
 def undo_skill_change(name):
     from nova.actions import skills
     return skills.undo(name)
 
 
+@tool("Start watching the user's clicks and typing so you learn a new skill from them, when "
+      "they say 'watch me', 'let me show you how' or 'learn this'. They say 'done' when finished. Passwords and "
+      "codes are never recorded.", friendly="Started watching",
+      hints="watch me, watch how I do this, let me show you, learn this from me, record what I do",
+      props={"goal": {"type": "string", "description": "what they are going to show, in their words"}}, required=[])
 def start_watching(goal=""):
     # app._execute_one answers these two: the recording lives in app.py's conversation state (recorder.py)
     return "I can only watch inside a conversation."
 
 
+@tool("Stop watching the user (they said they're done showing you).", friendly="Watched you",
+      hints="done, I'm finished showing you, stop watching", props={}, required=[])
 def stop_watching():
     return "I can only watch inside a conversation."
 
 
+@tool("Save the task you just finished as a new skill, from the steps you really did, when the "
+      "user says 'remember that', 'save that as a skill' or 'next time do that'. It starts as a draft and "
+      "becomes a real skill after it works twice.", friendly="Saved a skill",
+      hints="remember that, save that as a skill, next time do that, make that a skill, call it",
+      props={"name": {"type": "string", "description": "short, like crunchyroll-new"},
+      "examples": {"type": "string", "description": "phrases the user will say to start it, comma-separated"},
+      "description": {"type": "string", "description": "what it does and when to use it"}},
+      required=["name", "examples"])
 def save_task_as_skill(name, examples="", description=""):
     # app._execute_one answers this one: it needs the steps of the task Nova just did (state in app.py).
     return "I can only do that inside a conversation, right after finishing a task."
@@ -2452,6 +2821,12 @@ def _buttons(items):
     return [i for i in items if i["type"] in ("Button", "Hyperlink", "MenuItem")]
 
 
+@tool("Make sure the user is signed in on a website: does nothing if they already are, presses "
+      "Log in if the browser filled the login in, otherwise opens the login box and waits while the user picks "
+      "their saved login. You never see or type a password. Use it in skills, before the part that needs the "
+      "account.", friendly="Checked your sign-in", risky="Sign in on a website",
+      hints="make sure I am logged in, sign in to the site if needed, log in before continuing",
+      props={"window": S, "wait_secs": N}, required=[])
 def login_if_needed(window="", wait_secs=150):
     """Make sure the user is signed in on this site: nothing to do if they already are; if the browser has filled the
     login in, press Log in; otherwise open the login box and wait while the user picks their saved login. Never
@@ -2507,21 +2882,33 @@ def forms_code_box(b):
     return bool(forms.CODE_BOX.search(b["name"]) and not forms.NOT_CODE.search(b["name"]))
 
 
+@tool("List the skills (routines and recipes) the user has taught you.", friendly="Listed my skills",
+      hints="what skills routines do you know, what have I taught you", props={}, required=[])
 def list_skills():
     from nova.actions import skills
     return skills.describe()
 
 
+@tool("Delete one of your saved skills.", friendly="Deleted a skill", risky="Delete a saved skill",
+      hints="forget that routine, delete the skill", props={"name": S}, required=["name"])
 def delete_skill(name):
     from nova.actions import skills
     return skills.delete(name)
 
 
+@tool("Call this FIRST when the job is bigger than you can do well: kind='deep' for a complex, "
+      "multi-step or tricky job (a stronger brain writes a full plan for you to follow), kind='code' for writing, "
+      "fixing or reviewing code (a coding brain takes over). Never for simple things like opening an app, the "
+      "time or chat. Takes a minute to switch.", friendly="Switched brain", core=True,
+      props={"kind": {"type": "string", "enum": ["deep", "code"]}, "why": S}, required=["kind"])
 def escalate(kind="deep", why=""):
     # app.execute answers this one itself (it switches the brain); this is only the fallback.
     return "Nothing to switch to."
 
 
+@tool("You only see some of your tools right now. If none of them can do what the user asked, call "
+      "this with the ability you need (e.g. 'change screen brightness', 'install an app') and you get more tools.",
+      friendly="Found more tools", core=True, props={"need": S}, required=["need"])
 def more_tools(need=""):
     # app.execute answers this one itself (it changes which tools the brain sees); this is only the fallback.
     return "All your tools are already available."
@@ -2547,6 +2934,12 @@ def can_do():
     return ", ".join(REACTIONS) + (f"; and my own moves: {', '.join(moves)}" if moves else "")
 
 
+@tool("Act something out with your 3D body on screen: laugh, dance, spin, clap, surprised, sad, confused, nod, "
+      "shake (no), facepalm (oops), bow (thanks), love, yawn, look, happy (jump), wave - or one of your own "
+      "moves you made with new_move, by its name. Use it when the user asks you to dance, laugh, clap and so "
+      "on. It plays right after you finish speaking your answer (a laugh after the joke), so call it first, "
+      "then answer. For something none of these is, use new_move.", friendly="Acted it out", core=True,
+      hints="dance laugh clap wave", props={"reaction": S, "times": N}, required=["reaction"])
 def react(reaction, times=0):
     """Make 3D Nova act something out on screen right now. (In a chat, app.queue_reaction plays it after she speaks.)"""
     from nova.avatar import avatar_client, body
@@ -2559,6 +2952,17 @@ def react(reaction, times=0):
     return f"Did it: {name}." if out and out.get("played") else f"I couldn't do '{name}' just now."
 
 
+@tool("Invent a NEW body move for your 3D self and do it now (e.g. 'do a robot dance', 'shrug', "
+      "'stretch', 'salute', 'do jumping jacks'), when no react reaction fits. You write the poses; it is saved "
+      "under its name so react can do it again. " + ANGLE_HELP, friendly="Made up a new move",
+      hints="do a new move, act out, shrug, salute, stretch, robot dance, jumping jacks, pose, show me how",
+      props={"name": S, "duration": {"type": "number", "description": "seconds, 0.3 to 12"},
+      "keys": {"type": "array", "items": {"type": "object"}}, "times": N,
+      "sound": {"type": "object", "description":
+      "optional sound played with the move: {\"say\": \"Yay!\"} (a short word in your own voice) or "
+      "{\"notes\": [{\"type\": chime|pluck|tone|voice|boing|whoosh|pop|clap|drum, \"pitch\": "
+      "\"C5\" (note or Hz), \"to\": pitch to slide to, \"at\": seconds, \"length\": seconds, "
+      "\"volume\": 0..1}]}"}}, required=["name", "duration", "keys"])
 def new_move(name, duration, keys, times=1, save=True, sound=None):
     """Invent a move for 3D Nova's live body, play it, and remember it (data/moves.json) to do again with react.
     (In a chat, app.queue_new_move runs instead: it plays the move after she has spoken, and can use her voice.)"""
@@ -2587,6 +2991,8 @@ def new_move(name, duration, keys, times=1, save=True, sound=None):
             + (" and saved it: say react with that name to do it again." if save else "."))
 
 
+@tool("Delete one of your own invented moves.", friendly="Forgot a move", hints="forget that move, delete your move",
+      props={"name": S}, required=["name"])
 def forget_move(name):
     from nova.avatar import avatar_client, body
     key = re.sub(r"[^a-z0-9]+", "_", str(name or "").lower()).strip("_")
@@ -2596,6 +3002,16 @@ def forget_move(name):
     return f"Forgot my move '{key}'."
 
 
+@tool("Change how your 3D self looks, and keep it: an outfit (default, sakura, midnight, forest, "
+      "sunny) and/or colours (a colour word like pink/teal/gold or #rrggbb) of hair, hair_tips, eyes, skin, "
+      "hoodie, pants, shoes, glow, accent (star), hat (beanie and bow colour), and things to wear on/off: "
+      "headphones, hair_clip, long_hair, ahoge (the hair curl), glasses, cat_ears, beanie, bow. "
+      "preset 'default' puts everything back.", friendly="Changed my look",
+      hints="change your look, outfit, hair colour, clothes, wear glasses, cat ears, hat, dress up, new style",
+      props={"preset": {"type": "string", "enum": ["default", "sakura", "midnight", "forest", "sunny"]},
+      "hair": S, "hair_tips": S, "eyes": S, "skin": S, "hoodie": S, "pants": S, "shoes": S, "glow": S,
+      "accent": S, "hat": S, "headphones": B, "hair_clip": B, "long_hair": B, "ahoge": B, "glasses": B,
+      "cat_ears": B, "beanie": B, "bow": B}, required=[])
 def change_look(preset="", hair="", hair_tips="", eyes="", skin="", hoodie="", pants="", shoes="", glow="", accent="",
                 hat="", headphones=None, hair_clip=None, long_hair=None, ahoge=None, glasses=None, cat_ears=None,
                 beanie=None, bow=None):
@@ -2690,6 +3106,15 @@ def _read_text(path):
     return raw.decode(enc, errors="ignore")
 
 
+@tool("Run a command in your own 'Nova terminal' window and get what it printed. The window "
+      "stays minimized in the background so the user can keep working; set show=true only if they ask to see or "
+      "watch it. Use it for command-line jobs with no app or button (git log/status/remote, ssh, npm, pip, "
+      "python scripts...).", friendly="Typed a command in the terminal", risky="Type a command in the terminal",
+      core=True,
+      hints="git commit log status branch remote diff last commit of my project repo, ssh npm pip python script "
+            "command line terminal run a command",
+      props={"command": S, "folder": {"type": "string", "description": "folder to run it in (e.g. the project folder)"},
+      "show": B}, required=["command"])
 def run_in_terminal(command, folder="", show=False):
     """Run a command in the Nova terminal and return what it printed. The terminal stays minimized in the taskbar
     so the user can keep working (it never takes the focus); show=True brings it up so they can watch."""
@@ -2733,6 +3158,10 @@ def _avatar_pos():
     return avatar_client.position()
 
 
+@tool("Move a window to another part of the screen - you walk over, grab its title bar and carry it.",
+      friendly="Moved a window", hints="move this window to the left right side",
+      props={"window": S, "to": {"type": "string", "enum": ["left", "right", "center", "top", "bottom", "top-left",
+      "top-right", "bottom-left", "bottom-right"]}}, required=["to"])
 def drag_window(window="", to="center"):
     """Move a window to another part of the screen. 3D Nova walks over, takes hold of its title bar and carries it."""
     from nova.avatar import avatar_client
@@ -2797,321 +3226,14 @@ def drag_window(window="", to="center"):
 
 # ---------------------------------------------------------------- registry
 
-def _tool(name, desc, props=None, required=None):
-    return {"name": name, "description": desc,
-            "input_schema": {"type": "object", "properties": props or {}, "required": required or [],
-                             "additionalProperties": False}}
 
-
-# How a brain writes a new_move: joint angles in degrees from her own point of view (nova/avatar/body.py).
-ANGLE_HELP = ('"keys": a list of poses over time, each {"at": 0..1 (when, as a fraction of the duration), and any of: '
-              'right_arm_out/left_arm_out (0 arm down at her side, 90 straight out sideways, 135 raised high - the most; '
-              'her big head hides arms raised higher), '
-              'right_arm_forward/left_arm_forward (0 down, 90 pointing ahead, 160 up past her head), '
-              'head_nod (+ looks down, - up, max 40), head_turn (+ to her left, max 70), head_tilt (+ to her left, '
-              'max 35), lean_forward (+ bows, max 30), lean_side (max 25), turn (whole body, 360 = full spin), '
-              'jump (0..100), right_leg_lift/left_leg_lift (0..90 kick forward), '
-              'right_elbow/left_elbow (0 straight..150 fully bent; arm_forward + elbow = 90 points the forearm ahead), '
-              'right_wrist/left_wrist (+ bends the hand to the palm, - opens it, max 75), right_wrist_side/left_wrist_side '
-              '(a little wave from the wrist, max 50), right_elbow_side/left_elbow_side (forearm curls up/out +, in/behind -), '
-              'right_hand/left_hand (relaxed, open, fist, point, hold, soft), hands_behind / right_hand_on_hip / '
-              'left_hand_on_hip (0..1: clasp hands behind her back, hand on hip), '
-              'eyes (open, closed, happy, half, up, wide, sad, angry, side_left, side_right), mouth (smile, open, grin, '
-              'frown, o), blush (0..1), symbol (none, question, exclaim, note, heart, z, drop)}. '
-              'Unset joints rest at 0; she starts and ends standing. Her right = the viewer\'s left. '
-              'Example shrug: [{"at":0.3,"right_arm_out":45,"left_arm_out":45,"right_arm_forward":30,'
-              '"left_arm_forward":30,"head_tilt":15,"eyes":"up","mouth":"o"},{"at":0.7,"right_arm_out":45,'
-              '"left_arm_out":45,"right_arm_forward":30,"left_arm_forward":30,"head_tilt":15}]')
-
-S = {"type": "string"}
-N = {"type": "number"}
-B = {"type": "boolean"}
-
-TOOLS = [
-    _tool("get_system_status", "CPU, RAM, disk, battery and uptime of this laptop."),
-    _tool("list_top_processes", "Programs using the most memory or CPU.",
-          {"sort_by": {"type": "string", "enum": ["memory", "cpu"]}, "limit": N}),
-    _tool("kill_process", "Close a running program by name (e.g. chrome) or pid.", {"name_or_pid": S}, ["name_or_pid"]),
-    _tool("network_info", "Internet status, local IP and Wi-Fi details."),
-    _tool("get_datetime", "Current local date and time."),
-    _tool("open_app", "Open an app installed on the laptop (anything in the Start menu), e.g. notepad, calculator, chrome, settings, vscode, spotify, task manager. If it fails, check with find_app.", {"name": S}, ["name"]),
-    _tool("open_website", "Open a URL, or search Google if given words.", {"url_or_search": S}, ["url_or_search"]),
-    _tool("web_research", "Google something ON SCREEN in Chrome (a new tab in front of the user) and get the result "
-          "titles. Only when the user wants to watch or browse it themselves ('show me', 'open google for', 'search "
-          "it on my screen') - for plain research use research_in_background. "
-          "Then open results with click_element and read them with read_page. site narrows it: github, "
-          "stackoverflow, reddit, wikipedia, youtube, pypi, npm, mdn or a domain like docs.python.org.",
-          {"query": S, "site": S}, ["query"]),
-    _tool("read_page", "Read the text of a web page or app window (default: the one in front) - an article, docs, a "
-          "search results page, a document. Use it after web_research or click_element to actually read.",
-          {"window": S, "max_chars": N}),
-    _tool("find_app", "Check whether an app is installed on this laptop before using it (e.g. 'zoom', 'notion', "
-          "'obs'). If it's missing it also finds the winget Id, so you can ASK the user whether to install it.",
-          {"name": S}, ["name"]),
-    _tool("open_path", "Open a file or folder. Shortcuts: desktop, downloads, documents, pictures, music, videos.", {"path": S}, ["path"]),
-    _tool("list_folder", "List a folder's contents, newest first.", {"path": S}, ["path"]),
-    _tool("search_files", "Find files/folders whose name contains text.", {"name_contains": S, "folder": S}, ["name_contains"]),
-    _tool("find_large_files", "Find big files that take up space.", {"folder": S, "min_mb": N}),
-    _tool("preview_organize_folder", "Show how a folder's loose files would be sorted into category folders (no changes).", {"folder": S}),
-    _tool("organize_folder", "Sort a folder's loose files into Images/Documents/Videos/... subfolders.", {"folder": S}),
-    _tool("create_folder", "Create a folder.", {"path": S}, ["path"]),
-    _tool("delete_to_recycle_bin", "Move a file or folder to the Recycle Bin.", {"path": S}, ["path"]),
-    _tool("temp_files_size", "How much space temporary files use."),
-    _tool("clean_temp_files", "Delete old temporary files to free space."),
-    _tool("empty_recycle_bin", "Permanently empty the Recycle Bin."),
-    _tool("set_volume", "Change system volume.", {"action": {"type": "string", "enum": ["up", "down", "mute", "unmute"]}, "steps": N}, ["action"]),
-    _tool("media_control", "Play/pause, next or previous track.", {"action": {"type": "string", "enum": ["play_pause", "next", "previous", "stop"]}}, ["action"]),
-    _tool("set_brightness", "Set screen brightness 0-100.", {"percent": N}, ["percent"]),
-    _tool("lock_screen", "Lock the computer."),
-    _tool("power_action", "Shutdown, restart, sleep, or cancel a pending shutdown. Shutdown/restart first closes "
-          "all open windows and clears notifications.",
-          {"action": {"type": "string", "enum": ["shutdown", "restart", "sleep", "cancel"]}}, ["action"]),
-    _tool("run_powershell", "Last resort, HIDDEN from the user: a PowerShell command for system jobs no app or other "
-          "tool can do (system settings and info). The user wants to watch you work, so commands an on-screen tool "
-          "can do (listing/reading files, opening/closing apps, git, command-line programs) come back not run, with "
-          "the tool to use. NOT for web research (web_research/read_page), NOT for git/coding (VS Code). "
-          "as_admin=true runs it elevated (Windows shows a UAC prompt).",
-          {"command": S, "as_admin": B,
-           "no_ui_way": {"type": "string", "description": "only after a 'Not run' answer: why no on-screen way works"}},
-          ["command"]),
-    _tool("run_in_terminal", "Run a command in your own 'Nova terminal' window and get what it printed. The window "
-          "stays minimized in the background so the user can keep working; set show=true only if they ask to see or "
-          "watch it. Use it for command-line jobs with no app or button (git log/status/remote, ssh, npm, pip, "
-          "python scripts...).",
-          {"command": S, "folder": {"type": "string", "description": "folder to run it in (e.g. the project folder)"},
-           "show": B},
-          ["command"]),
-    _tool("list_windows", "List open windows and their apps."),
-    _tool("window_action", "Focus, minimize, maximize or close an open window (match by title or app name).",
-          {"title_or_app": S, "action": {"type": "string", "enum": ["focus", "minimize", "maximize", "close"]}}, ["title_or_app", "action"]),
-    _tool("minimize_all_windows", "Show the desktop."),
-    _tool("close_all_windows", "Close every open app window (not Nova). Apps with unsaved work may ask to save."),
-    _tool("type_text", "Type text into an app that is already open; into_window = that app's name, e.g. 'notepad' "
-          "(it is brought to the front first). If the app isn't in the open windows list, call open_app first.",
-          {"text": S, "into_window": S}, ["text"]),
-    _tool("press_keys", "Press a key or shortcut in the window in front, e.g. 'ctrl+s', 'enter', 'windows+e'. Never "
-          "use it to open or switch apps (alt+tab, ctrl+n): use open_app or window_action focus.", {"keys": S}, ["keys"]),
-    _tool("get_clipboard", "Read the clipboard text."),
-    _tool("read_selection", "Get the text the user has highlighted/selected in their app (copies it for you, "
-          "then restores their clipboard). Use it for 'read this', 'what does the selected text say', "
-          "'summarise/translate what I selected'. When asked to read it, say it word for word."),
-    _tool("set_clipboard", "Put text on the clipboard.", {"text": S}, ["text"]),
-    _tool("take_screenshot", "Save a screenshot to Pictures/Nova Screenshots."),
-    _tool("read_text_file", "Read a text file (txt, md, csv, code, logs).", {"path": S, "max_chars": N}, ["path"]),
-    _tool("write_text_file", "Create/overwrite or append to a text file.", {"path": S, "content": S, "append": B}, ["path", "content"]),
-    _tool("move_or_rename", "Move or rename a file or folder.", {"source": S, "destination": S}, ["source", "destination"]),
-    _tool("copy_path", "Copy a file or folder.", {"source": S, "destination": S}, ["source", "destination"]),
-    _tool("search_installable_apps", "Search winget for apps that can be installed.", {"query": S}, ["query"]),
-    _tool("install_app", "Install an app with winget by its exact Id (find it with search_installable_apps).", {"winget_id": S}, ["winget_id"]),
-    _tool("uninstall_app", "Uninstall an app with winget.", {"name_or_id": S}, ["name_or_id"]),
-    _tool("list_installed_apps", "List installed programs, optionally filtered.", {"name_contains": S}),
-    _tool("open_settings_page", "Open a Windows Settings page: " + ", ".join(SETTINGS_PAGES), {"page": S}, ["page"]),
-    _tool("set_dark_mode", "Turn Windows dark mode on or off.", {"enabled": B}, ["enabled"]),
-    _tool("set_wallpaper", "Set the desktop wallpaper from an image file.", {"image_path": S}, ["image_path"]),
-    _tool("toggle_wifi", "Turn the Wi-Fi adapter on or off (needs admin approval).", {"on": B}, ["on"]),
-    _tool("list_clickable", "List buttons, links, tabs and text boxes in a window (default: the window in front), numbered "
-          "in page order. 'contains' filters by text; contains='video' lists only videos (YouTube etc.).",
-          {"window": S, "contains": S}),
-    _tool("fill_in", "Type into a text box in a window and press Enter - use this to SEARCH on a website (YouTube, Google, "
-          "Amazon...) or fill a form field. 'box' is the box's name; leave it empty for the page's search box.",
-          {"text": S, "box": S, "window": S, "press_enter": B}, ["text"]),
-    _tool("fill_form", "Fill in a form on the screen (sign-up, application, delivery address...) with the user's saved "
-          "details - name, email, phone, birth date, address, city, state, PIN code, company... You never see the "
-          "values; they stay on the laptop. Passwords, codes and ID/card numbers are left for the user. It never "
-          "submits: ask the user to check the form before you press Submit.", {"window": S}),
-    _tool("help_login", "Help the user sign in to a website: you click the login box so their browser / password "
-          "manager offers the saved login, then wait while they pick it and sign in. You never ask for, see or type "
-          "a password.", {"window": S, "wait_secs": N}),
-    _tool("wait_for_code", "A site asks for a one-time code (OTP / verification code from SMS, email or an "
-          "authenticator): point at the code box and wait while the user types it. You don't read or keep the code.",
-          {"window": S, "wait_secs": N}),
-    _tool("video_control", "Control a playing video (YouTube etc.) with its own player buttons: make the VIDEO full screen "
-          "(not the browser window), exit full screen, play, pause, next video, mute, unmute, captions, theater mode.",
-          {"action": {"type": "string", "enum": list(VIDEO_BUTTONS)}}, ["action"]),
-    _tool("click_nth", "Click the Nth item (1 = first) whose name contains some text, scrolling to it if needed. "
-          "To play a video: contains='video' (e.g. 'play the first video' -> number=1, 'the 7th video' -> number=7).",
-          {"contains": S, "number": N, "window": S}, ["contains", "number"]),
-    _tool("scroll", "Scroll a window up or down with the mouse wheel (amount 5 ≈ half a page).",
-          {"direction": {"type": "string", "enum": ["up", "down"]}, "amount": N, "window": S}, ["direction"]),
-    _tool("click_element", "Click a button/menu/link/tab/text box by its name in a window. Nova walks over and presses it. "
-          "Call list_clickable first if you don't know the exact name.",
-          {"name": S, "window": S, "button": {"type": "string", "enum": ["left", "right"]}, "double": B}, ["name"]),
-    _tool("look_through_camera", "Look at the user through the webcam and answer a question about what you see "
-          "(e.g. 'how do I look?', 'what am I holding?', 'do I look tired?'). Only works if the user switched the camera on.",
-          {"question": S}, ["question"]),
-    _tool("look_at_screen", "Look at the user's screen (or one window) and answer a question about it - read an error, "
-          "explain what's open, summarize a page, find something. Only works if the user switched screen viewing on.",
-          {"question": S, "what": {"type": "string", "enum": ["screen", "window"]}, "window": S}, ["question"]),
-    _tool("click_at", "Click at screen coordinates (pixels).",
-          {"x": N, "y": N, "button": {"type": "string", "enum": ["left", "right"]}, "double": B}, ["x", "y"]),
-    _tool("add_note", "Save a note.", {"text": S}, ["text"]),
-    _tool("list_notes", "Read saved notes."),
-    _tool("list_reminders", "List the reminders that are still waiting (what did I ask you to remind me of)."),
-    _tool("set_reminder", "Remind the user after some minutes.", {"text": S, "minutes_from_now": N}, ["text", "minutes_from_now"]),
-    _tool("remember_fact", "Remember a lasting fact about the user that fits no profile field.", {"fact": S}, ["fact"]),
-    _tool("forget_fact", "Forget everything in your knowledge bank (profile or lessons) containing some text.",
-          {"fact_contains": S}, ["fact_contains"]),
-    _tool("update_profile", "Save something you learned about the user in your knowledge bank, so you know them better "
-          "next time. Use it whenever they tell you about themselves.",
-          {"field": {"type": "string", "enum": ["name", "nickname", "work", "city", "interests", "favourite_apps",
-                                                "preferences", "routines", "people", "facts"]},
-           "value": S, "remove": B}, ["field", "value"]),
-    _tool("learn_lesson", "Write down a mistake you made (or a better way you found) and what to do next time. Use it "
-          "when the user corrects you, when a task failed, or when you discover what works on this laptop.",
-          {"situation": S, "lesson": S, "kind": {"type": "string", "enum": ["mistake", "improvement", "preference"]}},
-          ["situation", "lesson"]),
-    _tool("recall_knowledge", "Read your knowledge bank: what you know about the user and your lessons. Optionally only "
-          "about one topic.", {"about": S}),
-    _tool("react", "Act something out with your 3D body on screen: laugh, dance, spin, clap, surprised, sad, confused, nod, "
-          "shake (no), facepalm (oops), bow (thanks), love, yawn, look, happy (jump), wave - or one of your own "
-          "moves you made with new_move, by its name. Use it when the user asks you to dance, laugh, clap and so "
-          "on. It plays right after you finish speaking your answer (a laugh after the joke), so call it first, "
-          "then answer. For something none of these is, use new_move.",
-          {"reaction": S, "times": N}, ["reaction"]),
-    _tool("new_move", "Invent a NEW body move for your 3D self and do it now (e.g. 'do a robot dance', 'shrug', "
-          "'stretch', 'salute', 'do jumping jacks'), when no react reaction fits. You write the poses; it is saved "
-          "under its name so react can do it again. " + ANGLE_HELP,
-          {"name": S, "duration": {"type": "number", "description": "seconds, 0.3 to 12"},
-           "keys": {"type": "array", "items": {"type": "object"}}, "times": N,
-           "sound": {"type": "object", "description":
-                     "optional sound played with the move: {\"say\": \"Yay!\"} (a short word in your own voice) or "
-                     "{\"notes\": [{\"type\": chime|pluck|tone|voice|boing|whoosh|pop|clap|drum, \"pitch\": "
-                     "\"C5\" (note or Hz), \"to\": pitch to slide to, \"at\": seconds, \"length\": seconds, "
-                     "\"volume\": 0..1}]}"}},
-          ["name", "duration", "keys"]),
-    _tool("forget_move", "Delete one of your own invented moves.", {"name": S}, ["name"]),
-    _tool("change_look", "Change how your 3D self looks, and keep it: an outfit (default, sakura, midnight, forest, "
-          "sunny) and/or colours (a colour word like pink/teal/gold or #rrggbb) of hair, hair_tips, eyes, skin, "
-          "hoodie, pants, shoes, glow, accent (star), hat (beanie and bow colour), and things to wear on/off: "
-          "headphones, hair_clip, long_hair, ahoge (the hair curl), glasses, cat_ears, beanie, bow. "
-          "preset 'default' puts everything back.",
-          {"preset": {"type": "string", "enum": ["default", "sakura", "midnight", "forest", "sunny"]},
-           "hair": S, "hair_tips": S, "eyes": S, "skin": S, "hoodie": S, "pants": S, "shoes": S, "glow": S,
-           "accent": S, "hat": S, "headphones": B, "hair_clip": B, "long_hair": B, "ahoge": B, "glasses": B,
-           "cat_ears": B, "beanie": B, "bow": B}),
-    _tool("drag_window", "Move a window to another part of the screen - you walk over, grab its title bar and carry it.",
-          {"window": S, "to": {"type": "string", "enum": ["left", "right", "center", "top", "bottom", "top-left",
-                                                          "top-right", "bottom-left", "bottom-right"]}}, ["to"]),
-    _tool("read_notifications", "Read the user's newest Windows notifications (messages, mail, reminders from apps).",
-          {"count": N}),
-    _tool("check_email", "Look in the user's Gmail (read-only): the newest mail, or a Gmail search like 'is:unread', "
-          "'from:amazon', 'newer_than:1d', 'subject:invoice'. Returns sender, subject and a snippet. Never sends mail.",
-          {"query": S, "count": N}),
-    _tool("connect_gmail", "Connect Nova to the user's Gmail (opens Google's sign-in in the browser). Use for 'connect Gmail', "
-          "'link my Gmail', 'sign in to Gmail for Nova' - NOT draft_email, which writes a new email.", {}),
-    _tool("read_email", "Read the whole text of one Gmail mail (an id from check_email). Read-only.", {"id": S}, ["id"]),
-    _tool("mute_notifications", "Stop or resume reading out one app's notifications, and keep it: 'don't read "
-          "notifications from Claude' = mute true; 'resume / start reading Claude notifications again' = mute false; "
-          "app 'all' with mute false unmutes every app; no app = list the muted apps.",
-          {"app": {"type": "string", "description": "the app's name as the user said it, e.g. Claude, WhatsApp"},
-           "mute": {"type": "boolean", "description": "true = stop reading it, false = read it again"}}),
-    _tool("draft_email", "Co-worker job in the BACKGROUND: you write an email and draft it in Gmail in a hidden browser "
-          "window (never sent). The user keeps working; you tell them when it's ready. Use for 'draft/write an email'.",
-          {"about": {"type": "string", "description": "what the email should say, with every detail the user gave"},
-           "to": {"type": "string", "description": "email address, or the person's name if no address"},
-           "subject": S}, ["about"]),
-    _tool("write_document", "Co-worker job in the BACKGROUND: write a document/notes/letter/list, save it in "
-          "Documents\\Nova (nothing pops up); you tell the user when it's ready.",
-          {"about": {"type": "string", "description": "what to write, with every detail the user gave"}, "title": S},
-          ["about"]),
-    _tool("research_in_background", "Co-worker job in the BACKGROUND - the normal way to research: you Google the "
-          "topic in Chrome windows parked off-screen, read the best 2-3 pages, and write a report with sources in "
-          "Documents\\Nova while the user keeps working on their own screen; you tell them the main finding when "
-          "it's done. Use for 'research', 'look up', 'find out about', 'what's the best...', 'compare'. kind='code' "
-          "searches the docs, GitHub and Stack Overflow.",
-          {"topic": {"type": "string", "description": "what to research, as a search query"},
-           "focus": {"type": "string", "description": "what exactly the user wants to know, if they said"},
-           "kind": {"type": "string", "enum": ["general", "code"]}, "max_sources": N}, ["topic"]),
-    _tool("show_finished_work", "Bring a finished background job (drafted email, written document) to the front.",
-          {"which": {"type": "string", "description": "'latest' or words from its title"}}),
-    _tool("background_jobs", "List your background co-worker jobs, whether they're done, and what each running "
-          "one is doing right now. Use it to answer 'how's the research going?' or 'is the email ready?'."),
-    _tool("stop_background_job", "Stop a running background co-worker job (research, email draft, document) when "
-          "the user says to stop, cancel or forget it.",
-          {"which": {"type": "string", "description": "'all', the job number, or words from it like 'research'"}}),
-    _tool("start_coding_job", "Hand a CODING job to a coding agent that works in the BACKGROUND in a project folder "
-          "(a git project): fix a bug, change code, edit a README, build a page or app. You don't write the code "
-          "yourself. The worker never commits - you tell the user when it's done and they decide. Ask for the folder "
-          "if you don't know it. Check its progress with background_jobs, stop it with stop_background_job.",
-          {"brief": {"type": "string", "description": "the whole job for the worker: what to change and why, every "
-                                                      "detail the user gave, and what 'done' means"},
-           "folder": {"type": "string", "description": "the project folder, full path"},
-           "worker": {"type": "string", "enum": ["auto", "opencode", "claude"],
-                      "description": "auto = the cheap worker (OpenCode + DeepSeek) for small jobs, Claude Code for "
-                                     "big ones; 'claude' only if the user asked for it or the cheap one failed"},
-           "size": {"type": "string", "enum": ["small", "big"],
-                    "description": "big = a new site/app or a multi-file feature"}}, ["brief", "folder"]),
-    _tool("commit_coding_job", "Commit (git, locally - never pushes) the files a finished coding job changed, only "
-          "when the user says to commit it.",
-          {"which": {"type": "string", "description": "'latest' or the job number"},
-           "message": {"type": "string", "description": "the commit message, if the user gave one"}}),
-    _tool("show_coding_changes", "Show what a finished coding job changed (files and the diff), e.g. 'what changed?', "
-          "'show me the changes'.",
-          {"which": {"type": "string", "description": "'latest' or the job number"}}),
-    _tool("retry_coding_job", "Give the last coding job (usually one that failed) to another worker with the same "
-          "brief and folder, e.g. 'try it with Claude Code'.",
-          {"which": {"type": "string", "description": "'latest' or the job number"},
-           "worker": {"type": "string", "enum": ["claude", "opencode"]}}),
-    _tool("go_to_sleep", "Go to sleep: stop listening and nap in the corner of the screen. Call it whenever the user "
-          "tells you to sleep, rest, stop listening, or says goodnight/bye."),
-    _tool("run_skill", "Run one of your saved skills (a routine or recipe the user taught you) by its name.",
-          {"name": S, "input": {"type": "string", "description": "what it's for this time, if the skill needs it "
-                                                                 "(e.g. the song or search words)"}}, ["name"]),
-    _tool("save_skill", "Save a NEW skill when the user teaches you a routine, e.g. 'when I say movie time, close "
-          "everything and open Netflix'. Write steps one per line. Steps you can run exactly make a routine: "
-          "'open_app name=Spotify', 'set_volume action=up, steps=5', 'say Enjoy!', 'wait 2' ('{input}' = what the "
-          "user asks for each time). Plain-English steps make a recipe you follow (weaker - prefer steps you can "
-          "run). To CHANGE a skill that exists, use edit_skill, not this.",
-          {"name": {"type": "string", "description": "short, like movie-time"},
-           "description": {"type": "string", "description": "what it does and when to use it, in a sentence"},
-           "steps": {"type": "string", "description": "one step per line"},
-           "when": {"type": "string", "description": "phrases the user will say to start it, comma-separated"},
-           "not_for": {"type": "string", "description": "similar requests that must NOT start it, comma-separated"},
-           "kind": {"type": "string", "enum": ["routine", "recipe"]},
-           "replace": {"type": "boolean", "description": "true only to overwrite a skill that already exists"}},
-          ["name", "description", "steps"]),
-    _tool("edit_skill", "Change a saved skill a little: add, change or remove ONE step, a check, or a trigger phrase. "
-          "ops is a JSON list, e.g. [{\"op\":\"insert_step\",\"after\":\"s2\",\"step\":\"set_volume action=up, "
-          "steps=5\"}] or [{\"op\":\"replace_step\",\"id\":\"s4\",\"step\":\"press_keys keys=f\",\"expect\":\"fullscreen\"}] "
-          "or [{\"op\":\"delete_step\",\"id\":\"s3\"}] or [{\"op\":\"add_not_for\",\"text\":\"latest anime\"}]. "
-          "Other ops: set_expect (id, expect), set_on_fail (id, on_fail), add_example (text), set_description (text). "
-          "The old version is kept. Use this when the user corrects a skill - never retype the whole skill.",
-          {"name": S, "ops": {"type": "string", "description": "JSON list of changes (max 5)"}}, ["name", "ops"]),
-    _tool("undo_skill_change", "Go back to the version of a skill before its last change.", {"name": S}, ["name"]),
-    _tool("save_task_as_skill", "Save the task you just finished as a new skill, from the steps you really did, when the "
-          "user says 'remember that', 'save that as a skill' or 'next time do that'. It starts as a draft and "
-          "becomes a real skill after it works twice.",
-          {"name": {"type": "string", "description": "short, like crunchyroll-new"},
-           "examples": {"type": "string", "description": "phrases the user will say to start it, comma-separated"},
-           "description": {"type": "string", "description": "what it does and when to use it"}}, ["name", "examples"]),
-    _tool("start_watching", "Start watching the user's clicks and typing so you learn a new skill from them, when "
-          "they say 'watch me', 'let me show you how' or 'learn this'. They say 'done' when finished. Passwords and "
-          "codes are never recorded.", {"goal": {"type": "string", "description": "what they are going to show, in their words"}}),
-    _tool("stop_watching", "Stop watching the user (they said they're done showing you)."),
-    _tool("login_if_needed", "Make sure the user is signed in on a website: does nothing if they already are, presses "
-          "Log in if the browser filled the login in, otherwise opens the login box and waits while the user picks "
-          "their saved login. You never see or type a password. Use it in skills, before the part that needs the "
-          "account.", {"window": S, "wait_secs": N}),
-    _tool("list_skills", "List the skills (routines and recipes) the user has taught you."),
-    _tool("delete_skill", "Delete one of your saved skills.", {"name": S}, ["name"]),
-    _tool("more_tools", "You only see some of your tools right now. If none of them can do what the user asked, call "
-          "this with the ability you need (e.g. 'change screen brightness', 'install an app') and you get more tools.",
-          {"need": S}, ["need"]),
-    _tool("escalate", "Call this FIRST when the job is bigger than you can do well: kind='deep' for a complex, "
-          "multi-step or tricky job (a stronger brain writes a full plan for you to follow), kind='code' for writing, "
-          "fixing or reviewing code (a coding brain takes over). Never for simple things like opening an app, the "
-          "time or chat. Takes a minute to switch.",
-          {"kind": {"type": "string", "enum": ["deep", "code"]}, "why": S}, ["kind"]),
-]
+TOOLS = []          # filled from the @tool declarations (see _install below)
 
 # Approval tiers, used by the autonomy setting in app.py:
 #   careful -> asks before RISKY and DANGEROUS;  trusted -> asks only before DANGEROUS;  full -> never asks.
-RISKY = {"kill_process", "organize_folder", "delete_to_recycle_bin", "clean_temp_files", "run_powershell", "run_in_terminal",
-         "window_action", "type_text", "press_keys", "write_text_file", "move_or_rename", "install_app",
-         "set_wallpaper", "power_action", "close_all_windows", "empty_recycle_bin", "uninstall_app", "toggle_wifi",
-         "click_element", "click_at", "click_nth", "fill_in", "delete_skill", "fill_form", "login_if_needed"}
+RISKY = set()          # filled from @tool(risky=...)
 # run_skill is checked step by step in app.is_risky: a routine needs an OK when any of its steps would.
-DANGEROUS = {"empty_recycle_bin", "uninstall_app", "toggle_wifi"}  # plus shutdown/restart and admin PowerShell
+DANGEROUS = set()      # filled from @tool(dangerous=True)
 
 
 def is_dangerous(name, args):
@@ -3121,7 +3243,7 @@ def is_dangerous(name, args):
         return True
     return name == "run_powershell" and args.get("as_admin") in (True, "true")
 
-FUNCS = {t["name"]: globals()[t["name"]] for t in TOOLS}
+FUNCS = {}
 
 
 def _install(spec):

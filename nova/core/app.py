@@ -308,60 +308,11 @@ def _windows_display_name():
 
 knowledge.seed(_windows_display_name())
 
-FRIENDLY = {
-    "get_system_status": "Checked system health", "list_top_processes": "Looked at running programs",
-    "kill_process": "Closed a program", "network_info": "Checked the network", "get_datetime": "Checked the time",
-    "open_app": "Opened an app", "open_website": "Opened the browser", "web_research": "Searched Google in Chrome",
-    "read_page": "Read the page", "find_app": "Checked if an app is installed", "open_path": "Opened a file/folder",
-    "list_folder": "Looked inside a folder", "search_files": "Searched files", "find_large_files": "Hunted big files",
-    "preview_organize_folder": "Planned a cleanup", "organize_folder": "Organized files",
-    "create_folder": "Created a folder", "delete_to_recycle_bin": "Moved to Recycle Bin",
-    "temp_files_size": "Measured temp files", "clean_temp_files": "Cleaned temp files",
-    "empty_recycle_bin": "Emptied Recycle Bin", "set_volume": "Adjusted volume", "media_control": "Controlled media",
-    "set_brightness": "Adjusted brightness", "lock_screen": "Locked the screen", "power_action": "Power action",
-    "run_powershell": "Ran a command", "run_in_terminal": "Typed a command in the terminal", "add_note": "Saved a note", "list_notes": "Read notes",
-    "set_reminder": "Set a reminder", "list_reminders": "Checked your reminders", "remember_fact": "Remembered something", "forget_fact": "Forgot something",
-    "list_windows": "Looked at open windows", "window_action": "Managed a window", "minimize_all_windows": "Showed the desktop", "close_all_windows": "Closed all windows",
-    "type_text": "Typed text", "press_keys": "Pressed keys", "get_clipboard": "Read the clipboard", "read_selection": "Read the selected text",
-    "set_clipboard": "Copied to clipboard", "take_screenshot": "Took a screenshot", "read_text_file": "Read a file",
-    "write_text_file": "Wrote a file", "move_or_rename": "Moved/renamed", "copy_path": "Copied files",
-    "search_installable_apps": "Searched for apps", "install_app": "Installed an app", "uninstall_app": "Uninstalled an app",
-    "list_installed_apps": "Listed installed apps",
-    "open_settings_page": "Opened Settings", "set_dark_mode": "Changed theme", "set_wallpaper": "Changed wallpaper",
-    "toggle_wifi": "Switched Wi-Fi", "list_clickable": "Looked at the buttons", "click_element": "Clicked a button",
-    "click_at": "Clicked on screen", "look_through_camera": "Looked through the camera",
-    "click_nth": "Clicked an item", "scroll": "Scrolled", "fill_in": "Typed into a box",
-    "fill_form": "Filled in the form", "help_login": "Helped you sign in", "wait_for_code": "Waited for your code",
-    "video_control": "Pressed a video button",
-    "look_at_screen": "Looked at your screen",
-    "update_profile": "Updated your profile", "learn_lesson": "Saved a lesson", "recall_knowledge": "Checked my knowledge bank",
-    "react": "Acted it out", "new_move": "Made up a new move", "forget_move": "Forgot a move",
-    "change_look": "Changed my look", "drag_window": "Moved a window", "more_tools": "Found more tools", "escalate": "Switched brain",
-    "read_notifications": "Read your notifications", "check_email": "Looked in your Gmail", "connect_gmail": "Opened the Gmail sign-in", "read_email": "Read an email", "mute_notifications": "Changed which apps' notifications I read", "draft_email": "Started drafting an email",
-    "write_document": "Started writing a document", "research_in_background": "Started researching in the background", "show_finished_work": "Showed finished work",
-    "background_jobs": "Checked background jobs", "stop_background_job": "Stopped a background job",
-    "start_coding_job": "Started a coding job", "commit_coding_job": "Committed the changes",
-    "show_coding_changes": "Looked at the changes", "retry_coding_job": "Gave the job to another worker",
-    "go_to_sleep": "Went to sleep", "run_skill": "Ran a skill", "save_skill": "Learned a new skill",
-    "list_skills": "Listed my skills", "delete_skill": "Deleted a skill", "edit_skill": "Changed a skill",
-    "undo_skill_change": "Undid a skill change", "save_task_as_skill": "Saved a skill", "login_if_needed": "Checked your sign-in",
-    "start_watching": "Started watching", "stop_watching": "Watched you",
-}
+# What the activity line says a tool did, and the Allow / No question for it: both come from each tool's
+# @tool declaration (nova/actions/registry.py) through _labels below.
+FRIENDLY = {}
 
-ASK = {
-    "kill_process": "Close a program", "organize_folder": "Move files into category folders",
-    "delete_to_recycle_bin": "Move something to the Recycle Bin", "clean_temp_files": "Delete old temp files",
-    "empty_recycle_bin": "Permanently empty the Recycle Bin", "power_action": "Change power state", "close_all_windows": "Close all windows",
-    "run_powershell": "Run a PowerShell command", "run_in_terminal": "Type a command in the terminal",
-    "window_action": "Control a window", "type_text": "Type on your keyboard",
-    "press_keys": "Press keys", "write_text_file": "Write a file", "move_or_rename": "Move/rename",
-    "install_app": "Install an app", "uninstall_app": "Uninstall an app", "set_wallpaper": "Change your wallpaper",
-    "toggle_wifi": "Switch Wi-Fi (admin)", "click_element": "Click something", "click_at": "Click on the screen",
-    "click_nth": "Click an item", "fill_in": "Type into a box", "fill_form": "Fill in the form with your saved details", "delete_skill": "Delete a saved skill",
-    "run_skill": "Run a skill", "login_if_needed": "Sign in on a website",
-    "start_coding_job": "Start a coding job in the background", "commit_coding_job": "Commit the changes (git, not pushed)",
-    "retry_coding_job": "Give the coding job to another worker",
-}
+ASK = {}
 
 
 def _labels(spec):

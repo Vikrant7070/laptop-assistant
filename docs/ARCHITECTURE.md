@@ -43,7 +43,7 @@ the same approval rules as a direct tool call.
 | Path | Lines* | Job |
 |---|---|---|
 | `nova/core/app.py` | ~4.6k | Flask routes, prompt, task loop, tool execution, approvals, skills playback, settings, Judge glue (`check_step`, `final_judge`) |
-| `nova/actions/tools.py` | ~3.1k | Tool schemas and implementations (hand-written tables), app guard, typing by paste |
+| `nova/actions/tools.py` | ~3.3k | The tools, each declared with `@tool` above its function; app guard, typing by paste |
 | `nova/actions/registry.py` | ~0.1k | `@tool`: one declaration per tool, fed into TOOLS/FUNCS/RISKY, FRIENDLY/ASK and toolpick |
 | `nova/audio/voice.py` | ~1.8k | Whisper listening, Kokoro/SAPI speaking, barge-in, wake word |
 | `nova/actions/skills.py` | ~1.2k | Parse, match, render, run and edit `skills/*.md` |
@@ -134,8 +134,7 @@ embedding model, and re-check the tool cases with embeddings when the model is p
 The plan is `docs/part-b-plan-v3.md`. What is left is large and higher-risk, so it was deliberately
 not attempted in the first pass:
 
-1. Tool registry: the `@tool` decorator exists and new tools should use it; moving the existing tools onto it
-   (and `tools.py` into a package) waits until manager Phase 4 lands.
+1. `tools.py` as a package (every tool already uses `@tool`).
 2. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
 
 Already done: the protocol module, model-aware history, exception logging, the data store, the chat UI split, the vision close-out (`NOVA_VISION_CHECK=0` turns the Judge's one screen look
