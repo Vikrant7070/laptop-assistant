@@ -37,12 +37,15 @@ FORMAT = 1
 
 # ---------- experiments ----------
 
-def experiment(defaults: dict | None = None) -> Callable:
-    """Mark a function as a runnable experiment with its default settings."""
+def experiment(defaults: dict | None = None, after_run: Callable | None = None) -> Callable:
+    """Mark a function as a runnable experiment with its default settings.
+    `after_run(folder, results)`, if given, saves extra files (charts, tables) in the run folder after a run.
+    It is not called on a rerun, which never changes the run folder."""
 
     def mark(fn: Callable) -> Callable:
         fn.defaults = dict(defaults or {})
         fn.is_experiment = True
+        fn.after_run = after_run
         return fn
 
     return mark
@@ -169,7 +172,11 @@ def run(experiment: str, settings: dict | None = None, seed: int = 0, device: st
     card = RunCard.new(experiment, settings, seed, device, name)
     folder = _new_folder(Path(runs_dir or RUNS_DIR), card.name)
     card.save(folder)  # saved first, so even a crashed run can be repeated
-    _write_json(folder / RESULTS_FILE, execute(card))
+    results = execute(card)
+    _write_json(folder / RESULTS_FILE, results)
+    after = getattr(resolve(card.experiment), "after_run", None)
+    if after is not None:
+        after(folder, results)
     return folder
 
 

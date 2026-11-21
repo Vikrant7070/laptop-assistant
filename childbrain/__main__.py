@@ -16,6 +16,7 @@ EXPERIMENTS = {
     "sanity": "childbrain.measure.sanity:tiny_train",
     "random-play": "childbrain.measure.random_play:random_play",
     "learn-alone": "childbrain.measure.learn_alone:learn_alone",
+    "task-stream": "childbrain.measure.task_stream:task_stream",
 }
 
 

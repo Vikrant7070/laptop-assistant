@@ -6,4 +6,5 @@
 --extra-index-url https://download.pytorch.org/whl/cu128
 
 torch==2.11.0+cu128
+matplotlib==3.11.2  # charts saved in run folders (WP 1.2)
 pytest
