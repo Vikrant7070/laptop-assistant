@@ -114,7 +114,13 @@ script if it has one.
 Do not start D or E until `feat/manager-phase3` is committed and merged (or explicitly parked by the user). Otherwise
 one of the two pieces of work gets rewritten by hand.
 
-### Step D — Tool registry + `tools.py` package (Phase 2, L, risk medium)
+### Step D — Tool registry + `tools.py` package (Phase 2, L, risk medium) — groundwork done 2026-11-21, in review
+
+Groundwork (agreed while manager Phase 4 is editing the same files): `nova/actions/registry.py` with `@tool`, and
+sinks that add declared tools to `tools.TOOLS/FUNCS/RISKY/DANGEROUS`, `app.FRIENDLY/ASK` and `toolpick.CORE/GROUPS/
+HINTS`. No existing tool moved. `tests/test_tool_decorator.py` has the canary (one decorator -> schema, run_tool,
+labels, approval, tool picking) and the guard rails. **Still to do after Phase 4 merges:** migrate the tools in
+batches and turn `tools.py` into a package, as below.
 
 Same as v1 Phase 2, plus:
 - Target is `nova/actions/tools/` as a package: `registry.py`, and one module per batch (`system.py`, `files.py`,

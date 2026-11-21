@@ -217,7 +217,7 @@ Where to change what:
 
 | I want to change... | Start here |
 |---|---|
-| What Nova can do | `nova/actions/tools.py` (schema + code), then a case in `tests/routing.jsonl` |
+| What Nova can do | a new tool: one function with `@tool(...)` from `nova/actions/registry.py` (schema, labels, risk and hints in one place); older tools still live in `nova/actions/tools.py`. Then a case in `tests/routing.jsonl` |
 | How a request is understood | `nova/brain/router.py` (model choice), `nova/brain/toolpick.py` (tools), `nova/actions/skills.py` (routines) |
 | The conversation loop or an API route | `nova/core/app.py`; the module map is in `docs/ARCHITECTURE.md` |
 | The words in the prompt | `PERSONA` / `system_prompt` in `nova/core/app.py`; markers in `nova/protocol.py` |
