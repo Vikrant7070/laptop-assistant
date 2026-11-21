@@ -253,6 +253,8 @@ function renderNow(j) {
     const frac = p.max_steps ? Math.min(1, p.steps / p.max_steps) : 0, last = (p.checks_score || []).slice(-1)[0];
     h += `<div class="row small" style="margin-top:8px;gap:18px">
       <span>Phase: <b>${esc(p.phase)}</b></span><span>Game: <b>${esc(p.game)}</b></span>
+      ${p.status ? `<span style="color:var(--gold)">⏸ ${esc(p.status)} - Nova is thinking, it carries on by itself</span>` : ""}
+      ${p.paused_for_nova_s > 0 ? `<span class="muted">waited for Nova ${dur(p.paused_for_nova_s)}</span>` : ""}
       <span>Steps: <b>${big(p.steps)}</b> / ${big(p.max_steps)}</span>
       <span>Last check: <b class="${last != null && last >= p.target ? "ok" : ""}">${fmt(last)}</b> (target ${fmt(p.target)})</span>
       ${p.reached_at ? `<span class="ok">reached target at ${big(p.reached_at)} steps</span>` : ""}</div>

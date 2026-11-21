@@ -111,6 +111,7 @@ def live_demo(settings, device):
 def test_progress_file_and_finish_request(tmp_path):
     folder = run(LIVE, seed=0, runs_dir=tmp_path)
     res = json.loads((folder / RESULTS_FILE).read_text(encoding="utf-8"))
+    assert res.pop("clock_paused_for_nova_s") == 0.0          # it never had to wait for Nova (and runs on the CPU)
     assert res == {"stopped_at": 1, "why": "a person asked it to finish", "seen": [0, 1]}
     assert json.loads((folder / _rc.PROGRESS_FILE).read_text(encoding="utf-8"))["round"] == 1
     assert _rc._live is None and _rc.stop_requested() is None   # outside a run: never stops
