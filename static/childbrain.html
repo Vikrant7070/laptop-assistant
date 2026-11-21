@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Child brain</title>
+<style>
+  :root{--bg:#0d0f1a;--panel:#151829;--panel2:#1d2140;--line:#272c48;--text:#e9ebff;--muted:#8d93b8;--accent:#7c5cff;--accent2:#6ee7f9;--warn:#ff8fa6;--ok:#7ee2a8;--gold:#ffd25e}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14.5px/1.5 "Segoe UI",system-ui,sans-serif}
+  .wrap{max-width:1040px;margin:0 auto;padding:18px 16px 60px}
+  header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:21px;margin:0;flex:1}
+  h2{font-size:16px;margin:0 0 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  h2 .sp{flex:1}
+  p.lead{color:var(--muted);margin:2px 0 12px;max-width:75ch}
+  a.back,button{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font:inherit;cursor:pointer;text-decoration:none;white-space:nowrap}
+  a.back:hover,button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.danger{background:#3a1626;border-color:#7a2a44;color:#ffd0db}
+  button.danger.big{font-weight:700;padding:9px 18px}
+  button.small{padding:3px 10px;font-size:12.5px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:12px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid2>.card{margin:0}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .muted{color:var(--muted)} .small{font-size:12.5px}
+  input,select{background:#0f1222;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font:inherit;min-width:0}
+  input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--accent2);outline-offset:1px}
+  label.f{display:flex;flex-direction:column;gap:3px;font-size:12.5px;color:var(--muted)}
+  label.f>input,label.f>select{color:var(--text);font-size:14px}
+  .form{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+  .sets{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px 10px;margin-top:10px}
+  .sets label{display:grid;grid-template-columns:1fr 90px;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+  .sets label.changed{color:var(--gold)}
+  .sets input{padding:3px 7px;font-size:13px}
+  details summary{cursor:pointer;color:var(--muted);margin-top:8px}
+  .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 11px;border:1px solid var(--line);background:var(--panel2);font-size:13px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)} .dot.bad{background:var(--warn);box-shadow:0 0 8px var(--warn)} .dot.wait{background:var(--gold)}
+  .offbanner{background:#3a1626;border:1px solid #7a2a44;color:#ffd0db;border-radius:12px;padding:10px 14px;margin:10px 0;display:none}
+  .bar{height:10px;background:#0f1222;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .bar.gpu>i{background:linear-gradient(90deg,var(--ok),var(--gold))}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{color:var(--muted);font-weight:500;text-align:left;padding:6px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:6px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr.click{cursor:pointer} tr.click:hover td{background:#1a1e38}
+  tr.sel td{background:#221f45}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .ok{color:var(--ok)} .bad{color:var(--warn)} .gold{color:var(--gold)}
+  .tablewrap{overflow-x:auto}
+  pre{background:#0a0c16;border:1px solid var(--line);border-radius:10px;padding:10px;max-height:260px;overflow:auto;font:12px/1.45 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0}
+  svg.chart{width:100%;height:220px;display:block}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:4px}
+  .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  .gamebar{position:relative;height:12px;background:#0f1222;border:1px solid var(--line);border-radius:999px;min-width:120px}
+  .gamebar>i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--accent)}
+  .gamebar>i.pass{background:var(--ok)}
+  .gamebar>b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--gold)}
+  .kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 14px;font-size:13px}
+  .kv>span:nth-child(odd){color:var(--muted)}
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);border-radius:12px;padding:10px 16px;max-width:min(92vw,640px);display:none;z-index:9;white-space:pre-wrap}
+  .empty{color:var(--muted);padding:8px 0}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🧒 Child brain</h1>
+    <span class="pill" id="statePill"><span class="dot" id="stateDot"></span><span id="stateText">checking…</span></span>
+    <a class="back" href="/">← Back to chat</a>
+  </header>
+  <p class="lead">The child brain learning its games inside the guard: what it's doing now, how far it got on each game, and every control for it. It runs with its own Python, separate from Nova.</p>
+
+  <div class="offbanner" id="offBanner" role="alert">
+    <b>The off switch is ON</b> <span id="offSince"></span> — every child brain process was stopped and nothing new can start.
+    <button class="small" id="clearBtn" style="margin-left:8px">Clear off switch</button>
+  </div>
+
+  <!-- Controls -->
+  <div class="card">
+    <h2>Controls <span class="sp"></span>
+      <button class="danger big" id="offBtn" title="Turn the guard's off switch on and end every child brain process on this laptop">⏻ Stop the child brain completely</button>
+    </h2>
+    <div class="row small muted">
+      <span>Folder:</span>
+      <select id="homeSel" title="Which copy of the child brain this tab works with"></select>
+      <button class="small" id="openRunsBtn" title="Open the runs folder in Explorer">📂 Runs folder</button>
+      <span id="pyLine"></span>
+      <span id="procLine"></span>
+    </div>
+  </div>
+
+  <!-- Now -->
+  <div class="card" id="nowCard">
+    <h2>Now <span class="sp"></span>
+      <button id="finishBtn" title="Stop practising after this round, take the exam and save the results">⏹ Finish now &amp; save</button>
+      <button class="danger" id="killBtn" title="End this job right away (nothing is saved for it)">✖ Kill</button>
+    </h2>
+    <div id="nowBody" class="empty">Nothing running.</div>
+  </div>
+
+  <div class="grid2">
+    <!-- Start training -->
+    <div class="card">
+      <h2>Start training</h2>
+      <div class="form">
+        <label class="f">Experiment<select id="exp"></select></label>
+        <label class="f" id="gameWrap">Game<select id="game"></select></label>
+        <label class="f" id="presetWrap">Settings<select id="preset">
+          <option value="default">Defaults</option>
+          <option value="passed">Settings that passed</option>
+          <option value="best_try">Best try so far</option>
+        </select></label>
+        <label class="f">Device<select id="device"><option value="cuda">Graphics card (cuda)</option><option value="cpu">CPU</option></select></label>
+        <label class="f">Seed<input id="seed" type="number" value="0" step="1"></label>
+        <label class="f">Run name (optional)<input id="name" placeholder="e.g. snake_try2" maxlength="64"></label>
+      </div>
+      <div id="gameNote" class="small muted" style="margin-top:8px"></div>
+      <details id="setsBox"><summary>All settings (changed ones in gold)</summary><div class="sets" id="sets"></div></details>
+      <div class="row" style="margin-top:12px"><button class="primary" id="startBtn">▶ Start training</button><span id="startMsg" class="small muted"></span></div>
+    </div>
+
+    <!-- GPU -->
+    <div class="card">
+      <h2>Graphics card <span class="sp"></span><span class="pill small" id="gpuPill">…</span></h2>
+      <div id="gpuBody" class="empty">Checking…</div>
+    </div>
+  </div>
+
+  <!-- Scoreboard -->
+  <div class="card">
+    <h2>Progress by game</h2>
+    <p class="lead small">Best exam score any run reached on each practice game. The bar runs from the random player's score (left) to the target (gold line); green = passed.</p>
+    <div class="tablewrap"><table id="board"><thead><tr><th>Game</th><th style="width:40%">Best exam vs target</th><th class="num">Best</th><th class="num">Target</th><th class="num">Runs</th><th></th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <!-- Runs -->
+  <div class="card">
+    <h2>Runs <span class="sp"></span><span class="small muted" id="runCount"></span></h2>
+    <div class="tablewrap"><table id="runs"><thead><tr><th>When</th><th>Name</th><th>Game</th><th class="num">Exam</th><th class="num">Target</th><th>Result</th><th class="num">Steps</th><th class="num">Time</th><th></th></tr></thead><tbody></tbody></table></div>
+    <div id="runMore" class="row" style="margin-top:8px"></div>
+  </div>
+
+  <!-- Run detail -->
+  <div class="card" id="detailCard" style="display:none">
+    <h2><span id="detailTitle"></span><span class="sp"></span>
+      <button class="small" id="rerunBtn" title="Run this card again and check the numbers come out the same">↻ Re-check (rerun)</button>
+      <button class="small" id="detailOpenBtn">📂 Folder</button>
+      <button class="small" id="detailCloseBtn">Close</button>
+    </h2>
+    <svg class="chart" id="detailChart" role="img" aria-label="score over practice steps"></svg>
+    <div class="legend"><span><i style="background:var(--accent2)"></i>check score (fresh practice worlds)</span><span><i style="background:var(--accent)"></i>practice score per round</span><span><i style="background:var(--gold)"></i>target</span><span><i style="background:var(--muted)"></i>random player</span></div>
+    <div class="grid2" style="margin-top:10px">
+      <div><div class="small muted">Results</div><div class="kv" id="detailResults"></div></div>
+      <div><div class="small muted">Settings</div><div class="kv" id="detailSettings"></div></div>
+    </div>
+  </div>
+
+  <!-- Guard -->
+  <div class="card">
+    <h2>Guard &amp; saved versions <span class="sp"></span>
+      <button class="small" id="checkBtn" title="Policy lock, exam seals and the brain code tripwire">🛡 Guard check</button>
+      <button class="small" id="nightlyBtn" title="Exam every new version, keep or throw away, roll back if the one in use got worse">🌙 Run nightly exam now</button>
+    </h2>
+    <div id="guardState" class="small muted"></div>
+    <div class="tablewrap"><table id="versions"><thead><tr><th>Version</th><th>Status</th><th class="num">Exam</th><th>Why</th><th></th></tr></thead><tbody></tbody></table></div>
+    <div class="small muted" style="margin-top:10px">Morning report</div>
+    <pre id="report">—</pre>
+    <pre id="checkOut" style="display:none"></pre>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (x, d = 2) => x == null ? "—" : (Math.abs(x) >= 100 ? Math.round(x).toLocaleString() : (+x).toFixed(d));
+const big = n => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n);
+const dur = s => s == null ? "—" : s < 60 ? Math.round(s) + " s" : s < 3600 ? Math.floor(s / 60) + " min " + Math.round(s % 60) + " s" : Math.floor(s / 3600) + " h " + Math.round(s % 3600 / 60) + " min";
+let S = {}, O = null, selected = null, showAll = false, lastJobState = null;
+
+function toast(msg, ms = 4000) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", ms); }
+async function call(url, body) {
+  const r = await fetch(url, body === undefined ? {} : {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  if (!r.ok) { const e = new Error(j.error || r.statusText); e.data = j; e.status = r.status; throw e; }
+  return j;
+}
+
+/* ---------- chart ---------- */
+function chart(svg, series, lines) {
+  const W = svg.clientWidth || 600, H = svg.clientHeight || 220, L = 46, R = 10, T = 10, B = 26;
+  const pts = series.flatMap(s => s.pts);
+  const ys = pts.map(p => p[1]).concat(lines.filter(l => l.y != null).map(l => l.y));
+  if (!pts.length) { svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#8d93b8" text-anchor="middle" font-size="13">No numbers yet</text>`; return; }
+  let x0 = 0, x1 = Math.max(...pts.map(p => p[0]), 1), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (y1 - y0 < 1e-9) { y0 -= 1; y1 += 1; } const pad = (y1 - y0) * .08; y0 -= pad; y1 += pad;
+  const X = x => L + (x - x0) / (x1 - x0) * (W - L - R), Y = y => T + (1 - (y - y0) / (y1 - y0)) * (H - T - B);
+  let h = "";
+  for (let i = 0; i <= 4; i++) { const v = y0 + (y1 - y0) * i / 4, y = Y(v); h += `<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="#272c48"/><text x="${L-6}" y="${y+4}" fill="#8d93b8" font-size="11" text-anchor="end">${fmt(v, Math.abs(y1-y0) < 5 ? 2 : 1)}</text>`; }
+  for (let i = 0; i <= 4; i++) { const v = x0 + (x1 - x0) * i / 4; h += `<text x="${X(v)}" y="${H-8}" fill="#8d93b8" font-size="11" text-anchor="${i==0?"start":i==4?"end":"middle"}">${big(Math.round(v))}</text>`; }
+  for (const l of lines) if (l.y != null) h += `<line x1="${L}" x2="${W-R}" y1="${Y(l.y)}" y2="${Y(l.y)}" stroke="${l.color}" stroke-dasharray="5 4" stroke-width="1.5"/>`;
+  for (const s of series) if (s.pts.length) h += `<polyline fill="none" stroke="${s.color}" stroke-width="${s.w||2}" stroke-linejoin="round" opacity="${s.op||1}" points="${s.pts.map(p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(" ")}"/>`;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.innerHTML = h;
+}
+const zip = (a, b) => (a || []).map((x, i) => [x, b[i]]).filter(p => p[1] != null);
+
+/* ---------- status (every 2 s) ---------- */
+async function status() {
+  try { S = await call("/api/childbrain/status"); } catch (e) { $("stateText").textContent = "Nova's server didn't answer"; return; }
+  if (!S.found) { $("stateText").textContent = "no child brain folder found"; $("stateDot").className = "dot bad"; return; }
+  const j = S.job, running = j && j.running;
+  $("stateDot").className = "dot " + (S.off_switch ? "bad" : running ? "on" : "");
+  const outside = (S.others || []).length;
+  if (!running && outside) $("stateDot").className = "dot wait";
+  $("stateText").textContent = S.off_switch ? "off switch ON" : running ? j.label : outside ? `${outside} run${outside > 1 ? "s" : ""} going elsewhere` : "idle";
+  $("offBanner").style.display = S.off_switch ? "block" : "none";
+  $("offSince").textContent = S.off_since ? `(since ${S.off_since.replace("T", " ")})` : "";
+  $("homeSel").innerHTML = S.folders.map(f => `<option value="${esc(f.path)}" ${f.path === S.home ? "selected" : ""}>${esc(f.name)} — ${f.runs} runs${f.learner ? "" : ", no learner"}${f.python ? "" : ", no Python"}</option>`).join("");
+  $("pyLine").innerHTML = S.python ? "" : `<span class="bad">The child brain's Python (.venv-childbrain) isn't set up</span>`;
+  $("procLine").textContent = S.processes ? `· ${S.processes} child brain process${S.processes > 1 ? "es" : ""} running` : "";
+  $("startBtn").disabled = !!running || S.off_switch || !S.python;
+  $("nightlyBtn").disabled = !!running || S.off_switch || !S.python;
+  $("rerunBtn").disabled = !!running || S.off_switch || !S.python;
+  $("finishBtn").disabled = !(running && j.kind === "train" && j.run) || j.finish_asked;
+  $("killBtn").disabled = !running;
+  $("offBtn").disabled = S.off_switch && !S.processes;
+  renderNow(j);
+  const state = j ? j.state + (running ? "1" : "0") + j.started : "";
+  if (lastJobState !== null && state !== lastJobState) overview();
+  lastJobState = state;
+}
+
+function othersHtml() {
+  const o = S.others || [];
+  if (!o.length) return "";
+  return `<div class="small" style="margin-top:10px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#12152a">
+    <b class="gold">Also running, started outside this tab</b> <span class="muted">(Kill can't reach these — the red off switch stops them)</span>
+    ${o.map(x => `<div style="margin-top:4px;overflow-wrap:anywhere"><code>${esc(x.what)}</code> <span class="muted">· in ${esc(x.folder)} · ${dur(Date.now() / 1000 - x.started)} · pid ${x.pid}</span></div>`).join("")}</div>`;
+}
+
+function renderNow(j) {
+  if (!j) { $("nowBody").className = ""; $("nowBody").innerHTML = `<div class="empty">Nothing running from this tab. Start a training run below.</div>` + othersHtml(); return; }
+  const p = j.progress, run = j.running;
+  const ended = !run ? `<span class="${j.state === "finished" && (j.exit === 0 || j.exit == null) ? "ok" : "bad"}">${esc(j.state)}${j.exit != null ? " (exit " + j.exit + ")" : ""}</span>` : `<span class="ok">running</span>`;
+  const secs = (run ? Date.now() / 1000 : (j.ended || Date.now() / 1000)) - j.started;
+  let h = `<div class="row"><b>${esc(j.label)}</b> ${ended} <span class="muted small">· ${dur(secs)}${j.run ? " · " + esc(j.run) : ""}${j.finish_asked ? " · finishing…" : ""}</span></div>`;
+  if (p) {
+    const frac = p.max_steps ? Math.min(1, p.steps / p.max_steps) : 0, last = (p.checks_score || []).slice(-1)[0];
+    h += `<div class="row small" style="margin-top:8px;gap:18px">
+      <span>Phase: <b>${esc(p.phase)}</b></span><span>Game: <b>${esc(p.game)}</b></span>
+      <span>Steps: <b>${big(p.steps)}</b> / ${big(p.max_steps)}</span>
+      <span>Last check: <b class="${last != null && last >= p.target ? "ok" : ""}">${fmt(last)}</b> (target ${fmt(p.target)})</span>
+      ${p.reached_at ? `<span class="ok">reached target at ${big(p.reached_at)} steps</span>` : ""}</div>
+      <div class="bar" style="margin:8px 0" title="practice steps used"><i style="width:${(frac * 100).toFixed(1)}%"></i></div>
+      <svg class="chart" id="liveChart"></svg>
+      <div class="legend"><span><i style="background:var(--accent2)"></i>check score</span><span><i style="background:var(--accent)"></i>practice score</span><span><i style="background:var(--gold)"></i>target</span><span><i style="background:var(--muted)"></i>random player</span></div>`;
+  } else if (run && j.kind === "train") {
+    h += `<div class="small muted" style="margin-top:6px">Starting up (loading PyTorch and the game)… live numbers appear after the first rounds.</div>`;
+  }
+  h += `<details ${run && !p ? "open" : ""}><summary>Output</summary><pre id="logTail">${esc(j.log_tail || "")}</pre></details>` + othersHtml();
+  const keepOpen = $("nowBody").querySelector("details")?.open;
+  $("nowBody").className = ""; $("nowBody").innerHTML = h;
+  if (keepOpen !== undefined) $("nowBody").querySelector("details").open = keepOpen;
+  const lt = $("logTail"); if (lt) lt.scrollTop = lt.scrollHeight;
+  if (p) chart($("liveChart"), [{pts: zip(p.practice_steps, p.practice_score), color: "#7c5cff", w: 1.2, op: .7}, {pts: zip(p.checks_steps, p.checks_score), color: "#6ee7f9", w: 2.4}],
+               [{y: p.target, color: "#ffd25e"}, {y: p.random_floor, color: "#8d93b8"}]);
+}
+
+/* ---------- GPU (every 6 s) ---------- */
+async function gpuPoll() {
+  let g; try { g = await call("/api/childbrain/gpu"); } catch (e) { return; }
+  if (!g.ok) { $("gpuPill").textContent = "unknown"; $("gpuBody").textContent = g.why; return; }
+  $("gpuPill").innerHTML = `<span class="dot ${g.free ? "on" : "wait"}"></span>${g.free ? "free for training" : "busy"}`;
+  $("gpuBody").className = "";
+  $("gpuBody").innerHTML = `<div class="small muted">${esc(g.name)} · ${esc(g.temp)} °C</div>
+    <div class="row small" style="margin-top:8px"><span style="width:70px">Busy</span><div class="bar gpu" style="flex:1"><i style="width:${g.util}%"></i></div><span class="num" style="width:90px">${g.util}%</span></div>
+    <div class="row small" style="margin-top:6px"><span style="width:70px">Memory</span><div class="bar gpu" style="flex:1"><i style="width:${(g.used_mb / g.total_mb * 100).toFixed(0)}%"></i></div><span class="num" style="width:90px">${(g.used_mb/1024).toFixed(1)} / ${(g.total_mb/1024).toFixed(1)} GB</span></div>
+    ${g.why ? `<div class="small gold" style="margin-top:8px">${esc(g.why)}</div>` : ""}
+    <div class="small muted" style="margin-top:10px">Using it: ${g.apps.length ? g.apps.map(a => esc(a.name) + (a.mb && a.mb !== "[N/A]" ? ` (${esc(a.mb)} MB)` : "")).join(", ") : "nothing listed"}</div>`;
+}
+
+/* ---------- overview (runs, scoreboard, versions) ---------- */
+async function overview() {
+  try { O = await call("/api/childbrain/overview"); } catch (e) { toast(e.message); return; }
+  fillForm(); renderBoard(); renderRuns(); renderVersions();
+}
+
+function fillForm() {
+  const exps = O.info.experiments || {}, cur = $("exp").value, sig = JSON.stringify(O.info);
+  $("startMsg").textContent = O.info.loading ? "reading the child brain's code (games, settings)…" : "";
+  if (O.info.loading) setTimeout(overview, 3000);
+  if (fillForm.sig !== sig) {
+    fillForm.sig = sig;
+    $("exp").innerHTML = Object.keys(exps).map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
+    $("exp").value = exps[cur] ? cur : ("learn-alone" in exps ? "learn-alone" : Object.keys(exps)[0]);
+    const games = O.info.games || {}, curG = $("game").value;
+    $("game").innerHTML = Object.entries(games).map(([g, v]) => {
+      const b = (O.board || []).find(x => x.game === g);
+      return `<option value="${esc(g)}">${esc(g)}${b && b.passed ? " ✓" : ""}</option>`;
+    }).join("");
+    if (games[curG]) $("game").value = curG;
+    buildSets();
+  }
+  if (O.info.error) $("startMsg").textContent = O.info.error;
+}
+
+function presetFor(game) {
+  const p = $("preset").value, pr = O.info.presets || {};
+  return p === "default" ? {} : (pr[p] || {})[game] || null;
+}
+function buildSets() {
+  const exp = (O.info.experiments || {})[$("exp").value] || {}, d = exp.defaults || {};
+  const isLearn = "game" in d;
+  $("gameWrap").style.display = $("presetWrap").style.display = isLearn ? "" : "none";
+  const game = $("game").value, pre = isLearn ? presetFor(game) : {};
+  const g = (O.info.games || {})[game];
+  $("gameNote").innerHTML = !isLearn ? "" : (g ? `Target <b>${fmt(g.target)}</b> · random player ${fmt(g.floor)} · best possible: ${esc(g.best)}` : "") +
+    (pre === null ? ` · <span class="gold">no "${esc($("preset").selectedOptions[0].text)}" for this game — using defaults</span>` : "");
+  $("sets").innerHTML = Object.entries(d).filter(([k]) => k !== "game").map(([k, v]) => {
+    const val = pre && k in pre ? pre[k] : v;
+    return `<label class="${JSON.stringify(val) !== JSON.stringify(v) ? "changed" : ""}" title="default: ${esc(JSON.stringify(v))}">${esc(k)}<input data-k="${esc(k)}" data-def="${esc(JSON.stringify(v))}" value="${esc(typeof val === "string" ? val : JSON.stringify(val))}"></label>`;
+  }).join("");
+  for (const i of $("sets").querySelectorAll("input")) i.oninput = () => i.parentElement.classList.toggle("changed", parseVal(i.value, i.dataset.def) !== i.dataset.def);
+  if (pre && Object.keys(pre).length) $("setsBox").open = true;
+}
+function parseVal(s, defJson) {
+  const def = JSON.parse(defJson);
+  if (typeof def === "string") return JSON.stringify(s);
+  try { return JSON.stringify(JSON.parse(s)); } catch (e) { return JSON.stringify(s); }
+}
+
+async function startTraining(force = false) {
+  const exp = $("exp").value, d = ((O.info.experiments || {})[exp] || {}).defaults || {};
+  const settings = {};
+  for (const i of $("sets").querySelectorAll("input")) { const v = parseVal(i.value, i.dataset.def); if (v !== i.dataset.def) settings[i.dataset.k] = JSON.parse(v); }
+  if ("game" in d) settings.game = $("game").value;
+  $("startBtn").disabled = true; $("startMsg").textContent = "starting…";
+  try {
+    await call("/api/childbrain/train", {experiment: exp, device: $("device").value, seed: +$("seed").value || 0, name: $("name").value.trim(), settings, force});
+    $("startMsg").textContent = ""; toast("Training started"); status();
+  } catch (e) {
+    $("startMsg").textContent = "";
+    if (e.data && e.data.gpu_busy && confirm(e.message + "\n\nTraining now will be slow and may run out of graphics memory. Start anyway?")) return startTraining(true);
+    toast(e.message, 6000);
+  } finally { status(); }
+}
+
+function renderBoard() {
+  const rows = O.board || [];
+  $("board").tBodies[0].innerHTML = rows.length ? rows.map(b => {
+    const span = (b.target - b.floor) || 1, frac = b.best_exam == null ? 0 : Math.max(0, Math.min(1.15, (b.best_exam - b.floor) / span));
+    return `<tr class="${b.best_run ? "click" : ""}" data-run="${esc(b.best_run || "")}"><td><b>${esc(b.game)}</b></td>
+      <td><div class="gamebar"><i class="${b.passed ? "pass" : ""}" style="width:${(frac / 1.15 * 100).toFixed(1)}%"></i><b style="left:${(1 / 1.15 * 100).toFixed(1)}%"></b></div></td>
+      <td class="num ${b.passed ? "ok" : ""}">${fmt(b.best_exam)}</td><td class="num">${fmt(b.target)}</td><td class="num">${b.runs}</td>
+      <td>${b.passed ? '<span class="ok">✓ passed</span>' : b.runs ? '<span class="gold">not yet</span>' : '<span class="muted">not tried</span>'}</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty">No games found.</td></tr>`;
+  for (const tr of $("board").querySelectorAll("tr.click")) tr.onclick = () => openRun(tr.dataset.run);
+}
+
+function renderRuns() {
+  const all = O.runs || [], rows = showAll ? all : all.slice(0, 15);
+  $("runCount").textContent = `${all.length} saved`;
+  $("runs").tBodies[0].innerHTML = rows.length ? rows.map(r => {
+    const res = !r.done ? `<span class="${S.job && S.job.running && S.job.run === r.run ? "ok" : "muted"}">${S.job && S.job.running && S.job.run === r.run ? "running…" : "no results"}</span>`
+      : r.passed === true ? '<span class="ok">✓ passed</span>' : r.passed === false ? '<span class="bad">✗ not passed</span>' : '<span class="muted">done</span>';
+    return `<tr class="click ${r.run === selected ? "sel" : ""}" data-run="${esc(r.run)}"><td class="small muted">${esc((r.created || "").replace("T", " ").slice(5, 16))}</td>
+      <td>${esc(r.name)}${r.stopped_early ? ' <span class="gold small" title="' + esc(r.stopped_early) + '">stopped early</span>' : ""}</td><td>${esc(r.game || r.experiment)}</td>
+      <td class="num">${fmt(r.exam)}</td><td class="num">${fmt(r.target)}</td><td>${res}</td><td class="num">${big(r.steps)}</td><td class="num small">${dur(r.seconds)}</td>
+      <td><button class="small" data-open="${esc(r.run)}" title="Open folder">📂</button></td></tr>`;
+  }).join("") : `<tr><td colspan="9" class="empty">No runs yet.</td></tr>`;
+  for (const tr of $("runs").querySelectorAll("tr.click")) tr.onclick = e => { if (!e.target.dataset.open) openRun(tr.dataset.run); };
+  for (const b of $("runs").querySelectorAll("button[data-open]")) b.onclick = () => call("/api/childbrain/open", {run: b.dataset.open}).catch(e => toast(e.message));
+  $("runMore").innerHTML = all.length > 15 ? `<button class="small" id="moreBtn">${showAll ? "Show fewer" : "Show all " + all.length}</button>` : "";
+  if ($("moreBtn")) $("moreBtn").onclick = () => { showAll = !showAll; renderRuns(); };
+}
+
+async function openRun(name) {
+  if (!name) return;
+  selected = name; renderRuns();
+  let d; try { d = await call("/api/childbrain/run/" + encodeURIComponent(name)); } catch (e) { toast(e.message); return; }
+  $("detailCard").style.display = "block";
+  $("detailTitle").textContent = `${d.card.name} · ${(d.card.created || "").replace("T", " ")}`;
+  const r = d.results || {}, p = d.progress || {};
+  chart($("detailChart"), [{pts: d.practice || zip(p.practice_steps, p.practice_score), color: "#7c5cff", w: 1.2, op: .7}, {pts: d.checks || zip(p.checks_steps, p.checks_score), color: "#6ee7f9", w: 2.4}],
+        [{y: r.target ?? p.target, color: "#ffd25e"}, {y: r.random_floor ?? p.random_floor, color: "#8d93b8"}]);
+  const kv = o => Object.entries(o).map(([k, v]) => `<span>${esc(k)}</span><span>${esc(typeof v === "number" ? (Number.isInteger(v) ? v.toLocaleString() : fmt(v, 4)) : JSON.stringify(v))}</span>`).join("");
+  $("detailResults").innerHTML = Object.keys(r).length ? kv(r) : `<span>status</span><span>${S.job && S.job.run === name && S.job.running ? "running" : "no results saved"}</span>`;
+  $("detailSettings").innerHTML = kv({experiment: d.card.experiment.split(":").pop(), device: d.card.device, seed: d.card.seed, ...d.card.settings});
+  $("detailCard").scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+
+function renderVersions() {
+  const v = O.versions || {}, st = v.state || {};
+  $("guardState").innerHTML = `In use: <b>${esc(st.current || "none")}</b> · last night: ${esc(st.last_night || "never")} · failed nights in a row: ${st.fails_in_a_row ?? 0} · level drops: ${st.level_drops ?? 0}`;
+  $("versions").tBodies[0].innerHTML = (v.versions || []).length ? v.versions.slice().reverse().map(x => `<tr><td><b>${esc(x.id)}</b>${x.in_use ? ' <span class="ok small">in use</span>' : ""}</td><td>${esc(x.status)}</td><td class="num">${fmt(x.exam)}</td><td class="small muted">${esc(x.why || x.note || x.source)}</td>
+    <td>${x.in_use ? "" : `<button class="small" data-rb="${esc(x.id)}">Roll back to this</button>`}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">No saved versions yet — a brain hands one in through the guard, and the nightly exam decides whether to keep it.</td></tr>`;
+  for (const b of $("versions").querySelectorAll("button[data-rb]")) b.onclick = async () => {
+    if (!confirm(`Go back to version ${b.dataset.rb}? The one in use now stays saved.`)) return;
+    try { const r = await call("/api/childbrain/rollback", {version: b.dataset.rb}); toast(r.out || "done", 6000); overview(); } catch (e) { toast(e.message); }
+  };
+  $("report").textContent = v.report || "No nightly report yet.";
+}
+
+/* ---------- buttons ---------- */
+$("exp").onchange = $("game").onchange = $("preset").onchange = buildSets;
+$("startBtn").onclick = () => startTraining();
+$("finishBtn").onclick = async () => { try { toast((await call("/api/childbrain/finish", {})).msg); } catch (e) { toast(e.message); } status(); };
+$("killBtn").onclick = async () => { if (!confirm(`Kill ${S.job ? S.job.label : "the job"} now? Nothing is saved for it. (Use "Finish now & save" to keep what it learned.)`)) return;
+  try { toast((await call("/api/childbrain/kill", {})).msg); } catch (e) { toast(e.message); } status(); };
+$("offBtn").onclick = async () => { if (!confirm("Stop the child brain completely?\n\nThis turns the guard's off switch ON and ends every child brain process on this laptop (training, guarded brains, exams). Nothing starts again until you clear the off switch.")) return;
+  $("offBtn").disabled = true; try { toast((await call("/api/childbrain/off", {})).msg, 6000); } catch (e) { toast(e.message); } status(); };
+$("clearBtn").onclick = async () => { try { toast((await call("/api/childbrain/clear", {})).msg); } catch (e) { toast(e.message); } status(); };
+$("homeSel").onchange = async () => { try { await call("/api/childbrain/home", {path: $("homeSel").value}); fillForm.sig = null; selected = null; $("detailCard").style.display = "none"; await status(); overview(); } catch (e) { toast(e.message); } };
+$("openRunsBtn").onclick = () => call("/api/childbrain/open", {}).catch(e => toast(e.message));
+$("detailOpenBtn").onclick = () => call("/api/childbrain/open", {run: selected}).catch(e => toast(e.message));
+$("detailCloseBtn").onclick = () => { $("detailCard").style.display = "none"; selected = null; renderRuns(); };
+$("rerunBtn").onclick = async () => { if (!confirm(`Run ${selected} again and check its numbers repeat exactly? It takes as long as the first time.`)) return;
+  try { await call("/api/childbrain/rerun", {run: selected}); toast("Re-check started"); } catch (e) { toast(e.message); } status(); };
+$("nightlyBtn").onclick = async () => { try { await call("/api/childbrain/nightly", {}); toast("Nightly exam started"); } catch (e) { toast(e.message); } status(); };
+$("checkBtn").onclick = async () => { $("checkBtn").disabled = true; const o = $("checkOut"); o.style.display = "block"; o.textContent = "checking…";
+  try { const r = await call("/api/childbrain/check", {}); o.textContent = (r.ok ? "✓ " : "✗ ") + r.out; o.className = r.ok ? "ok" : "bad"; } catch (e) { o.textContent = e.message; } $("checkBtn").disabled = false; };
+
+status().then(overview); gpuPoll();
+setInterval(status, 2000); setInterval(gpuPoll, 6000); setInterval(() => { if (!document.hidden) overview(); }, 20000);
+</script>
+</body>
+</html>

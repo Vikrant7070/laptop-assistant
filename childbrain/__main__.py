@@ -15,6 +15,7 @@ from .runcard import CARD_FILE, RESULTS_FILE, rerun, run
 EXPERIMENTS = {
     "sanity": "childbrain.measure.sanity:tiny_train",
     "random-play": "childbrain.measure.random_play:random_play",
+    "learn-alone": "childbrain.measure.learn_alone:learn_alone",
 }
 
 
@@ -50,7 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         folder = run(EXPERIMENTS.get(a.experiment, a.experiment), _parse_set(a.set), a.seed, a.device, a.name)
         results = json.loads((folder / RESULTS_FILE).read_text(encoding="utf-8"))
         print(f"saved {folder}")
-        print(json.dumps({k: v for k, v in results.items() if not isinstance(v, list)}, indent=2))
+        print(json.dumps({k: v for k, v in results.items() if not isinstance(v, (list, dict))}, indent=2))
         return 0
     if a.cmd == "rerun":
         report = rerun(a.folder, a.tolerance)
