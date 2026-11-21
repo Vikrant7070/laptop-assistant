@@ -27,6 +27,22 @@ from nova.core import app
     ("play some lofi music", [], False),
     ("open it", [], False),                                                   # too vague for a title check
     ("open a new tab", [], False),
+    # Part B audit: the common ways people ask for the four high-traffic goals all get a check...
+    ("start notepad", [("window_open", "notepad")], True),
+    ("open up the file explorer", [("window_open", "file explorer")], True),  # not "explorer": that runs the taskbar
+    ("visit github.com", [("window_open", "github")], True),
+    ("make youtube full screen", [("fullscreen", "")], True),
+    ("enable dark theme", [("dark_mode", "on")], True),
+    ("switch windows to dark mode", [("dark_mode", "on")], True),
+    ("make windows dark", [("dark_mode", "on")], True),
+    ("change the theme to dark", [("dark_mode", "on")], True),
+    ("go back to light theme", [("dark_mode", "off")], True),
+    ("switch everything to light mode", [("dark_mode", "off")], True),
+    # ...and the near misses don't
+    ("open a file", [], False),                                               # "file" alone is too vague
+    ("make it darker", [], False),                                            # brightness, not the colour mode
+    ("make the screen darker", [], False),
+    ("dark mode please", [], False),                                          # no verb: left to the screen look
 ])
 def test_goal_checks(goal, want, covers):
     made = judge.goal_checks(goal)
@@ -65,6 +81,40 @@ def test_partial_checks_leave_it_to_an_advisory_look():
     v = judge.decide([_r(True)], covers=False, vision=False)
     assert v["done"] is False and v["source"] == "vision" and v["advisory"]
     assert judge.decide([], covers=False)["done"] is None
+
+
+# Every combination, in one table: (results, covers, strict, vision) -> may it look?, done, source.
+# A failed code-made check is final; a failed brain-proposed check is only "not sure"; passing checks that cover the
+# goal are final; otherwise the screen look decides, and only as advice.
+@pytest.mark.parametrize("results, covers, strict, vision, looks, done, source", [
+    ([], False, True, None, True, None, "none"),               # nothing checkable, no look happened
+    ([], False, True, True, True, True, "vision"),
+    ([], False, True, False, True, False, "vision"),
+    ([_r(True)], True, True, None, False, True, "checks"),     # covering checks passed: done, no look
+    ([_r(True)], True, True, False, False, True, "checks"),    # ...even if a look had said no
+    ([_r(True)], False, True, True, True, True, "vision"),     # partial checks passed: the look decides
+    ([_r(True)], False, True, None, True, None, "none"),
+    ([_r(False)], True, True, True, False, False, "checks"),   # code check failed: not done, whatever the look says
+    ([_r(False)], False, True, None, False, False, "checks"),
+    ([_r(True), _r(False, "fullscreen", "")], True, True, True, False, False, "checks"),   # one failure is enough
+    ([_r(True)], True, False, None, False, True, "checks"),    # brain checks that pass still prove it
+    ([_r(False)], True, False, True, True, True, "vision"),    # a failed brain check is only "not sure"
+    ([_r(False)], True, False, None, True, None, "none"),
+])
+def test_decision_matrix(results, covers, strict, vision, looks, done, source):
+    assert judge.needs_vision(results, covers, strict) is looks
+    v = judge.decide(results, covers, vision, strict)
+    assert (v["done"], v["source"]) == (done, source)
+    assert v["advisory"] is (source != "checks")
+
+
+@pytest.mark.parametrize("value, on", [(None, True), ("1", True), ("0", False), (" 0 ", False), ("yes", True)])
+def test_vision_switch(monkeypatch, value, on):
+    if value is None:
+        monkeypatch.delenv(judge.VISION_ENV, raising=False)
+    else:
+        monkeypatch.setenv(judge.VISION_ENV, value)
+    assert judge.vision_on() is on
 
 
 def test_record_shape():
@@ -161,3 +211,25 @@ def test_failed_brain_check_is_only_advice(brain, looks, monkeypatch):
     assert looks["n"] == 1 and out["reply"] == "Typed it."        # the one advisory look said yes
     assert app.state["task"]["verdict"]["source"] == "vision"
     assert app.state["task"]["window"] == "Untitled - Notepad"   # page checks look at the window she worked in
+
+
+def test_vision_switch_off_means_no_look_and_her_answer_stands(brain, looks, monkeypatch):
+    # NOVA_VISION_CHECK=0 (A/B runs): the task that would get its one advisory look gets none, nothing nudges her,
+    # and the task log says why.
+    monkeypatch.setenv(judge.VISION_ENV, "0")
+    looks["answer"] = "no"                         # had it looked, it would have pushed back
+    brain([("", [("click_element", {"name": "a"})]), ("", [("click_element", {"name": "b"})]),
+           ("Your playlist is playing.", [])])
+    out, _ = app.answer("play my workout playlist")
+    assert looks["n"] == 0 and out["reply"] == "Your playlist is playing."
+    assert app.state["task"]["verdict"]["source"] == "none" and not app.state["task"]["nudged"]
+    assert f"FINAL CHECK skipped: {judge.VISION_ENV}=0" in store.current().task_log.read_text(encoding="utf-8")
+
+
+def test_vision_switch_off_keeps_the_checks(brain, looks, monkeypatch):
+    # The switch only removes the screen look: a failed deterministic check still means "not done".
+    monkeypatch.setenv(judge.VISION_ENV, "0")
+    monkeypatch.setattr(checks, "evaluate", lambda c, ctx=None, **k: (False, "no such window"))
+    brain([("", [("open_app", {"name": "spotify"})]), ("Spotify is open!", []), ("Spotify is open now!", [])])
+    out, _ = app.answer("open Spotify")
+    assert looks["n"] == 0 and "don't think I finished" in out["reply"]
