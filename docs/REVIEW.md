@@ -116,7 +116,7 @@ A follow-up review found no product bugs worth chasing, but ten places where cha
 harder than it should be. The work is behaviour-preserving unless a bullet says otherwise, and every
 step keeps the suite green.
 
-Landed so far:
+Landed (PRs #8-#17 and the app split):
 
 | Area | Change | Where |
 |---|---|---|
@@ -127,17 +127,22 @@ Landed so far:
 | Failure visibility | rate-limited `log_exception` in `data/task_log.txt`; every remaining silent handler carries `# intentional: why`, enforced by a test | `nova/log.py` |
 | Docs | module map, request lifecycle, invariants, "where to change what" | `docs/ARCHITECTURE.md`, `README.md` |
 | Packaging | `python -m nova` starts her; `python -m nova --version` works without pywebview | `nova/__main__.py` |
+| One data store | every data path from `store.current()`; `NOVA_DATA` moves all of it; a test fails on a path frozen at import | `nova/store.py` |
+| Chat UI | `index.html` + `nova.css` + `nova.js`; every bit of markup through an escaping `html` template (two values were unescaped) | `static/` |
+| Vision | `NOVA_VISION_CHECK=0` turns the Judge's one advisory look off; File Explorer and dark-mode phrasings get real checks | `nova/actions/judge.py` |
+| One declaration per tool | `@tool` holds schema, labels, risk, core and hints; the hand-written tables are gone (all identical by a before/after dump) | `nova/actions/registry.py` |
+| Tools package | 3.3k-line `tools.py` -> 10 area modules (largest ~600 lines); names read from their home module | `nova/actions/tools/` |
+| App package | 4.6k-line `app.py` -> 13 modules by job (largest ~800 lines); same delegation; tests patch home modules | `nova/core/app/` |
 
 Also fixed: `tests/joint_report.json` had a stale `inputs` digest, so a fresh clone failed
 `test_joints` without Nova running; two tests depended on suite timing
 (`test_notifications_and_tips`, `test_bubbles`); seven lint findings.
 
-Deliberately not done in this pass: splitting `app.py`, the tool registry, the data store and the
-vision-check rewrite. They are large, higher-risk changes (described in the plan) and the current
-seams are stable. The golden set and the module map exist so those can be reviewed against
-something concrete.
+Deliberately not changed: behaviour. The only visible difference is the order of the tool list in the
+brain's prompt (it follows the modules now). Not done: turning the `state` dict into a `Session` class
+(v1 plan) - the split already gives the state one home (`app.session`), and the class would change every
+caller for little gain; and the live A/B run for the vision switch.
 
-State after merging master (Judge, Learner, child brain): **1096 passed, 1 skipped**
-(`python -m pytest -q`, ~100 s), `ruff check .` clean, `scripts\check.cmd` green. The remaining work is in
-`docs/part-b-plan-v3.md`.
+State at the end: **1190 passed, 1 skipped** (`python -m pytest -q`, ~2 min), `ruff check .` clean,
+`scripts\check.cmd` green, CI green on every PR.
 

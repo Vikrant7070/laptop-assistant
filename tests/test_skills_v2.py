@@ -279,12 +279,12 @@ def _btn(name):
 def login_world(monkeypatch, forms, items):
     calls = []
     seq = list(forms)
-    monkeypatch.setattr(tools, "_form_boxes", lambda w: ((1, "Site - Chrome", "chrome.exe"), seq.pop(0) if len(seq) > 1 else seq[0]))
-    monkeypatch.setattr(tools, "_scan", lambda w, limit=0, **k: ((1, "Site - Chrome", "chrome.exe"), items))
-    monkeypatch.setattr(tools, "click_element", lambda name, window="", **k: calls.append(("click", name)) or "Clicked")
-    monkeypatch.setattr(tools, "help_login", lambda window="", wait_secs=150: calls.append(("help_login",)) or "The login page has moved on")
-    monkeypatch.setattr(tools, "wait_for_code", lambda window="", wait_secs=180: calls.append(("code",)) or "ok")
-    monkeypatch.setattr(tools, "_find_window", lambda t: None)
+    monkeypatch.setattr(tools.forms, "_form_boxes", lambda w: ((1, "Site - Chrome", "chrome.exe"), seq.pop(0) if len(seq) > 1 else seq[0]))
+    monkeypatch.setattr(tools.forms, "_scan", lambda w, limit=0, **k: ((1, "Site - Chrome", "chrome.exe"), items))
+    monkeypatch.setattr(tools.forms, "click_element", lambda name, window="", **k: calls.append(("click", name)) or "Clicked")
+    monkeypatch.setattr(tools.forms, "help_login", lambda window="", wait_secs=150: calls.append(("help_login",)) or "The login page has moved on")
+    monkeypatch.setattr(tools.forms, "wait_for_code", lambda window="", wait_secs=180: calls.append(("code",)) or "ok")
+    monkeypatch.setattr(tools.windows, "_find_window", lambda t: None)
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
     return calls
 
@@ -316,7 +316,7 @@ def test_parse_check_and_unknown_names():
 
 
 def test_checks_see_windows_and_poll(monkeypatch):
-    monkeypatch.setattr(tools, "_windows", lambda: [(1, "Crunchyroll - Google Chrome", "chrome.exe")])
+    monkeypatch.setattr(tools.windows, "_windows", lambda: [(1, "Crunchyroll - Google Chrome", "chrome.exe")])
     assert checks.real_evaluate({"check": "window_open", "arg": "crunchyroll"})[0]
     assert not checks.real_evaluate({"check": "window_open", "arg": "netflix"}, timeout=0.2, interval=0.05)[0]
     assert checks.real_evaluate({"check": "result_has", "arg": "Clicked"}, {"result": "Clicked 'Log in'"})[0]

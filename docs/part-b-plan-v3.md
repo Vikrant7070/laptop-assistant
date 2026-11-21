@@ -114,7 +114,20 @@ script if it has one.
 Do not start D or E until `feat/manager-phase3` is committed and merged (or explicitly parked by the user). Otherwise
 one of the two pieces of work gets rewritten by hand.
 
-### Step D — Tool registry + `tools.py` package (Phase 2, L, risk medium)
+### Step D — Tool registry + `tools.py` package (Phase 2, L, risk medium) — done 2026-11-21
+
+Result: #13 (`@tool` + sinks), #16 (every tool declared, hand-written tables gone, all tables identical by a
+before/after dump), then the package: `nova/actions/tools/` with 10 area modules + `common` + `__init__` (tables,
+`run_tool`), largest ~600 lines. Names read across modules as `windows._focus(...)` at call time; `tools.<name>`
+is resolved from the home module by `__getattr__`, so app.py & co. didn't change (one hook: `tools.notes.email_ok`).
+Tests patch the home module; `tests/test_tools_package.py` fails on a patch or assignment on `tools` itself.
+Below is the original plan, kept for the record.
+
+Groundwork (agreed while manager Phase 4 is editing the same files): `nova/actions/registry.py` with `@tool`, and
+sinks that add declared tools to `tools.TOOLS/FUNCS/RISKY/DANGEROUS`, `app.FRIENDLY/ASK` and `toolpick.CORE/GROUPS/
+HINTS`. No existing tool moved. `tests/test_tool_decorator.py` has the canary (one decorator -> schema, run_tool,
+labels, approval, tool picking) and the guard rails. **Still to do after Phase 4 merges:** migrate the tools in
+batches and turn `tools.py` into a package, as below.
 
 Same as v1 Phase 2, plus:
 - Target is `nova/actions/tools/` as a package: `registry.py`, and one module per batch (`system.py`, `files.py`,
@@ -125,7 +138,15 @@ Same as v1 Phase 2, plus:
 
 **Accept:** adding a tool = one decorated function; no module in `actions/tools/` over ~800 lines; suite green.
 
-### Step E — Split `app.py` (Phase 3, L, risk high)
+### Step E — Split `app.py` (Phase 3, L, risk high) — done 2026-11-21
+
+Result: `nova/core/app/` with 13 modules by job + `__init__` + `__main__` (largest ~800 lines), generated from the
+file's own sections; same method as the tools package (names across modules as `module.name`, read at call time;
+`app.<name>` answered from the home module). Imports are split: a module imports at the top only what it needs while
+it loads (decorators, module code - a cycle-free order), the rest at the bottom. `desktop.py`'s two hooks and the
+tests' patches target home modules; `tests/test_app_package.py` guards it. Done in one PR, not one per module: Phase 4
+was paused for it, so a fast single change beat a week of intermediate states. The `Session` class was not done.
+Below is the original plan, kept for the record.
 
 v1's target layout stands, with two changes:
 - Add **`nova/core/judge_loop.py`** (or fold into `conversation.py`): `check_step`, `final_judge`, `look_check`,
@@ -150,7 +171,7 @@ The Judge already makes vision advisory. What remains:
    any gap.
 3. Decision-matrix unit test for `final_judge` if `test_judge.py` doesn't already have one.
 
-### Step G — Finish Phase 9 (S)
+### Step G — Finish Phase 9 (S) — done 2026-11-21, with E
 
 After E: rewrite `docs/ARCHITECTURE.md` module map for the new layout, "where to change what" table in README,
 Part B section in `docs/REVIEW.md` final version.

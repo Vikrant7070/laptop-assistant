@@ -9,41 +9,44 @@ keep it working.
 | What | Where | Port |
 |---|---|---|
 | Chat window + tray + hotkey (`pywebview`, `pystray`) | `nova/core/desktop.py`, started by `desktop.py` / `Start Nova.bat` | - |
-| Chat server and conversation loop (Flask) | `nova/core/app.py` | 5055 |
+| Chat server and conversation loop (Flask) | `nova/core/app/` | 5055 |
 | 3D avatar window and renderer bridge (Flask) | `nova/avatar/avatar.py` | 5056 |
 
 All three run on the same laptop. The servers answer only their own pages: a foreign `Host` or
-`Origin` gets 403 (see `only_this_laptop` in `app.py`).
+`Origin` gets 403 (see `only_this_laptop` in `app/api.py`).
 
 `nova/core/mobile.py` serves the phone page, `nova/core/characters.py` loads the per-character
 personas and styles.
 
 ## One request, end to end
 
-1. `POST /api/chat` (or `/api/ear_said` for speech) calls `agent_loop`.
+Module names in brackets are under `nova/core/app/`.
+
+1. `POST /api/chat` (`api`; `/api/ear_said` for speech, `voice_io`) calls `agent_loop` (`conversation`).
 2. `agent_loop` starts a task (`new_task`), records the goal in `data/task_log.txt`, and picks a
    brain with `router` / `choose_local_route` (everyday model, coder, deep planner, heavy executor).
 3. `nova/brain/toolpick.py` chooses the tools: `CORE` plus the closest matches for this request plus
    the previous request's tools. The set is fixed for the task, so Ollama's prompt cache stays valid
    between steps.
-4. `system_prompt` adds the persona (`PERSONA`), the knowledge summary, the matched skill
+4. `system_prompt` (`prompts`) adds the persona (`PERSONA`), the knowledge summary, the matched skill
    (`skills.prompt_block`) and the chosen tool schemas.
 5. `_agent_loop` calls `llm.chat` (local Ollama or a cloud brain) and, for each tool call, runs
    `execute` → `_execute_one` → `tools.run_tool`. Risky calls stop at `is_risky` and wait for the
    user's Allow / No (`/api/confirm`).
-6. The answer goes to the chat window and to `voice.Mouth`; `settle`, `look_check` and `check_step`
-   add the small verification steps (did the window open, did the step work).
+6. The answer goes to the chat window and to `voice.Mouth`; `settle`, `check_step` and `final_judge` (`judging`)
+   decide whether the task is done: deterministic checks first, at most one advisory screen look.
 7. The knowledge bank keeps what is worth remembering for the next request.
 
-The same loop serves skills: `run_skill` executes a parsed routine step by step (`_skill_loop`), with
+The same loop serves skills: `run_skill` (`skillrun`) executes a parsed routine step by step (`_skill_loop`), with
 the same approval rules as a direct tool call.
 
 ## Modules
 
 | Path | Lines* | Job |
 |---|---|---|
-| `nova/core/app.py` | ~4.6k | Flask routes, prompt, task loop, tool execution, approvals, skills playback, settings, Judge glue (`check_step`, `final_judge`) |
-| `nova/actions/tools.py` | ~3.1k | Every tool schema and implementation (101 tools), app guard, typing by paste |
+| `nova/core/app/` | ~5k in 15 files (largest ~0.8k) | The server, one module per job: `config` (settings, brain), `prompts` (persona, system prompt, tools offered), `session` (messages, task, live thoughts, labels), `conversation` (Stop switch, tasks, routing, history, `agent_loop`), `skillrun` (skill playback), `judging` (`settle`, `check_step`, `final_judge`), `learning` (episodes, Learner, questions, watch-me, knowledge review), `api` (Flask, `only_this_laptop`, chat routes), `host`, `voice_io` (speaking, ears, sleep, barge-in, naps), `body`, `integrations` (co-worker, notifications, phone, Gmail, presence, watcher, connectors), `background` (suggestions, watchers, quit, pulse); `__main__` runs it |
+| `nova/actions/tools/` | ~3.3k in 12 files (largest ~0.6k) | The tools, each declared with `@tool` above its function, one module per area: `system`, `apps`, `files`, `windows` (incl. typing by paste and the app guard), `forms` (clicking, forms, logins), `eyes`, `notes` (incl. Gmail), `routines`, `body`, `terminal`; `common` holds shared helpers; `__init__` the tables and `run_tool` |
+| `nova/actions/registry.py` | ~0.1k | `@tool`: one declaration per tool, fed into TOOLS/FUNCS/RISKY, FRIENDLY/ASK and toolpick |
 | `nova/audio/voice.py` | ~1.8k | Whisper listening, Kokoro/SAPI speaking, barge-in, wake word |
 | `nova/actions/skills.py` | ~1.2k | Parse, match, render, run and edit `skills/*.md` |
 | `nova/avatar/avatar.py` | ~0.94k | 3D window, frame bridge, speech gestures |
@@ -110,9 +113,11 @@ user's routines, `config/model_routing.json` the routing knobs, `characters/` th
 
 ## Adding things
 
-- **A tool:** add the schema and the implementation to `nova/actions/tools.py`. If the name is not
-  self-explanatory, add a line to `toolpick.HINTS` and, if it belongs with other tools, to
-  `toolpick.GROUPS`. Add a case to `tests/routing.jsonl` for the sentence a user would say.
+- **A tool:** one function with `@tool(...)` in the area module under `nova/actions/tools/` it belongs to (or a
+  module of its own, imported from `tools/__init__.py`). The decorator holds the schema, labels, risk and `hints=`;
+  if it belongs with other tools, add it to `toolpick.GROUPS`. Add a case to `tests/routing.jsonl` for the sentence
+  a user would say. Tests patch a tool helper in its home module (`tools.windows._windows`), never on `tools`
+  itself - `tests/test_tools_package.py` checks that.
 - **A skill:** drop a `.md` in `skills/`. `nova/actions/skills.py` parses and matches it; a skill
   that should only run when named uses `invoke: explicit_only`.
 - **A route trigger:** edit `config/model_routing.json` (defaults live in `nova/brain/router.py`).
@@ -128,17 +133,20 @@ embedding model, and re-check the tool cases with embeddings when the model is p
 
 `scripts/check.ps1` runs the same two commands as CI: `ruff check .` then `pytest -q`.
 
-## Known follow-ups (Part B)
+## Packages and patching
 
-The plan is `docs/part-b-plan-v3.md`. What is left is large and higher-risk, so it was deliberately
-not attempted in the first pass:
+`nova/actions/tools/` and `nova/core/app/` are packages whose `__init__` answers `tools.<name>` /
+`app.<name>` from the name's home module on every access, so callers can keep the short form. To
+**patch or assign** a name, use its home module (`tools.home_of(name)`, `app.home_of(name)`):
+setting it on the package only shadows it, and the code that uses it never sees the change.
+`tests/test_tools_package.py` and `tests/test_app_package.py` fail on that, on a name that no longer
+resolves, and on a module over 800 lines.
 
-1. Tool registry: one place that declares schema + handler + risk, and `tools.py` as a package.
-2. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
+## Part B
 
-Already done: the protocol module, model-aware history, exception logging, the data store, the chat UI split, the vision close-out (`NOVA_VISION_CHECK=0` turns the Judge's one screen look
-off for A/B runs; vision was already advisory), and the packaging/docs
-pass (`python -m nova`, this file, `README.md`, `docs/REVIEW.md` §6).
+Done (plan: `docs/part-b-plan-v3.md`; summary: `docs/REVIEW.md` §6): CI, the protocol module,
+model-aware history, exception logging, the data store, the chat UI split, the vision switch, `@tool`
+and the tools package, the app package, and these docs.
 
 Smaller known gaps found while writing the golden set:
 

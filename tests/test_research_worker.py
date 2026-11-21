@@ -20,7 +20,7 @@ def _wait(fn, secs=10):
 def _fake_web(monkeypatch, tmp_path, pages=5):
     """Search and reading are faked; the job, its record and the report file are real."""
     opened = []
-    monkeypatch.setattr(coworker.tools, "HOME", tmp_path)
+    monkeypatch.setattr(coworker.tools.common, "HOME", tmp_path)       # its home module (tools/ is a package)
     monkeypatch.setattr(coworker, "_browser", lambda: ("chrome.exe", "chrome"))
     monkeypatch.setattr(coworker, "search", lambda q, p, e, w: [(f"Page number {i} about it", f"https://s{i}.com/x")
                                                                   for i in range(pages)])

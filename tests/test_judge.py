@@ -30,6 +30,9 @@ from nova.core import app
     # Part B audit: the common ways people ask for the four high-traffic goals all get a check...
     ("start notepad", [("window_open", "notepad")], True),
     ("open up the file explorer", [("window_open", "file explorer")], True),  # not "explorer": that runs the taskbar
+    ("open explorer", [("window_open", "file explorer")], True),
+    ("open windows explorer", [("window_open", "file explorer")], True),      # never in a Windows 11 title
+    ("open internet explorer", [("window_open", "internet explorer")], True),
     ("visit github.com", [("window_open", "github")], True),
     ("make youtube full screen", [("fullscreen", "")], True),
     ("enable dark theme", [("dark_mode", "on")], True),
@@ -137,8 +140,8 @@ def looks(monkeypatch):
     def fake_see(img, question, preferred=None, kind="camera"):
         seen["n"] += 1
         return f"SCREEN: a window\nSTEP WORKED: yes\nTASK DONE: {seen['answer']}"
-    monkeypatch.setattr(app.tools, "_screen_allowed", lambda: True)
-    monkeypatch.setattr(app.tools, "_grab_screen_jpeg", lambda: "img")
+    monkeypatch.setattr(app.tools.eyes, "_screen_allowed", lambda: True)
+    monkeypatch.setattr(app.tools.eyes, "_grab_screen_jpeg", lambda: "img")
     monkeypatch.setattr(app.llm, "see", fake_see)
     return seen
 
@@ -170,7 +173,7 @@ def test_failed_window_check_cannot_be_made_done_by_vision(brain, looks, monkeyp
 
 def test_cloud_brain_is_held_to_a_failed_check_too(brain, looks, monkeypatch):
     monkeypatch.setattr(checks, "evaluate", lambda c, ctx=None, **k: (False, "no such window"))
-    monkeypatch.setattr(app, "brain", lambda s: "cloud:google:gemini-test")
+    monkeypatch.setattr(app.config, "brain", lambda s: "cloud:google:gemini-test")
     monkeypatch.setattr(app.cloud, "parse", lambda m: ("google", "gemini-test") if str(m).startswith("cloud:") else None)
     brain([("", [("open_app", {"name": "spotify"})]), ("Done!", []), ("Done!", [])])
     out, _ = app.answer("open Spotify")
@@ -188,7 +191,7 @@ def test_vision_no_only_nudges_then_asks(brain, looks):
 
 
 def test_brain_proposed_checks_are_used(brain, looks, monkeypatch):
-    monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: 'page_has "Inbox"')
+    monkeypatch.setattr(app.judging, "ask_for_checks", lambda goal, windows, model: 'page_has "Inbox"')
     brain([("", [("click_element", {"name": "a"})]), ("", [("click_element", {"name": "b"})]), ("There you go.", [])])
     out, _ = app.answer("show me my unread mail in outlook")
     task = app.state["task"]
@@ -199,9 +202,9 @@ def test_brain_proposed_checks_are_used(brain, looks, monkeypatch):
 def test_failed_brain_check_is_only_advice(brain, looks, monkeypatch):
     # Live 2026-11-20: the small brain proposed front_window "Untitled - Notepad", which typing renames - it could
     # never pass, and treating it as the truth made Nova retype the text again and again.
-    monkeypatch.setattr(app, "ask_for_checks", lambda goal, windows, model: 'front_window "Untitled - Notepad"')
+    monkeypatch.setattr(app.judging, "ask_for_checks", lambda goal, windows, model: 'front_window "Untitled - Notepad"')
     monkeypatch.setattr(checks, "evaluate", lambda c, ctx=None, **k: (False, "in front: 'Claude'"))
-    monkeypatch.setattr(app.tools, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
+    monkeypatch.setattr(app.tools.windows, "_windows", lambda: [(1, "Untitled - Notepad", "Notepad.exe")])
     fake, _ = brain([("", [("type_text", {"text": "hi", "into_window": "Untitled - Notepad"})]),
                      ("", [("press_keys", {"keys": "enter", "into_window": "Untitled - Notepad"})]),
                      ("Typed it.", [])])

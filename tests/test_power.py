@@ -38,8 +38,8 @@ def test_setup_saves_the_flag():
 
 def test_shutdown_closes_windows_and_clears_notifications_first(monkeypatch):
     order = []
-    monkeypatch.setattr(tools, "close_all_windows", lambda: order.append("windows") or "Closed 3 windows.")
-    monkeypatch.setattr(tools, "_clear_notifications", lambda: order.append("notes") or "Cleared your notifications.")
+    monkeypatch.setattr(tools.windows, "close_all_windows", lambda: order.append("windows") or "Closed 3 windows.")
+    monkeypatch.setattr(tools.system, "_clear_notifications", lambda: order.append("notes") or "Cleared your notifications.")
     monkeypatch.setattr(tools.subprocess, "Popen", lambda cmd, **k: order.append(cmd))
     out = tools.power_action("shutdown")
     assert order == ["windows", "notes", "shutdown /s /t 30"]
@@ -47,18 +47,18 @@ def test_shutdown_closes_windows_and_clears_notifications_first(monkeypatch):
 
 
 def test_sleep_and_cancel_do_not_tidy(monkeypatch):
-    monkeypatch.setattr(tools, "close_all_windows", lambda: (_ for _ in ()).throw(AssertionError("closed windows")))
+    monkeypatch.setattr(tools.windows, "close_all_windows", lambda: (_ for _ in ()).throw(AssertionError("closed windows")))
     monkeypatch.setattr(tools.subprocess, "Popen", lambda cmd, **k: None)
     tools.power_action("cancel")
     tools.power_action("sleep")
 
 
 def test_close_all_windows_spares_nova_and_the_shell(monkeypatch):
-    monkeypatch.setattr(tools, "_windows", lambda: [(1, "Nova", "pythonw.exe"), (2, "Docs - Word", "WINWORD.EXE"),
+    monkeypatch.setattr(tools.windows, "_windows", lambda: [(1, "Nova", "pythonw.exe"), (2, "Docs - Word", "WINWORD.EXE"),
                                                     (3, "Downloads", "explorer.exe"), (4, "Shell", "explorer.exe")])
     pids = {1: 100, 2: 200, 3: 300, 4: 300}
     classes = {3: "CabinetWClass", 4: "Shell_TrayWnd"}
-    monkeypatch.setattr(tools, "_own_pids", lambda: {100})
+    monkeypatch.setattr(tools.windows, "_own_pids", lambda: {100})
     monkeypatch.setattr(tools._user32, "IsWindow", lambda h: True)      # fake handles count as real windows
 
     def get_pid(hwnd, ref):

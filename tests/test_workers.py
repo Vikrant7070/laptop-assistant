@@ -313,7 +313,7 @@ def test_commands_have_the_safety_flags(monkeypatch):
 
 def test_approvals(monkeypatch):
     s = dict(app.settings())
-    monkeypatch.setattr(app, "settings", lambda: {**s, "autonomy": "full"})
+    monkeypatch.setattr(app.config, "settings", lambda: {**s, "autonomy": "full"})
     monkeypatch.setitem(app.state, "remote", False)
     cheap = {"name": "start_coding_job", "args": {"brief": "x", "folder": "C:\\p"}}
     paid = {"name": "start_coding_job", "args": {"brief": "x", "folder": "C:\\p", "size": "big"}}
@@ -351,11 +351,11 @@ def test_retry_gives_the_same_brief_and_folder_to_another_worker(repo, fake_work
 
 def test_phone_gets_reply_hints_for_coding_jobs(monkeypatch):
     sent = []
-    monkeypatch.setattr(app, "user_away", lambda: True)
+    monkeypatch.setattr(app.integrations, "user_away", lambda: True)
     monkeypatch.setattr(app.phone, "notify", lambda text: sent.append(text) or 1)
-    monkeypatch.setattr(app, "announce", lambda *a, **k: None)
-    monkeypatch.setattr(app, "wake_body", lambda: None)
-    monkeypatch.setattr(app, "react_later", lambda *a, **k: None)
+    monkeypatch.setattr(app.voice_io, "announce", lambda *a, **k: None)
+    monkeypatch.setattr(app.voice_io, "wake_body", lambda: None)
+    monkeypatch.setattr(app.body, "react_later", lambda *a, **k: None)
     monkeypatch.setattr(app.learner, "job_finished", lambda job: None)
     monkeypatch.setitem(app.settings(), "wake", False)
     app.job_done({"id": 91, "kind": "coding", "title": "t", "status": "failed", "error": "boom", "worker": "opencode"})
@@ -376,7 +376,7 @@ def test_phone_status_lists_running_jobs(monkeypatch):
 
 def test_retry_approvals(monkeypatch):
     s = dict(app.settings())
-    monkeypatch.setattr(app, "settings", lambda: {**s, "autonomy": "full"})
+    monkeypatch.setattr(app.config, "settings", lambda: {**s, "autonomy": "full"})
     monkeypatch.setitem(app.state, "remote", False)
     assert app.is_risky({"name": "retry_coding_job", "args": {}})                      # default = Claude Code
     assert not app.is_risky({"name": "retry_coding_job", "args": {"worker": "opencode"}})

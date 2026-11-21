@@ -61,7 +61,7 @@ def test_switching_ends_the_old_characters_conversation(monkeypatch):
     """After "Hey Lucy" opened a conversation, switching to Nova must not let Nova take requests without "Hey Nova"."""
     monkeypatch.setattr(app.avatar_client, "send", lambda *a, **k: None)
     closed = []
-    monkeypatch.setattr(app, "ear_close", lambda: closed.append(True))
+    monkeypatch.setattr(app.voice_io, "ear_close", lambda: closed.append(True))
     app.convo["on"] = True
     try:
         app.apply_character("nova")
