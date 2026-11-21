@@ -131,3 +131,44 @@ def test_finish_writes_the_finish_file(setup, client, monkeypatch):
 
 def test_page_is_served(client):
     assert client.get("/childbrain").status_code == 200
+
+
+# ---------- watch it play ----------
+
+def test_watch_lists_brains_records_once_and_serves_the_recording(setup, client, monkeypatch):
+    from nova.core.app import childbrain_watch as cw
+    h = _fake_childbrain(setup, python=True, runs=[("20261121-100000_snake_a", CARD, dict(RES, genes={"kind": "plain"})),
+                                                   ("20261121-110000_nokeep", CARD, {"game": "snake"})])
+    (h / "childbrain" / "watch.py").write_text("", encoding="utf-8")
+    brains = client.get("/api/childbrain/brains").get_json()["brains"]
+    assert [b["src"] for b in brains] == ["20261121-100000_snake_a"]          # only runs that kept weights
+
+    calls = []
+
+    def fake_record(h_, py, folder, args, out, name):                          # what the recorder would write
+        calls.append((folder.name, args))
+        out.write_text(json.dumps({"moves": [{"pick": 0}]}), encoding="utf-8")
+        cw._busy.pop(name, None)
+
+    monkeypatch.setattr(cw, "_record", fake_record)
+    monkeypatch.setattr(cw.threading, "Thread", lambda target, args, daemon: type("T", (), {"start": lambda s: target(*args)})())
+    r = client.post("/api/childbrain/watch", json={"src": "20261121-100000_snake_a", "board": "new", "seed": 2, "steps": 50})
+    name = r.get_json()["name"]
+    assert calls == [("20261121-100000_snake_a", ["--board", "new", "--seed", "2", "--steps", "50"])]
+    assert client.get(f"/api/childbrain/watch/{name}").get_json() == {"moves": [{"pick": 0}]}
+    assert client.post("/api/childbrain/watch", json={"src": "20261121-100000_snake_a", "board": "new", "seed": 2,
+                                                      "steps": 50}).get_json()["ready"]
+    assert len(calls) == 1                                                       # kept: the second time is instant
+
+
+def test_watch_checks_its_input_and_the_off_switch(setup, client):
+    h = _fake_childbrain(setup, python=True, runs=[("20261121-100000_snake_a", CARD, RES)])
+    (h / "childbrain" / "watch.py").write_text("", encoding="utf-8")
+    ok = {"src": "20261121-100000_snake_a"}
+    assert client.post("/api/childbrain/watch", json={"src": ".."}).status_code == 400
+    assert client.post("/api/childbrain/watch", json={"src": "v:12"}).status_code == 404
+    assert client.post("/api/childbrain/watch", json=dict(ok, game="../x")).status_code == 400
+    assert client.post("/api/childbrain/watch", json=dict(ok, board="peek")).status_code == 400
+    assert client.get("/api/childbrain/watch/..%2Fx.json").status_code in (400, 404)
+    (h / "childbrain" / "runs" / "STOP").write_text("x", encoding="utf-8")
+    assert client.post("/api/childbrain/watch", json=ok).status_code == 409
