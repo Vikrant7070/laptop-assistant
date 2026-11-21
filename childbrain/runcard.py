@@ -201,10 +201,13 @@ def rerun(folder: Path, tolerance: float = 0.0) -> RerunReport:
 
 
 def compare(a: Any, b: Any, tolerance: float = 0.0, where: str = "results") -> list[str]:
-    """List every place where two JSON values differ (exact by default)."""
+    """List every place where two JSON values differ (exact by default).
+    Keys starting with "clock_" hold wall-clock times, which never repeat exactly: they aren't compared."""
     if isinstance(a, dict) and isinstance(b, dict):
         out = [f"{where}.{k}: only in {'saved' if k in a else 'new'}" for k in sorted(set(a) ^ set(b))]
         for k in sorted(set(a) & set(b)):
+            if str(k).startswith("clock_"):
+                continue
             out += compare(a[k], b[k], tolerance, f"{where}.{k}")
         return out
     if isinstance(a, list) and isinstance(b, list):
