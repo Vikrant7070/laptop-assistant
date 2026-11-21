@@ -21,6 +21,7 @@ from pathlib import Path
 import psutil
 
 from nova import store
+from nova.actions import registry
 from nova.shared import REACTIONS, ps_escape, work_area
 
 try:  # real pixel coordinates, so clicks land where UI Automation says
@@ -3120,6 +3121,21 @@ def is_dangerous(name, args):
     return name == "run_powershell" and args.get("as_admin") in (True, "true")
 
 FUNCS = {t["name"]: globals()[t["name"]] for t in TOOLS}
+
+
+def _install(spec):
+    """A tool declared with @registry.tool joins the tables above (nova/actions/registry.py)."""
+    if spec.name in FUNCS:
+        raise ValueError(f"tool {spec.name!r} is both in TOOLS and declared with @tool")
+    TOOLS.append(spec.schema())
+    FUNCS[spec.name] = spec.fn
+    if spec.risky:
+        RISKY.add(spec.name)
+    if spec.dangerous:
+        DANGEROUS.add(spec.name)
+
+
+registry.on_register(_install)
 
 
 def run_tool(name, args):

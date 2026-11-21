@@ -16,7 +16,7 @@ Cloud brains get every tool (they have room, and they are smart enough not to ge
 import re
 
 from nova.brain import retrieval
-from nova.actions import tools
+from nova.actions import registry, tools
 
 CORE = ["get_datetime", "get_system_status", "open_app", "open_website", "open_path", "list_windows", "window_action",
         "press_keys", "type_text", "run_powershell", "run_in_terminal", "react", "update_profile", "learn_lesson", "recall_knowledge",
@@ -123,7 +123,20 @@ HINTS = {
     "run_skill": "run my routine, do the usual, use your skill",
 }
 
-TOP = 6           # best-matching tools per request
+
+def _install(spec):
+    """A tool declared with @registry.tool brings its own CORE / GROUPS / HINTS entry (nova/actions/registry.py)."""
+    if spec.core and spec.name not in CORE:
+        CORE.append(spec.name)
+    if spec.group:
+        GROUPS.append({spec.name, *spec.group})
+    if spec.hints:
+        HINTS[spec.name] = spec.hints
+
+
+registry.on_register(_install)
+
+TOP = 6          # best-matching tools per request
 GROUPED = 2       # ...of which the best two bring their whole group
 MORE = 8          # tools added when she asks with more_tools
 

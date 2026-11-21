@@ -34,6 +34,7 @@ from nova.brain import retrieval
 from nova.audio import sfx
 from nova.actions import skills
 from nova.actions import checks
+from nova.actions import registry
 from nova.actions import judge
 from nova.actions import learner
 from nova.actions import questions
@@ -361,6 +362,16 @@ ASK = {
     "start_coding_job": "Start a coding job in the background", "commit_coding_job": "Commit the changes (git, not pushed)",
     "retry_coding_job": "Give the coding job to another worker",
 }
+
+
+def _labels(spec):
+    """A tool declared with @registry.tool brings its own labels (nova/actions/registry.py)."""
+    FRIENDLY[spec.name] = spec.friendly
+    if spec.ask:
+        ASK[spec.name] = spec.ask
+
+
+registry.on_register(_labels)
 
 
 def ask_label(name):
