@@ -14,3 +14,7 @@ skills/.trash/
 # Child brain research project: its own Python setup and saved runs
 .venv-childbrain/
 childbrain/runs/
+
+# pip install -e . leaves this behind
+*.egg-info/
+build/
