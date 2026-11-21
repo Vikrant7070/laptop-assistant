@@ -9,6 +9,9 @@ Nova is the manager. She writes the brief, picks the worker, watches, checks and
   claude    Claude Code (paid, strongest): new sites/apps, hard code. `claude -p --output-format json
             --permission-mode acceptEdits --max-budget-usd N`. Shell commands it isn't allowed are refused.
             Always asked for first (app.is_risky).
+  research  Nova's own research (coworker.research): reads pages in off-screen Chrome windows and writes a report
+            with sources in Documents/Nova. Free, never asks. Settings: how many sources, whether the cloud brain
+            may write the report. Recorded in the same job history (manager plan, phase 4 step 0).
 
 Safety, in layers (a worker may never commit, push, publish, deploy, delete or pay - the user approves those):
   1. the worker's own permissions (OpenCode: deny by default, read/edit/search allowed; Claude Code: git
@@ -46,9 +49,11 @@ DEFAULTS = {
     "opencode": {"exe": "", "model": "opencode/deepseek-v4.1-flash-free",
                  "fallback_models": ["opencode/big-pickle"], "timeout_min": 20},
     "claude": {"exe": "", "model": "", "budget_usd": 1.0, "timeout_min": 30},
+    "research": {"max_sources": 3, "cloud_report": True},
     "daily_budget_usd": 3.0,
 }
-NAMES = {"opencode": "OpenCode + DeepSeek", "claude": "Claude Code"}
+NAMES = {"opencode": "OpenCode + DeepSeek", "claude": "Claude Code", "research": "Research"}
+CODERS = ("opencode", "claude")
 
 # OpenCode: reads and edits only - everything else is denied, by default ("*") and by name. Its shell is "shell" in
 # v2 ("bash" before); v2 also has "execute" (runs code that can call any of its tools - found on 2026-11-21, it
@@ -125,7 +130,8 @@ def status():
 
 # ------------------------------------------------------------------ the settings page (⚙ Workers)
 
-LIMITS = {"timeout_min": (1, 240), "budget_usd": (0.05, 50.0), "daily_budget_usd": (0.0, 500.0)}
+LIMITS = {"timeout_min": (1, 240), "budget_usd": (0.05, 50.0), "daily_budget_usd": (0.0, 500.0),
+          "max_sources": (1, 5)}
 
 
 def _num(value, key):
@@ -147,7 +153,7 @@ def _model_name(value):
 def save_settings(body):
     """⚙ Workers: change models, budgets, timeouts and program paths. Only known fields; numbers kept in range."""
     conf = config()
-    oc, cc = dict(conf["opencode"]), dict(conf["claude"])
+    oc, cc, rs = dict(conf["opencode"]), dict(conf["claude"]), dict(conf["research"])
     body = body or {}
     if "opencode_model" in body:
         oc["model"] = _model_name(body["opencode_model"]) or DEFAULTS["opencode"]["model"]
@@ -170,9 +176,13 @@ def save_settings(body):
             if exe and not (Path(exe).is_file() and exe.lower().endswith((".exe", ".cmd", ".bat"))):
                 raise ValueError(f"{NAMES[w]}: there's no program at {exe[:120]}")
             d["exe"] = exe
+    if "research_max_sources" in body:
+        rs["max_sources"] = int(_num(body["research_max_sources"], "max_sources"))
+    if "research_cloud_report" in body:
+        rs["cloud_report"] = body["research_cloud_report"] in (True, 1, "1", "true", "on")
     daily = _num(body["daily_budget_usd"], "daily_budget_usd") if "daily_budget_usd" in body \
         else conf["daily_budget_usd"]
-    new = {"opencode": oc, "claude": cc, "daily_budget_usd": daily}
+    new = {"opencode": oc, "claude": cc, "research": rs, "daily_budget_usd": daily}
     with _lock:
         path = store.current().workers
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,17 +196,19 @@ def save_settings(body):
 def overview(fresh=False):
     """Everything the ⚙ Workers page shows."""
     conf = config()
-    exe = {w: find_exe(w, conf) for w in ("opencode", "claude")}
+    exe = {w: find_exe(w, conf) for w in CODERS}
     signed = claude_signed_in(conf, fresh=fresh) if exe["claude"] else False
     recent = []
     for r in reversed(load_jobs()[-6:]):
         recent.append({"job": r.get("job"), "worker": NAMES.get(r.get("worker"), r.get("worker")),
                        "status": r.get("status"), "brief": _short(r.get("brief"), 70), "files": len(r.get("files") or []),
-                       "cost": r.get("cost") or 0, "committed": bool(r.get("committed")), "started": r.get("started")})
+                       "cost": r.get("cost") or 0, "committed": bool(r.get("committed")), "started": r.get("started"),
+                       "sources": len(r.get("sources") or [])})
     return {"config": conf, "exe": exe, "claude_signed_in": signed,
             "sign_in_help": "" if signed else sign_in_help(conf) if exe["claude"] else "",
             "spent_today": spent_today(), "recent": recent,
-            "running": [{"folder": f, "job": j} for f, j in _busy.items()],
+            "running": [{"folder": f, "job": j} for f, j in _busy.items()]
+            + [{"folder": "", "job": j["id"]} for j in _research_running()],
             "waiting": sum(max(0, len(v) - 1) for v in _lines.values())}
 
 
@@ -466,8 +478,12 @@ def run_once(worker, brief, folder, model, conf, job=None, checkpoint=None, log=
 
 # ------------------------------------------------------------------ a job: brief -> worker -> check -> report
 
-def pick_worker(worker="auto", size="small"):
+def pick_worker(worker="auto", size="small", kind="coding"):
+    """Which worker does this job: 'research' for finding things out on the web, else a coding worker - the cheap
+    one for small jobs, Claude Code for big ones or when asked for by name."""
     w = str(worker or "auto").lower()
+    if w in ("research", "web", "researcher") or str(kind or "").lower() == "research":
+        return "research"
     if w in ("claude", "claude code", "claude-code"):
         return "claude"
     if w in ("opencode", "deepseek", "open code"):
@@ -635,12 +651,44 @@ def _short(text, n=220):
     return text if len(text) <= n else text[:n].rsplit(" ", 1)[0] + "…"
 
 
-def last_record(which="latest", need_files=True):
-    recs = [r for r in load_jobs() if r.get("files") or not need_files]
-    if str(which).lstrip("#").isdigit():
-        n = int(str(which).lstrip("#"))
+DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def _day_matches(words, started):
+    """'the research from Tuesday' / 'yesterday' / 'today' against when a job started. None = no day was named."""
+    if not started:
+        return None
+    day = time.localtime(started)
+    today = time.localtime()
+    for w in words:
+        if w in DAYS:
+            return day.tm_wday == DAYS.index(w) and time.time() - started < 7 * 86400
+        if w == "today":
+            return day[:3] == today[:3]
+        if w == "yesterday":
+            return day[:3] == time.localtime(time.time() - 86400)[:3]
+    return None
+
+
+def last_record(which="latest", need_files=True, kinds=CODERS):
+    """The newest job record that fits: 'latest', a job number ('#3'), or words from its brief / a day ('the research
+    from Tuesday'). kinds = which workers' records (None = all)."""
+    recs = [r for r in load_jobs() if (r.get("files") or not need_files) and (kinds is None or r.get("worker") in kinds)]
+    w = str(which or "latest").strip().lower()
+    if w.lstrip("#").isdigit():
+        n = int(w.lstrip("#"))
         recs = [r for r in recs if r.get("job") == n] or []
+    elif w not in ("latest", "last", ""):
+        words = [x for x in re.findall(r"[a-z0-9]+", w) if len(x) > 2]
+        dated = [r for r in recs if _day_matches(words, r.get("started")) is not False]   # a named day must fit
+        named = [x for x in words if x not in DAYS + LOOKUP_FILLER]
+        hit = [r for r in dated if any(x in str(r.get("brief", "")).lower() for x in named)]
+        recs = hit or dated                    # words that match nothing: the newest one (of that day, if named)
     return recs[-1] if recs else None
+
+
+LOOKUP_FILLER = ("today", "yesterday", "research", "job", "the", "from", "last", "latest", "one", "that", "this",
+                 "about", "coding", "did", "you", "with", "on", "for")
 
 
 def changes(which="latest", max_chars=1500):
@@ -662,14 +710,95 @@ def changes(which="latest", max_chars=1500):
     return text if len(text) <= max_chars else text[:max_chars].rsplit("\n", 1)[0] + "\n…"
 
 
-def retry(which="latest", worker="claude"):
-    """Give the last job (usually one that failed) to another worker, with the same brief and folder."""
-    rec = last_record(which, need_files=False)
+def retry_target(which="latest", worker=""):
+    """What 'try again' means -> (record, worker). No worker named: the newest job of any kind - research runs again
+    as research, a coding job goes to Claude Code (the usual reason to retry is that the cheap one failed)."""
+    w = str(worker or "").strip().lower()
+    if w in ("", "auto"):
+        rec = last_record(which, need_files=False, kinds=None)
+        return rec, ("research" if rec and rec.get("worker") == "research" else "claude")
+    w = pick_worker(w)
+    return last_record(which, need_files=False, kinds=("research",) if w == "research" else CODERS), w
+
+
+def retry(which="latest", worker=""):
+    """Run the last job (usually one that failed) again: research again, or a coding job with another worker (same
+    brief and folder)."""
+    rec, w = retry_target(which, worker)
     if not rec:
-        return "There's no coding job to try again."
+        return "There's no job to try again."
     if rec.get("status") in ("running", "queued", "checking"):
         return f"Job #{rec['job']} is still going - wait for it, or stop it first."
-    return start(rec["brief"], rec["folder"], worker=worker or "claude")
+    if w == "research":
+        return research(rec.get("topic") or rec["brief"], rec.get("focus", ""), rec.get("kind", "general"))
+    return start(rec["brief"], rec["folder"], worker=w)
+
+
+# ------------------------------------------------------------------ the research worker (coworker.research)
+
+def _research_running():
+    from nova.actions import coworker
+    return [j for j in coworker.running() if j["kind"] == "research"]
+
+
+def research(topic, focus="", kind="general", max_sources=None, start_job=None):
+    """Start a research job (coworker.research does the reading and writing), recorded in the job history like a
+    coding job. max_sources: what the user asked for, else ⚙ Workers' number. Returns a sentence for the brain."""
+    from nova.actions import coworker
+    conf = config()["research"]
+    try:
+        n = int(max_sources or conf.get("max_sources") or 3)
+    except (TypeError, ValueError):
+        n = int(conf.get("max_sources") or 3)
+    n = max(1, min(n, 5))
+    local = not conf.get("cloud_report", True)
+    topic = re.sub(r"\s+", " ", str(topic or "")).strip()
+    focus = str(focus or "").strip()
+
+    def starter(job_kind, title, work):
+        def recorded(job):
+            job["worker"] = "research"
+            key = f"{int(job['started'])}-{job['id']}"
+            rec = {"key": key, "job": job["id"], "worker": "research", "model": "local brain" if local else "",
+                   "brief": topic + (f" - {focus}" if focus else ""), "topic": topic, "focus": focus, "kind": kind,
+                   "folder": "", "status": "running", "started": job["started"], "finished": None, "cost": 0.0,
+                   "files": [], "result": "", "note": "", "log": "", "path": "", "sources": [],
+                   "max_sources": n}
+            _save_record(rec)
+            try:
+                work(job)
+                rec.update(status="done", result=str(job.get("result") or "")[:2000], path=job.get("path") or "",
+                           sources=list(job.get("sources") or []))
+            except coworker.Stopped:
+                rec["status"] = "stopped"
+                raise
+            except Exception as e:
+                rec.update(status="failed", note=str(e)[:300])
+                raise
+            finally:
+                rec["finished"] = time.time()
+                _save_record(rec)
+        return (start_job or coworker.start)(job_kind, title, recorded)
+
+    return coworker.research(topic=topic, focus=focus, kind=kind, max_sources=n, local=local, start_job=starter)[1]
+
+
+def report(which="latest", max_chars=1500):
+    """A finished research job's report, short enough for a text message."""
+    rec = last_record(which, need_files=False, kinds=("research",))
+    if not rec:
+        return "There's no research job yet."
+    if rec.get("status") != "done":
+        return f"Research #{rec['job']} on '{rec.get('topic') or rec['brief']}' {rec.get('status')}" + (
+            f": {rec['note']}" if rec.get("note") else ".")
+    text = ""
+    try:
+        text = Path(rec["path"]).read_text(encoding="utf-8") if rec.get("path") else ""
+    except OSError:
+        text = ""  # intentional: the file was moved or deleted - the headline and sources from the record still help
+    text = text.strip() or f"Research: {rec.get('topic')}\n\n{rec.get('result')}\n\nSources:\n" + "\n".join(
+        rec.get("sources") or [])
+    return text if len(text) <= max_chars else text[:max_chars].rsplit("\n", 1)[0] + "\n…"
 
 
 def commit(which="latest", message=""):

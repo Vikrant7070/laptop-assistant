@@ -192,8 +192,8 @@ are the existing `background_jobs` / `stop_background_job` - a coding job is a `
     (`& "<claude.exe>" auth login`); a "Not logged in" answer becomes the same message. Workers also get an
     environment without inherited `CLAUDE*` variables or a local `ANTHROPIC_BASE_URL` (Nova started from a Claude desktop
     session handed those on). A real Claude Code job has not run yet - it needs that sign-in first.
-- **Still open:** the research worker as a "worker" (moved to Phase 4, step 0); a real Claude Code job once the user
-  has signed in (left for later, 2026-11-21).
+- **Still open:** a real Claude Code job, left for later (2026-11-21). The research worker was moved to Phase 4,
+  step 0, and is now built (see section 6).
 
 ## 6. Phase 4 — The manager loop (brief writer)
 
@@ -205,6 +205,38 @@ the manager can pick from one list:
 - the same status / stop / retry tools and phone hints as coding jobs;
 - `pick_worker` can choose it, so "research the best library, then add it to my project" becomes research → coding.
 What the user sees when they say "research X" stays the same.
+
+**Step 0 as built (2026-11-21, branch `feat/manager-phase4`):**
+- **The research worker:** `workers.research()` is the way in. `research_in_background` calls it, and it wraps
+  `coworker.research` (which still does the searching, reading and writing). Its `start_job` hook records the job.
+- **Settings:** `data/workers.json` → `"research": {"max_sources": 3, "cloud_report": true}`.
+  - Edited in ⚙ Workers → 🔎 Research: pages to read (1–5) and "the cloud brain may write the report".
+  - When that box is off, the report goes to `write_local`, which is the laptop's own model with no cloud fallback.
+  - A number of pages the user asks for themselves still wins (at most 5).
+- **Job history:** each research job is saved in `data/jobs.json` as worker `"research"`, with its topic, focus, report
+  path, sources, and whether the local brain wrote it. It shows under ⚙ Workers → Recent jobs ("· 3 sources").
+  - Coding-only lookups (`commit`, `show_coding_changes`) skip research records, so "commit it" never picks one up.
+  - `last_record(which)` finds a job by number, by words, or by day ("the research from Tuesday", "yesterday").
+- **Status / stop / retry:**
+  - Status and stop work through `background_jobs` / `stop_background_job`, as before.
+  - `retry_coding_job` (name kept) now retries any job: with no worker named, the newest job runs again as research
+    (free, no ask) or goes to Claude Code (asks). `worker="research"` finds the newest research.
+  - New tool `research_report` reads the saved report back, short enough for a text message.
+  - After a restart, `show_finished_work` opens a past report from the job history.
+- **Phone:** a finished research job's away message ends with *Reply "send the report"*; a failed one ends with
+  *Reply "try again"*.
+- **`pick_worker(worker, size, kind)`** returns `"research"` for `worker="research"` or `kind="research"`.
+- **Tests:** `tests/test_research_worker.py`.
+- **Live check (2026-11-21):** the ⚙ Workers tab showed the Research settings (3 pages, cloud on) on the real Nova,
+  started from the worktree.
+  - "research the health benefits of green tea" matched the user's `web-research` skill, and the brain called
+    `research_in_background` (34 s).
+  - Nova's reply was the same as before.
+  - Google → DuckDuckGo fallback; 3 pages read, 2 usable; report written; "done, from 2 sources" spoken after 64 s.
+  - `data/jobs.json` got a `research` record (done, report path, 2 sources). ⚙ Workers → Recent jobs showed
+    "#1 Research · done · 2 sources".
+  - Gotcha: while a child-brain training run held the GPU at 100%, the local brain never answered. Two tries ended
+    with "can't reach Ollama" after 20 min. The run was paused for the test (process suspended), then resumed.
 
 For any request that is bigger than a laptop skill:
 
@@ -222,6 +254,66 @@ For any request that is bigger than a laptop skill:
 
 **Done when:** "make a website for my Nova project" goes ask → brief → Claude Code → checks → one fix round →
 "it's ready in `nova-site/`, publish?" without the user writing the brief.
+
+### Manager loop — proposed design (2026-11-21, waiting for the user's go-ahead)
+
+**The main idea:** code does the managing, and the small local brain only fills small gaps. The local 4B brain on a
+shared GPU takes 20–90 s per answer and can't write a good brief, so the steps below are code wherever they can be.
+
+A new module, `nova/actions/manager.py`, and one new tool, `hand_off_job(request)`. Fixed word rules bring the tool
+in, the same way `toolpick.CODING` does: build/make/create + site/app/page, "research … then …", and "my project".
+
+1. **Understand (triage)**
+   - Word rules sort the request into one of four kinds: `research`, `coding`, `research→coding`, or `laptop`.
+   - `laptop` keeps today's path (skills and tools).
+   - The brain is asked only when the rules can't tell, and then with a one-word answer.
+2. **Ask (at most 2 questions)**
+   - Each kind has a fixed question list. Each question has a fact key, for example:
+     - coding: which folder? new or existing project? language or stack?
+     - website: one page or with docs? a style to follow?
+   - A question is skipped when the request already answered it, or when `facts.json` / the profile already knows
+     the answer.
+   - The answers are saved as facts, marked unconfirmed, so they are never asked again.
+   - Questions are asked in the chat (and on the phone when the user is away). One message holds up to 2 questions.
+3. **Brief**
+   - A fixed template, filled by code:
+     - Goal: the user's own words.
+     - About the user: stack, style, and where projects live, from the profile and facts. Anything that looks like a
+       secret is dropped.
+     - Requirements: the request plus the answers.
+     - Folder.
+     - Done means: the checks from step 5.
+     - Must not: today's `BRIEF_RULES`.
+   - A cloud brain, if there is one, may tidy the wording of the requirements. The local brain never writes the brief.
+   - The brief is shown in the chat (collapsed) and stored with the job.
+4. **Pick the worker**
+   - `pick_worker` also reads the job history: how often each worker succeeded at this kind of job.
+   - Small or routine jobs go to the cheapest worker that has done this kind of job before. Big or new jobs go to
+     Claude Code, which still asks and keeps its budgets.
+   - For `research→coding`, research runs first. Its headline and sources go into the coding brief, then the coding
+     job starts.
+5. **Watch → check → send back → report**
+   - When a job ends, quick checks run (a small first version of Phase 5):
+     - coding: the files changed are only inside the folder, and the project's tests pass when a known command
+       exists (`pytest`, `npm test`), run with the same safety guard as the worker;
+     - research: at least 2 sources are cited.
+   - If a check fails, the job goes back once to the same worker with the exact failing check ("tests fail:
+     test_x …"). If it still fails, the user is told plainly.
+   - The report is one line, plus the one decision the user has to make (commit? see it? publish?).
+6. **Remember**
+   - The job record stores the brief, worker, rounds, check results, and what the user chose (committed or not).
+   - The Learner turns that into worker notes ("OpenCode did small README fixes 3/3"), which step 4 uses.
+
+**Build order (each its own commit and live check):**
+- **4a:** triage, questions, brief. For now it shows the brief and the user says "go".
+- **4b:** worker pick from history, plus the research→coding chain.
+- **4c:** checks, one send-back round, report.
+- **4d:** remember and worker notes.
+
+**The user's answers (2026-11-21):** for the first phases, **every** manager job shows its brief and waits for the
+user's "go", cheap OpenCode jobs included. The user will relax this later, once they have seen how the manager
+performs. Build it as a setting (default: ask for every job) so it can be loosened without a code change. Direct
+`start_coding_job` calls keep today's rules: OpenCode doesn't ask, Claude Code asks.
 
 ## 7. Phase 5 — Judges for workers' results
 

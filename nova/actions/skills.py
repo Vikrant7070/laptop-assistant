@@ -69,7 +69,8 @@ CONSEQUENTIAL = {"kill_process", "organize_folder", "delete_to_recycle_bin", "cl
                  "close_all_windows", "empty_recycle_bin", "toggle_wifi", "set_wallpaper", "draft_email", "fill_form",
                  "start_coding_job", "commit_coding_job", "retry_coding_job"}
 READ_ONLY = ("get_", "list_", "read_", "look_", "find_", "search_", "check_", "show_", "recall_", "network_info",
-             "temp_files_size", "background_jobs", "research_in_background", "take_screenshot")
+             "temp_files_size", "background_jobs", "research_in_background", "research_report",
+             "take_screenshot")
 
 # Fuzzy matching must clear BOTH bars. (Tuned on the real log with `python -m nova.tools.skill_eval`.)
 FUZZY_FLOOR = 0.85            # with the embedding model (measured with nova.skill_eval: 0.75 let "good night" start the morning briefing); FUZZY_FLOOR_WORDS is for the word-overlap fallback
