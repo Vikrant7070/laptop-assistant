@@ -43,7 +43,7 @@ the same approval rules as a direct tool call.
 | Path | Lines* | Job |
 |---|---|---|
 | `nova/core/app.py` | ~4.6k | Flask routes, prompt, task loop, tool execution, approvals, skills playback, settings, Judge glue (`check_step`, `final_judge`) |
-| `nova/actions/tools.py` | ~3.3k | The tools, each declared with `@tool` above its function; app guard, typing by paste |
+| `nova/actions/tools/` | ~3.3k in 12 files (largest ~0.6k) | The tools, each declared with `@tool` above its function, one module per area: `system`, `apps`, `files`, `windows` (incl. typing by paste and the app guard), `forms` (clicking, forms, logins), `eyes`, `notes` (incl. Gmail), `routines`, `body`, `terminal`; `common` holds shared helpers; `__init__` the tables and `run_tool` |
 | `nova/actions/registry.py` | ~0.1k | `@tool`: one declaration per tool, fed into TOOLS/FUNCS/RISKY, FRIENDLY/ASK and toolpick |
 | `nova/audio/voice.py` | ~1.8k | Whisper listening, Kokoro/SAPI speaking, barge-in, wake word |
 | `nova/actions/skills.py` | ~1.2k | Parse, match, render, run and edit `skills/*.md` |
@@ -111,9 +111,11 @@ user's routines, `config/model_routing.json` the routing knobs, `characters/` th
 
 ## Adding things
 
-- **A tool:** add the schema and the implementation to `nova/actions/tools.py`. If the name is not
-  self-explanatory, add a line to `toolpick.HINTS` and, if it belongs with other tools, to
-  `toolpick.GROUPS`. Add a case to `tests/routing.jsonl` for the sentence a user would say.
+- **A tool:** one function with `@tool(...)` in the area module under `nova/actions/tools/` it belongs to (or a
+  module of its own, imported from `tools/__init__.py`). The decorator holds the schema, labels, risk and `hints=`;
+  if it belongs with other tools, add it to `toolpick.GROUPS`. Add a case to `tests/routing.jsonl` for the sentence
+  a user would say. Tests patch a tool helper in its home module (`tools.windows._windows`), never on `tools`
+  itself - `tests/test_tools_package.py` checks that.
 - **A skill:** drop a `.md` in `skills/`. `nova/actions/skills.py` parses and matches it; a skill
   that should only run when named uses `invoke: explicit_only`.
 - **A route trigger:** edit `config/model_routing.json` (defaults live in `nova/brain/router.py`).
@@ -134,8 +136,7 @@ embedding model, and re-check the tool cases with embeddings when the model is p
 The plan is `docs/part-b-plan-v3.md`. What is left is large and higher-risk, so it was deliberately
 not attempted in the first pass:
 
-1. `tools.py` as a package (every tool already uses `@tool`).
-2. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
+1. `app.py` split: HTTP, prompts, session, voice glue, Judge glue, conversation loop, background.
 
 Already done: the protocol module, model-aware history, exception logging, the data store, the chat UI split, the vision close-out (`NOVA_VISION_CHECK=0` turns the Judge's one screen look
 off for A/B runs; vision was already advisory), and the packaging/docs

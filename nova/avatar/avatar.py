@@ -7,7 +7,7 @@ Live 3D: a hidden browser window (desktop.py) runs static/nova3d.html?live=1, wh
 POSTs the pixels to /frame here; the reply tells it what to draw next. That lets her play moves the brain invents and
 wear a new look (nova/avatar/body.py). Until live frames arrive she isn't drawn (there is no other picture of her).
 
-Control API (used by tools.py / app.py):  POST http://127.0.0.1:5056/cmd  {"do": ..., ...}
+Control API (used by nova/actions/tools/ and app.py):  POST http://127.0.0.1:5056/cmd  {"do": ..., ...}
   anim {name}            base animation: idle | talk | think | sleepy
   work {on}              busy on a task (not listening): after a moment she sits at her desk, typing on a laptop
   sleep {on}             on: walk to the bottom-right corner and doze there (no wandering); off: wake up and wave

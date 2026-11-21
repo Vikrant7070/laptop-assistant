@@ -24,7 +24,7 @@ def test_system_jobs_still_run_hidden(command):
 
 def test_powershell_is_turned_back_unless_she_says_why(monkeypatch):
     ran = []
-    monkeypatch.setattr(tools, "_ps", lambda c, timeout=0: ran.append(c) or "ok")
+    monkeypatch.setattr(tools.common, "_ps", lambda c, timeout=0: ran.append(c) or "ok")
     assert tools.run_powershell("git status").startswith("Not run") and not ran
     assert tools.run_powershell("git status", no_ui_way="VS Code isn't installed") == "ok" and ran == ["git status"]
     assert tools.run_powershell("git status", as_admin=False, no_ui_way="  ").startswith("Not run")
@@ -34,9 +34,9 @@ def test_powershell_is_turned_back_unless_she_says_why(monkeypatch):
 def fake_window(monkeypatch):
     state = {"closed": False, "clicks": [], "messages": []}
     monkeypatch.setattr(avatar_client, "running", lambda: True)
-    monkeypatch.setattr(tools, "_find_window", lambda q: (42, "Notes - Notepad", "notepad.exe"))
-    monkeypatch.setattr(tools, "_focus", lambda h: None)
-    monkeypatch.setattr(tools, "_caption_button", lambda h, which: (900, 10))
+    monkeypatch.setattr(tools.windows, "_find_window", lambda q: (42, "Notes - Notepad", "notepad.exe"))
+    monkeypatch.setattr(tools.windows, "_focus", lambda h: None)
+    monkeypatch.setattr(tools.windows, "_caption_button", lambda h, which: (900, 10))
     monkeypatch.setattr(tools._user32, "IsIconic", lambda h: False)
     monkeypatch.setattr(tools._user32, "PostMessageW", lambda h, m, w, l: state["messages"].append(m))
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
@@ -47,31 +47,31 @@ def test_close_is_a_click_on_the_x(monkeypatch, fake_window):
     def click(x, y, button="left", double=False, label=""):
         fake_window["clicks"].append((x, y, label))
         fake_window["closed"] = True
-    monkeypatch.setattr(tools, "_nova_click", click)
-    monkeypatch.setattr(tools, "_done", lambda h, a: fake_window["closed"])
+    monkeypatch.setattr(tools.forms, "_nova_click", click)
+    monkeypatch.setattr(tools.windows, "_done", lambda h, a: fake_window["closed"])
     assert tools.window_action("notepad", "close") == "Closed 'Notes - Notepad'."
     assert fake_window["clicks"] == [(900, 10, "X on Notes - Notepad")] and fake_window["messages"] == []
 
 
 def test_a_save_question_is_left_to_the_user(monkeypatch, fake_window):
-    monkeypatch.setattr(tools, "_nova_click", lambda *a, **k: None)
-    monkeypatch.setattr(tools, "_done", lambda h, a: False)
-    monkeypatch.setattr(tools, "_asks_to_save", lambda h, pid: True)
+    monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
+    monkeypatch.setattr(tools.windows, "_done", lambda h, a: False)
+    monkeypatch.setattr(tools.windows, "_asks_to_save", lambda h, pid: True)
     out = tools.window_action("notepad", "close")
     assert "asking whether to save" in out and fake_window["messages"] == []     # no forced close
 
 
 def test_a_click_that_missed_falls_back_to_closing_it(monkeypatch, fake_window):
-    monkeypatch.setattr(tools, "_nova_click", lambda *a, **k: None)
-    monkeypatch.setattr(tools, "_done", lambda h, a: False)
-    monkeypatch.setattr(tools, "_asks_to_save", lambda h, pid: False)
+    monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
+    monkeypatch.setattr(tools.windows, "_done", lambda h, a: False)
+    monkeypatch.setattr(tools.windows, "_asks_to_save", lambda h, pid: False)
     assert tools.window_action("notepad", "close") == "Closed 'Notes - Notepad'."
     assert fake_window["messages"] == [0x0010]                                  # WM_CLOSE
 
 
 def test_without_her_body_windows_close_the_old_way(monkeypatch, fake_window):
     monkeypatch.setattr(avatar_client, "running", lambda: False)
-    monkeypatch.setattr(tools, "_nova_click", lambda *a, **k: pytest.fail("clicked without a body"))
+    monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: pytest.fail("clicked without a body"))
     assert tools.window_action("notepad", "close") == "Closed 'Notes - Notepad'." and fake_window["messages"] == [0x0010]
 
 

@@ -4047,7 +4047,7 @@ def email_allowed():
     return bool(s.get("email_cloud")) or not cloud.parse(task_brain(s))
 
 
-tools.email_ok = email_allowed
+tools.notes.email_ok = email_allowed
 
 
 @app.get("/api/gmail")

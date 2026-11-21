@@ -121,7 +121,7 @@ def test_name_instead_of_address_leaves_to_empty(fake_desktop):
 def test_gmail_sign_in_page_puts_text_on_clipboard(fake_desktop, monkeypatch):
     clip = []
     monkeypatch.setattr(coworker, "_title", lambda h: "Gmail - Sign in - Google Accounts")
-    monkeypatch.setattr(tools, "set_clipboard", lambda t: clip.append(t))
+    monkeypatch.setattr(tools.windows, "set_clipboard", lambda t: clip.append(t))
     coworker.configure(write=writer("Subject: Hello\n\nHi there, this is the body."), on_done=None)
     job, _ = coworker.draft_email(about="say hi")
     assert wait_for(lambda: job["status"] != "working")
@@ -138,7 +138,7 @@ def test_failed_job_is_reported(fake_desktop, monkeypatch):
 
 
 def test_document_saved_without_opening_a_window(fake_desktop, monkeypatch, tmp_path):
-    monkeypatch.setattr(tools, "HOME", tmp_path)
+    monkeypatch.setattr(tools.common, "HOME", tmp_path)
     coworker.configure(write=writer("1. Milk\n2. Bread\n3. Eggs and a few more things"), on_done=None)
     job, _ = coworker.write_document(title="Shopping: list?", about="a shopping list")
     assert wait_for(lambda: job["status"] != "working")
