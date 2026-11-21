@@ -237,7 +237,7 @@ def test_read_selection_restores_the_clipboard(monkeypatch):
     clip = {"v": "my old clipboard"}
     monkeypatch.setattr(app.tools.pyperclip, "paste", lambda: clip["v"])
     monkeypatch.setattr(app.tools.pyperclip, "copy", lambda t: clip.update(v=t))
-    monkeypatch.setattr(app.tools, "_target_window", lambda w: (1, "Notepad", "notepad.exe"))
+    monkeypatch.setattr(app.tools.forms, "_target_window", lambda w: (1, "Notepad", "notepad.exe"))
     monkeypatch.setattr(app.tools._user32, "GetForegroundWindow", lambda: 1)
     monkeypatch.setattr(app.tools.keyboard, "send", lambda k: clip.update(v="the selected words"))
     assert app.tools.read_selection() == "the selected words"

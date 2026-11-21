@@ -25,7 +25,7 @@ def trusted():
 def desk(monkeypatch):
     """A pretend desktop: `desk["windows"]` front first."""
     d = {"windows": [VSCODE, CLAUDE]}
-    monkeypatch.setattr(tools, "_windows", lambda: list(d["windows"]))
+    monkeypatch.setattr(tools.windows, "_windows", lambda: list(d["windows"]))
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
     return d
 

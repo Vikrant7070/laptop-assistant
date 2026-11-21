@@ -19,9 +19,9 @@ def test_research_tools_registered_and_safe():
 
 def test_web_research_googles_in_chrome(monkeypatch):
     opened = []
-    monkeypatch.setattr(tools, "_chrome_exe", lambda: r"C:\Chrome\chrome.exe")
+    monkeypatch.setattr(tools.apps, "_chrome_exe", lambda: r"C:\Chrome\chrome.exe")
     monkeypatch.setattr(tools.subprocess, "Popen", lambda args: opened.append(args))
-    monkeypatch.setattr(tools, "_wait_for_window", lambda words, secs=8.0: None)
+    monkeypatch.setattr(tools.apps, "_wait_for_window", lambda words, secs=8.0: None)
     out = tools.web_research("fastapi websockets", site="github")
     assert opened == [[r"C:\Chrome\chrome.exe",
                        "https://www.google.com/search?q=fastapi+websockets+site%3Agithub.com"]]
@@ -30,17 +30,17 @@ def test_web_research_googles_in_chrome(monkeypatch):
 
 def test_web_research_ignores_odd_sites(monkeypatch):
     opened = []
-    monkeypatch.setattr(tools, "_chrome_exe", lambda: "chrome.exe")
+    monkeypatch.setattr(tools.apps, "_chrome_exe", lambda: "chrome.exe")
     monkeypatch.setattr(tools.subprocess, "Popen", lambda args: opened.append(args))
-    monkeypatch.setattr(tools, "_wait_for_window", lambda words, secs=8.0: None)
+    monkeypatch.setattr(tools.apps, "_wait_for_window", lambda words, secs=8.0: None)
     tools.web_research("cats", site="x & del *")
     assert opened[0][1].endswith("q=cats")
 
 
 def test_find_app_missing_asks_before_installing(monkeypatch):
-    monkeypatch.setattr(tools, "search_installable_apps", lambda q: "Name  Id\nZoom  Zoom.Zoom  6.0  winget")
-    monkeypatch.setattr(tools, "_start_menu_match", lambda n: None)
-    monkeypatch.setattr(tools, "_installed_names", lambda n: [])
+    monkeypatch.setattr(tools.system, "search_installable_apps", lambda q: "Name  Id\nZoom  Zoom.Zoom  6.0  winget")
+    monkeypatch.setattr(tools.apps, "_start_menu_match", lambda n: None)
+    monkeypatch.setattr(tools.apps, "_installed_names", lambda n: [])
     out = tools.find_app("zzz-not-an-app")
     assert "NOT installed" in out and "Zoom.Zoom" in out and "ask" in out.lower()
 
