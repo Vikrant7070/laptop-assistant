@@ -1326,8 +1326,11 @@ def final_judge(task, text, activity, model):
     results = (judge.run_checks(task["checks"], {"window": task.get("window", "")}, timeout=FINAL_CHECK_WAIT)
                if task.get("checks") else [])
     vision, seen = None, ""
-    if (judge.needs_vision(results, task.get("covers"), strict) and task["steps"] >= LOOK_FROM_STEP
-            and not task.get("looks") and tools._screen_allowed()):
+    want_look = (judge.needs_vision(results, task.get("covers"), strict) and task["steps"] >= LOOK_FROM_STEP
+                 and not task.get("looks"))
+    if want_look and not judge.vision_on():
+        task_log(f"FINAL CHECK skipped: {judge.VISION_ENV}=0")
+    elif want_look and tools._screen_allowed():
         task["looks"] = task.get("looks", 0) + 1
         try:
             seen = look_check(task, f"(all steps done; the assistant now says: {(text or '')[:150]})", "",

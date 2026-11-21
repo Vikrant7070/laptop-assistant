@@ -136,7 +136,13 @@ v1's target layout stands, with two changes:
 
 **Accept:** as v1 (no module > ~800 lines, no import cycles, suite green, manual smoke of chat + voice + tray + phone).
 
-### Step F — Vision: close-out only (was Phase 7, S, risk low)
+### Step F — Vision: close-out only (was Phase 7, S, risk low) — done 2026-11-21, in review
+
+Result: `judge.vision_on()` reads `NOVA_VISION_CHECK` on every call; `final_judge` skips its look when it is `0` and
+logs `FINAL CHECK skipped`. Audit: the four v1 shapes were already covered; five common phrasings were not and now
+are ("open up the file explorer", "switch windows to dark mode", "make windows dark", "change the theme to dark",
+"go back to light theme"). "file explorer" is checked by that title, not by `explorer`, which also matches the
+taskbar's process. `tests/test_judge.py` has a 13-row decision matrix and two switch-off tests through a real task.
 
 The Judge already makes vision advisory. What remains:
 1. `NOVA_VISION_CHECK=0|1` escape hatch around the one `look_check` in `final_judge`.
