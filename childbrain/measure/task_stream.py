@@ -19,6 +19,7 @@ The two mazes are refused: they never reached their targets alone (WP 1.1), so f
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
@@ -116,6 +117,8 @@ def task_stream(settings: dict, device: str) -> dict:
         moves[game] = learner.steps
         last_opt = learner.opt.state_dict()
         now = exam_all(brain, games, device, settings["exam_copies"])
+        print(f"[task-stream] after {game}: {learner.steps:,} moves in {clock[game]} s; exam "
+              + ", ".join(f"{g} {v:.2f}" for g, v in now.items()), file=sys.stderr, flush=True)
         checkpoints.append(f"after {game}")
         curve["steps"].append(total)
         for g in games:
