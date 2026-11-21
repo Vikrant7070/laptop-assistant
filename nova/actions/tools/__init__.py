@@ -38,6 +38,9 @@ def is_dangerous(name, args):
 
 FUNCS = {}
 
+# Tools whose results are text other people wrote: run_tool wraps them with protocol.untrusted (roadmap R2 step 4).
+UNTRUSTED = {"read_email", "check_email", "read_page", "web_research", "read_notifications"}
+
 
 def _install(spec):
     """A tool declared with @registry.tool joins the tables above (nova/actions/registry.py)."""
@@ -69,7 +72,11 @@ def run_tool(name, args):
         if len(extra) == 1 and len(missing) == 1:     # {"query": ...} for topic: the small model misnamed the one it needs
             args[missing[0]] = args.pop(extra[0])
         args = {k: v for k, v in args.items() if k in allowed}  # local models sometimes add extras
-        return str(FUNCS[name](**args))
+        out = str(FUNCS[name](**args))
+        if name in UNTRUSTED and not out.startswith(f"Error in {name}"):
+            from nova import protocol
+            out = protocol.untrusted(name, out)
+        return out
     except Exception as e:
         return f"Error in {name}: {e}"
 

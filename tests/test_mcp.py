@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from nova import protocol
 from nova.actions import mcp
 from nova.brain import cloud, toolpick
 from nova.core import app
@@ -59,10 +60,15 @@ def test_stdio_server_connects_and_lists_every_page():
     assert shout["description"] == "[fake connector] Make text loud. Second line."
 
 
+def wrapped(server, text):
+    """Connector answers reach the model marked as untrusted outside text (roadmap R2)."""
+    return protocol.untrusted(f"connector {server}", text)
+
+
 def test_calls_and_results():
     use({"fake": stdio()})
-    assert mcp.call("mcp_fake_add", {"a": 2, "b": 3}) == "5"
-    assert mcp.call("mcp_fake_shout", {"text": "hi"}) == "HI\n[image returned - I can't show it here]"
+    assert mcp.call("mcp_fake_add", {"a": 2, "b": 3}) == wrapped("fake", "5")
+    assert mcp.call("mcp_fake_shout", {"text": "hi"}) == wrapped("fake", "HI\n[image returned - I can't show it here]")
     assert mcp.call("mcp_fake_fail", {}) == "Error from the connector: nope"
     assert mcp.call("mcp_nobody_x", {}).startswith("Error in mcp_nobody_x")
     assert mcp.owns("mcp_fake_add") and not mcp.owns("open_app") and not mcp.owns("mcp_nobody_x")
@@ -79,7 +85,7 @@ def test_crashed_server_is_restarted_on_next_call():
     use({"fake": stdio()})
     out = mcp.call("mcp_fake_crash", {})
     assert out.startswith("Error in mcp_fake_crash") and "stopped" in out and "boom" in out
-    assert mcp.call("mcp_fake_add", {"a": 1, "b": 1}) == "2"                    # started again by itself
+    assert mcp.call("mcp_fake_add", {"a": 1, "b": 1}) == wrapped("fake", "2")                   # started again by itself
 
 
 def test_slow_tool_times_out(monkeypatch):
@@ -170,7 +176,7 @@ def test_http_server_with_session_and_sse():
         use({"web": {"url": web.url}})
         s = mcp.summary()["servers"][0]
         assert s["status"] == "connected", s["error"]
-        assert mcp.call("mcp_web_weather", {"city": "Pune"}) == "Sunny in Pune"
+        assert mcp.call("mcp_web_weather", {"city": "Pune"}) == wrapped("web", "Sunny in Pune")
         assert "notifications/initialized" in [m for m, _ in web.seen]
     finally:
         web.server.shutdown()

@@ -496,7 +496,9 @@ def call(name, args):
     if not s:
         return f"Error in {name}: that connector isn't connected any more."
     try:
-        return s.call(name, args if isinstance(args, dict) else {})
+        from nova import protocol
+        out = s.call(name, args if isinstance(args, dict) else {})
+        return out if str(out).startswith("Error") else protocol.untrusted(f"connector {s.name}", out)
     except MCPError as e:
         return f"Error in {name}: {e}"
     except Exception as e:
