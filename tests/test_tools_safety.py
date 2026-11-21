@@ -122,7 +122,7 @@ def test_kill_process_never_kills_nova(monkeypatch):
 
 def test_set_autostart_quotes_paths(ps, monkeypatch, tmp_path):
     from nova.core import app
-    monkeypatch.setattr(app, "STARTUP_LNK", tmp_path / "O'Brien" / "Nova.lnk")
+    monkeypatch.setattr(app.host, "STARTUP_LNK", tmp_path / "O'Brien" / "Nova.lnk")
     app.set_autostart(True)
     assert "O''Brien" in ps[-1]
 

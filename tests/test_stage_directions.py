@@ -32,7 +32,7 @@ def test_stage_direction_names_the_move(text, move):
 
 def test_stream_waits_for_a_stage_direction_to_close(monkeypatch):
     said = []
-    monkeypatch.setattr(app, "speak", lambda s: said.append(s))
+    monkeypatch.setattr(app.voice_io, "speak", lambda s: said.append(s))
     st = app.SpeechStream()
     for piece in ["Sure! ", "*(Nap in the corner. ", "No more dancing.)*", "\nBye now. ", "Done"]:
         st.feed(piece)
@@ -43,7 +43,7 @@ def test_stream_waits_for_a_stage_direction_to_close(monkeypatch):
 
 def test_written_reaction_is_played_and_hidden(monkeypatch):
     played = []
-    monkeypatch.setattr(app, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
+    monkeypatch.setattr(app.body, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
     app.state.pop("react_after", None)
     app.after_turn("tell me a joke", {"reply": 'Why did the laptop... ha! [react: "laugh"]', "activity": []})
     assert played == ["laugh"]

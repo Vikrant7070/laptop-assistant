@@ -8,7 +8,7 @@ from nova.actions import registry, tools
 from nova.brain import retrieval, toolpick
 from nova.core import app
 
-TABLES = ((tools, ("TOOLS", "FUNCS", "RISKY", "DANGEROUS")), (app, ("FRIENDLY", "ASK")),
+TABLES = ((tools, ("TOOLS", "FUNCS", "RISKY", "DANGEROUS")), (app.home_of("FRIENDLY"), ("FRIENDLY", "ASK")),
           (toolpick, ("CORE", "GROUPS", "HINTS")))
 
 

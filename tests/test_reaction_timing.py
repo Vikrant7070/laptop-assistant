@@ -7,7 +7,7 @@ def test_react_tool_is_saved_for_after_the_answer(monkeypatch):
     sent, played = [], []
     monkeypatch.setattr(app.avatar_client, "running", lambda: True)
     monkeypatch.setattr(app.avatar_client, "send", lambda *a, **k: sent.append((a, k)))
-    monkeypatch.setattr(app, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append((name, repeat)))
+    monkeypatch.setattr(app.body, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append((name, repeat)))
     activity = []
     out = app._execute_one({"name": "react", "args": {"reaction": "laughing"}}, True, activity, "m")
     assert "after you finish speaking" in out
@@ -20,7 +20,7 @@ def test_react_tool_is_saved_for_after_the_answer(monkeypatch):
 
 def test_automatic_reaction_when_brain_picked_none(monkeypatch):
     played = []
-    monkeypatch.setattr(app, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
+    monkeypatch.setattr(app.body, "react_later", lambda name, wait_for_speech=True, repeat=None: played.append(name))
     app.state.pop("react_after", None)
     app.after_turn("thank you so much", {"reply": "Anytime!", "activity": []})
     assert played == ["bow"]

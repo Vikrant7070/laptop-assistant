@@ -267,7 +267,7 @@ def test_settings_switch_pairing_and_removal(client, monkeypatch):
     started = []
     monkeypatch.setattr(app.mobile, "start", lambda: started.append("start"))
     monkeypatch.setattr(app.mobile, "stop", lambda: started.append("stop"))
-    monkeypatch.setattr(app, "tailscale_url", lambda: "https://laptop.tail1234.ts.net")
+    monkeypatch.setattr(app.integrations, "tailscale_url", lambda: "https://laptop.tail1234.ts.net")
     r = client.post("/api/mobile", json={"new_code": True})
     assert r.status_code == 400                                            # not switched on yet
     j = client.post("/api/mobile", json={"on": True}).get_json()

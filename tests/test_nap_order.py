@@ -16,7 +16,7 @@ def test_goodnight_before_lying_down(monkeypatch):
     talking = {"v": True}
     monkeypatch.setattr(app.mouth, "talking", lambda: talking["v"])
     s = {**app.settings(), "voice": True}
-    monkeypatch.setattr(app, "settings", lambda: s)
+    monkeypatch.setattr(app.config, "settings", lambda: s)
     app.go_to_sleep("asked")
     assert app.nap["asleep"]                      # asleep at once as far as the app is concerned...
     time.sleep(0.3)
@@ -34,7 +34,7 @@ def test_woken_during_goodnight_stays_up(monkeypatch):
     talking = {"v": True}
     monkeypatch.setattr(app.mouth, "talking", lambda: talking["v"])
     s = {**app.settings(), "voice": True}
-    monkeypatch.setattr(app, "settings", lambda: s)
+    monkeypatch.setattr(app.config, "settings", lambda: s)
     app.go_to_sleep("asked")
     app.wake_body()
     talking["v"] = False

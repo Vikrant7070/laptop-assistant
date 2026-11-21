@@ -106,7 +106,7 @@ def screen(monkeypatch):
     sent = []
     monkeypatch.setattr(tools.eyes, "_screen_allowed", lambda: True)
     monkeypatch.setattr(tools.eyes, "_grab_screen_jpeg", lambda *a, **k: "IMG")
-    monkeypatch.setattr(app, "_front_title", lambda: "report.docx - Word")
+    monkeypatch.setattr(app.background, "_front_title", lambda: "report.docx - Word")
     monkeypatch.setattr(app.avatar_client, "send", lambda do, timeout=20, **a: sent.append((do, a)))
     app.suggest_state.update(last=0.0, title="", running=False)
     return sent

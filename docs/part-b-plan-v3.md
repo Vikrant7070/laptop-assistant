@@ -138,7 +138,15 @@ Same as v1 Phase 2, plus:
 
 **Accept:** adding a tool = one decorated function; no module in `actions/tools/` over ~800 lines; suite green.
 
-### Step E — Split `app.py` (Phase 3, L, risk high)
+### Step E — Split `app.py` (Phase 3, L, risk high) — done 2026-11-21
+
+Result: `nova/core/app/` with 13 modules by job + `__init__` + `__main__` (largest ~800 lines), generated from the
+file's own sections; same method as the tools package (names across modules as `module.name`, read at call time;
+`app.<name>` answered from the home module). Imports are split: a module imports at the top only what it needs while
+it loads (decorators, module code - a cycle-free order), the rest at the bottom. `desktop.py`'s two hooks and the
+tests' patches target home modules; `tests/test_app_package.py` guards it. Done in one PR, not one per module: Phase 4
+was paused for it, so a fast single change beat a week of intermediate states. The `Session` class was not done.
+Below is the original plan, kept for the record.
 
 v1's target layout stands, with two changes:
 - Add **`nova/core/judge_loop.py`** (or fold into `conversation.py`): `check_step`, `final_judge`, `look_check`,
@@ -163,7 +171,7 @@ The Judge already makes vision advisory. What remains:
    any gap.
 3. Decision-matrix unit test for `final_judge` if `test_judge.py` doesn't already have one.
 
-### Step G — Finish Phase 9 (S)
+### Step G — Finish Phase 9 (S) — done 2026-11-21, with E
 
 After E: rewrite `docs/ARCHITECTURE.md` module map for the new layout, "where to change what" table in README,
 Part B section in `docs/REVIEW.md` final version.

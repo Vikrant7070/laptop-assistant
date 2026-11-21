@@ -132,7 +132,7 @@ def test_clicks_and_pokes_get_her_own_reaction():
 
 
 def test_renderer_gets_her_faces_and_size(client, monkeypatch):
-    monkeypatch.setattr(app, "settings", lambda: {"character": "makima"})
+    monkeypatch.setattr(app.config, "settings", lambda: {"character": "makima"})
     j = client.get("/api/model").get_json()
     assert j["style"]["size"] == body.character_style("makima")["size"]
     assert j["style"]["faces"]["happy"]["relaxed"] > 0.5
@@ -177,7 +177,7 @@ def test_music_plays_her_own_dance_on_the_beat():
 
 
 def test_renderer_gets_her_walk(client, monkeypatch):
-    monkeypatch.setattr(app, "settings", lambda: {"character": "lucy"})
+    monkeypatch.setattr(app.config, "settings", lambda: {"character": "lucy"})
     assert client.get("/api/model").get_json()["style"]["walk"]["sway"] == body.character_style("lucy")["walk"]["sway"]
     page = (characters.ROOT.parent / "static" / "nova3d.html").read_text(encoding="utf-8")
     for bit in ('set(side + "Hand"', "STYLE.walk", '"behind"', "_wrist_side", "_elbow_side"):
@@ -191,9 +191,9 @@ def test_she_never_greets_the_user_with_her_own_name(monkeypatch):
     assert app.no_self_greeting("Good morning Makima.", "Makima") == "Good morning."
     for fine in ("Lucy here - what's up?", "Hey Vikrant! Done.", "I'm Lucy, hi!", "Hey! Lucy is ready."):
         assert app.no_self_greeting(fine, "Lucy") == fine
-    monkeypatch.setattr(app, "settings", lambda: {"character": "lucy"})
+    monkeypatch.setattr(app.config, "settings", lambda: {"character": "lucy"})
     said = []
-    monkeypatch.setattr(app, "speak", said.append)
+    monkeypatch.setattr(app.voice_io, "speak", said.append)
     s = app.SpeechStream()
     for piece in ("Hey ", "Lu", "cy! What", "'s your vibe tonight? ", "A cozy read?"):
         s.feed(piece)

@@ -256,5 +256,5 @@ def test_app_expects_a_reply_only_after_a_question(brain, monkeypatch):
 
 def test_app_wires_the_hook_into_whisper():
     from nova.core import app
-    src = open(app.__file__, encoding="utf-8").read()
+    src = open(app.home_of("expecting_reply").__file__, encoding="utf-8").read()   # app is a package: voice_io.py
     assert "whisper.expect_reply = lambda: expecting_reply()" in src
