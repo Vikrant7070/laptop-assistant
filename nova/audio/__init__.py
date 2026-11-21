@@ -1,1 +1,1 @@
-"""Voice and sound: speaking and listening (voice.py) and reaction sound effects (sfx.py)."""
+"""Voice and sound: speaking and listening (the voice/ package) and reaction sound effects (sfx.py)."""

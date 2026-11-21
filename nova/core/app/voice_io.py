@@ -25,7 +25,7 @@ mouth = voice.Mouth()
 def use_character_voice_and_name(ch):
     """Her character's voice, and the name she answers to ("Hey Lucy" wakes Lucy, not "Hey Nova")."""
     global JUST_STOP_RE
-    voice.NEURAL_VOICE = ch["voice"]
+    voice.speak.NEURAL_VOICE = ch["voice"]        # its home module: speak.py reads it when she talks
     voice.set_wake(characters.wake_names(ch), ch["wake"]["hint"], ch["name"])
     JUST_STOP_RE = just_stop_re(voice.NOVA_NAMES)
 
