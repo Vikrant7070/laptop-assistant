@@ -254,7 +254,7 @@ class _Stdio:
                 self.proc.stdin.close()
                 self.proc.wait(3)
             except Exception:
-                pass
+                pass  # intentional: the connector may already be gone
             if self.proc.poll() is None:
                 self.proc.kill()
 

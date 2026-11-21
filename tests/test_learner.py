@@ -2,7 +2,7 @@
 import json
 import time
 
-from nova.actions import coworker, learner, questions, skills, tools
+from nova.actions import coworker, learner, questions, skills
 from nova.core import app
 
 

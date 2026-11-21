@@ -314,7 +314,7 @@ class Mobile:
                 srv.shutdown()
                 srv.server_close()
             except Exception:
-                pass
+                pass  # intentional: shutdown is best effort
 
     def running(self):
         return bool(self.server)

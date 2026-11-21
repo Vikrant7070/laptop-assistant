@@ -31,7 +31,7 @@ A big cloud model understands multi-step tasks much better than the small local 
 - Cloud use is billed by the provider. Gemini's free tier is enough for light use.
 
 ## Start Nova
-Double-click **`Start Nova.bat`**. 3D Nova appears on your desktop and a tray icon shows up; the chat window starts hidden, so press **Ctrl+Alt+N** (or click her or the tray icon) to open it. `pythonw desktop.py --show` opens the chat window straight away. The first time, pick your model in **⚙ Model**.
+Double-click **`Start Nova.bat`**. 3D Nova appears on your desktop and a tray icon shows up; the chat window starts hidden, so press **Ctrl+Alt+N** (or click her or the tray icon) to open it. `pythonw desktop.py --show` opens the chat window straight away; `python -m nova` does the same from a terminal, and `python -m nova --version` prints the version. The first time, pick your model in **⚙ Model**.
 
 | Action | How |
 |---|---|
@@ -213,6 +213,18 @@ The code lives in the `nova/` package; `desktop.py` in the project folder is onl
 - `nova/shared.py` holds the project and data folder paths and small helpers used everywhere.
 - `static/index.html` is the chat window. `data/` stores notes, memories and settings.
 
+Where to change what:
+
+| I want to change... | Start here |
+|---|---|
+| What Nova can do | `nova/actions/tools.py` (schema + code), then a case in `tests/routing.jsonl` |
+| How a request is understood | `nova/brain/router.py` (model choice), `nova/brain/toolpick.py` (tools), `nova/actions/skills.py` (routines) |
+| The conversation loop or an API route | `nova/core/app.py`; the module map is in `docs/ARCHITECTURE.md` |
+| The words in the prompt | `PERSONA` / `system_prompt` in `nova/core/app.py`; markers in `nova/protocol.py` |
+| Voice, listening or the wake word | `nova/audio/voice.py` |
+| The chat window | `static/index.html` |
+| The 3D character | `nova/avatar/avatar.py`, `nova/avatar/body.py`, `static/nova3d.html` |
+
 Clicking uses Windows UI Automation to find buttons by name. It works with most apps, including Settings, Notepad, Office, Explorer and browsers. Games and some custom apps don't expose their buttons this way.
 
 ## Safety notes
@@ -228,6 +240,6 @@ Clicking uses Windows UI Automation to find buttons by name. It works with most 
 pip install -r requirements-dev.txt
 python -m pytest -q
 ```
-The tests never touch your real `data/` folder, keyboard, browser, voice or 3D Nova. `docs/REVIEW.md` has the
+or run the whole gate (lint + tests) with `scripts\check.cmd`. The tests never touch your real `data/` folder, keyboard, browser, voice or 3D Nova. `tests/routing.jsonl` pins what a sentence should turn into (tool, route, skill); `docs/ARCHITECTURE.md` explains the module map and the rules the tests protect. `docs/REVIEW.md` has the
 review, the full test plan (including the manual checks) and what was fixed.
 

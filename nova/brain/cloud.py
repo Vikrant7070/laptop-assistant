@@ -91,7 +91,7 @@ def get_key(provider):
         try:
             return _dpapi(base64.b64decode(enc), False).decode()
         except Exception:
-            pass
+            pass  # intentional: a key that will not decrypt is treated as missing
     for var in PROVIDERS.get(provider, {}).get("env", ()):
         if os.environ.get(var):
             return os.environ[var].strip()

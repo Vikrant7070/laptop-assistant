@@ -13,6 +13,7 @@ import json
 import threading
 import time
 
+from nova.log import log_exception
 from nova.shared import DATA
 
 FILE = DATA / "questions.json"
@@ -31,7 +32,10 @@ def load():
     with _lock:
         try:
             d = json.loads(FILE.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            d = _blank()
         except Exception:
+            log_exception("questions read")     # a broken questions file starts blank; the log says it happened
             d = _blank()
         for k, v in _blank().items():
             d.setdefault(k, v)
