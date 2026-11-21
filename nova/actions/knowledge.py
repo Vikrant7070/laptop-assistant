@@ -52,7 +52,7 @@ def load():
             try:   # carry over facts from the earlier memory file
                 k["profile"]["facts"] = [str(x) for x in json.loads(OLD_MEMORY.read_text(encoding="utf-8"))][:MAX_LIST]
             except Exception:
-                pass
+                pass  # intentional: the old memory file is optional
         base = _blank()
         for key, val in base["profile"].items():
             k.setdefault("profile", {}).setdefault(key, val)

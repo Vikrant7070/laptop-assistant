@@ -26,7 +26,7 @@ try:  # real pixel coordinates, so clicks land where UI Automation says
     import ctypes as _c
     _c.windll.shcore.SetProcessDpiAwareness(2)
 except Exception:
-    pass
+    pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
 
 HOME = Path.home()
 DATA.mkdir(parents=True, exist_ok=True)
@@ -512,7 +512,7 @@ def page_text(hwnd, limit=10000):
                     try:
                         n = ctrl.GetValuePattern().Value.strip() or n
                     except Exception:
-                        pass
+                        pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
                 if not n or n in seen:
                     continue
                 seen.add(n)
@@ -715,7 +715,7 @@ def clean_temp_files():
             shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
             freed += size
         except Exception:
-            pass
+            pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
     return f"Cleaned temporary files and freed about {_fmt_bytes(freed)}. Files in use were skipped."
 
 
@@ -919,7 +919,7 @@ def _caption_button(hwnd, which):
                 if r.right > r.left and r.top - top < 90:
                     return (r.left + r.right) // 2, (r.top + r.bottom) // 2
     except Exception:
-        pass
+        pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
     scale = (_user32.GetDpiForWindow(hwnd) or 96) / 96
     return int(right - CAPTION_SLOT[which] * 46 * scale), int(top + 16 * scale)
 
@@ -1491,7 +1491,7 @@ def help_login(window="", wait_secs=150):
     try:
         target["ctrl"].SetFocus()       # the box is ready at once, before she has walked over
     except Exception:
-        pass
+        pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
     _nova_click(x, y, label="Login")
     time.sleep(0.4)
     if avatar_client.running():
@@ -1535,7 +1535,7 @@ def wait_for_code(window="", wait_secs=180):
     try:
         first["ctrl"].SetFocus()        # the cursor is in the box at once - the user may type before she walks over
     except Exception:
-        pass
+        pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
     _nova_click(x, y, label="Code box")
     if avatar_client.running():
         avatar_client.send("say", text="Type the code from your phone here 🔢 - I'll wait.", secs=8)

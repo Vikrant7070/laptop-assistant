@@ -82,7 +82,7 @@ def _note(text):
         try:
             _hooks["on_note"](text)
         except Exception:
-            pass
+            pass  # intentional: window/focus is best effort; the job continues
     checkpoint()                                          # every step she notes is a place a stopped job ends
 
 
@@ -311,7 +311,7 @@ def _watcher():
             try:
                 user_took(hwnd)
             except Exception:
-                pass
+                pass  # intentional: window/focus is best effort; the job continues
 
 
 def _bring_on_screen(hwnd):
@@ -328,7 +328,7 @@ def _bring_on_screen(hwnd):
     try:
         tools._focus(hwnd)
     except Exception:
-        pass
+        pass  # intentional: window/focus is best effort; the job continues
 
 
 def user_took(hwnd):
@@ -352,7 +352,7 @@ def user_took(hwnd):
     try:
         _bring_on_screen(hwnd)
     except Exception:
-        pass
+        pass  # intentional: window/focus is best effort; the job continues
     _note("🪟 You pulled my window up - it's yours now, I'll leave it open.")
     return True
 
@@ -370,7 +370,7 @@ def keep_hidden(hwnd, front=None):
         try:
             tools._focus(front)          # give the user their window back
         except Exception:
-            pass
+            pass  # intentional: window/focus is best effort; the job continues
 
 
 def _title(hwnd):
@@ -534,7 +534,7 @@ def park(hwnd, front=None):
         try:
             tools._focus(front)
         except Exception:
-            pass
+            pass  # intentional: window/focus is best effort; the job continues
 
 
 def close_window(hwnd):

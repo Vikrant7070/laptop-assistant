@@ -68,6 +68,7 @@ the same approval rules as a direct tool call.
 | `nova/actions/checks.py` | ~0.15k | Step checks (`window_open`, `page_has`, ...) |
 | `nova/shared.py` | ~0.13k | Paths (`ROOT`, `DATA`), PowerShell quoting, host checks |
 | `nova/protocol.py` | ~0.09k | Every text marker: builders, `strip_meta`, vision verdict parsing |
+| `nova/log.py` | ~0.06k | Rate-limited exception breadcrumbs in `data/task_log.txt` |
 | `nova/brain/retrieval.py` | ~0.13k | Embeddings, with a shared-word fallback |
 | `nova/core/characters.py` | ~0.1k | Character folders / personas |
 | `nova/avatar/joint_check.py` | ~0.09k | 3D joint sanity check |
@@ -95,6 +96,9 @@ user's routines, `config/model_routing.json` the routing knobs, `characters/` th
 - **History is sized to the model.** `llm.context_size` knows the local 8K window and the cloud
   providers' windows; `app.history_limit` keeps local at 12 messages and gives a cloud brain more
   (bounded, because a long prompt costs money and time).
+- **Failure is visible.** A handler that swallows an exception either calls `log.log_exception(where)`
+  (rate-limited per place) or carries `# intentional: <why>`; `tests/test_no_silent_failures.py`
+  fails on anything else.
 
 ## Adding things
 
