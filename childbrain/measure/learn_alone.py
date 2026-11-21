@@ -20,7 +20,7 @@ import torch
 
 from ..brain.net import build, weights_to_json
 from ..learn.ppo import Learner, Settings, by_chance, greedy
-from ..runcard import experiment, report_progress, stop_requested
+from ..runcard import experiment, paused_seconds, report_progress, stop_requested
 from ..worlds import PRACTICE, make, play_once, random_actions
 
 # game -> (target, random floor from WP 0.4, best possible or expert)
@@ -105,7 +105,7 @@ def learn_alone(settings: dict, device: str) -> dict:
         p = learner.progress
         report_progress(phase=phase, game=game, target=target, random_floor=TARGETS[game][1],
                         steps=learner.steps, max_steps=rounds * settings["horizon"] * settings["copies"],
-                        round=len(p.steps), rounds=rounds, seconds=round(time.perf_counter() - start, 1),
+                        round=len(p.steps), rounds=rounds, seconds=round(time.perf_counter() - start - paused_seconds(), 1),
                         checks_steps=checks["steps"], checks_score=checks["score"], reached_at=reached_at,
                         practice_steps=p.steps[-400:], practice_score=p.score[-400:])
 
@@ -125,7 +125,7 @@ def learn_alone(settings: dict, device: str) -> dict:
         stopped = stop_requested()
         if stopped:
             break
-    seconds = time.perf_counter() - start
+    seconds = time.perf_counter() - start - paused_seconds()   # time spent waiting for Nova isn't practice
     live("final exam")
 
     exam = score(brain, game, device, 1024, "test", "greedy")
