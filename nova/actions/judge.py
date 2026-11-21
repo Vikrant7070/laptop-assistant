@@ -11,7 +11,10 @@ Checks come from two places: code for the common goal shapes (goal_checks), and 
 proposes from the checks.py list (parse_proposed). Those are validated like skill `expect:` lines: invalid ones are
 dropped, never fixed.
 """
+import os
 import re
+
+VISION_ENV = "NOVA_VISION_CHECK"
 
 # "please", "hey nova, can you…": words that carry no goal.
 _LEAD = re.compile(r"^(?:(?:hey|hi|ok|okay)\s+)?(?:nova|makima|lucy)?[\s,]*(?:please\s+)?"
@@ -19,12 +22,17 @@ _LEAD = re.compile(r"^(?:(?:hey|hi|ok|okay)\s+)?(?:nova|makima|lucy)?[\s,]*(?:pl
 _SPLIT = re.compile(r"\s*(?:,|;|\band then\b|\bthen\b|\band\b)\s*", re.I)
 _OPEN = re.compile(r"^(?:open(?:\s+up)?|launch|start|run|bring up|go to|visit|navigate to)\s+(.+)$", re.I)
 _DOMAIN = re.compile(r"\b([a-z0-9-]+)\.(?:com|org|net|in|io|dev|ai|co|app|gov|edu|me|tv)\b", re.I)
+# "switch windows to dark mode", "make windows dark": the thing being changed is Windows or its theme. "make it
+# darker" is brightness, not the colour mode, so "dark" must end there (\b) and "it" is not one of the things.
+_THEME_TO = r"\b(?:(?:switch|change|set|turn)\s+(?:windows|the\s+theme|everything)\s+to|make\s+(?:windows|the\s+theme|everything))\s+"
 _DARK_ON = re.compile(r"\b(?:(?:turn|switch|put)\s+on|enable|switch\s+to|use|go)\s+(?:the\s+)?dark\s*(?:mode|theme)\b"
-                      r"|\bdark\s*(?:mode|theme)\s+on\b", re.I)
+                      r"|\bdark\s*(?:mode|theme)\s+on\b"
+                      r"|" + _THEME_TO + r"dark\b", re.I)
 _DARK_OFF = re.compile(r"\b(?:(?:turn|switch|put)\s+off|disable)\s+(?:the\s+)?dark\s*(?:mode|theme)\b"
                        r"|\bdark\s*(?:mode|theme)\s+off\b"
-                       r"|\b(?:(?:turn|switch|put)\s+on|enable|switch\s+to|use|go)\s+(?:the\s+)?light\s*(?:mode|theme)\b",
-                       re.I)
+                       r"|\b(?:(?:turn|switch|put)\s+on|enable|switch\s+to|use|go)\s+(?:the\s+)?light\s*(?:mode|theme)\b"
+                       r"|\b(?:go\s+)?back\s+to\s+(?:the\s+)?light\s*(?:mode|theme)\b"
+                       r"|" + _THEME_TO + r"light\b", re.I)
 _FULL = re.compile(r"\b(?:in\s+)?full\s?-?screen\b", re.I)
 _FILLER = {"my", "the", "a", "an", "app", "application", "program", "folder", "website", "site", "page", "window",
            "for", "me", "please", "now", "up"}
@@ -43,6 +51,10 @@ def _target(words):
     """'my downloads folder' -> 'downloads'; '' when what's left is too vague to check by window title."""
     if _DOMAIN.search(words):
         return _DOMAIN.search(words).group(1).lower()
+    if re.search(r"\bfile\s+explorer\b", words, re.I):
+        # "file" alone is too vague, this isn't. Windows 11 titles these windows "Downloads - File Explorer"; the bare
+        # word "explorer" would also match every titled window of explorer.exe, which runs the taskbar.
+        return "file explorer"
     left = [w for w in re.findall(r"[\w'+.-]+", words.lower()) if w not in _FILLER]
     if not left or len(left) > 3 or any(w in _VAGUE for w in left):
         return ""
@@ -133,6 +145,12 @@ def run_checks(checks_list, ctx=None, timeout=5.0, evaluate=None):
         ok, seen = evaluate(c, ctx or {}, timeout=timeout)
         out.append({"check": c["check"], "arg": c.get("arg", ""), "ok": bool(ok), "seen": seen})
     return out
+
+
+def vision_on():
+    """NOVA_VISION_CHECK=0 turns the Judge's screen look off, for A/B runs (do tasks finish as well without it?).
+    Read on every call, so it can be flipped without restarting. Anything else, or unset, leaves it on."""
+    return os.environ.get(VISION_ENV, "1").strip() != "0"
 
 
 def needs_vision(results, covers, strict=True):
