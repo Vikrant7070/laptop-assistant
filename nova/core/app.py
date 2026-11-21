@@ -1543,7 +1543,7 @@ def not_open_note(text):
         if name and not tools._app_window(name):
             return f". {name} is not open: call open_app(name='{name}') first"
     except Exception:
-        pass
+        log_exception("not-open note")      # the hint is optional; the request still goes ahead without it
     return ""
 
 

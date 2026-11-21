@@ -22,6 +22,7 @@ import threading
 import time
 import urllib.parse
 
+from nova.log import log_exception
 from nova.shared import DATA
 
 EPISODES = DATA / "episodes.jsonl"
@@ -97,13 +98,16 @@ def load(now=None):
     with _lock:
         try:
             lines = EPISODES.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return []
         except Exception:
+            log_exception("learner episodes read")
             return []
     for line in lines:
         try:
             ep = json.loads(line)
         except Exception:
-            continue
+            continue        # intentional: one torn line (a crash mid-write) must not hide the other episodes
         if isinstance(ep, dict) and now - float(ep.get("ts", 0)) <= KEEP_DAYS * 86400:
             out.append(ep)
     return out
@@ -178,7 +182,10 @@ def load_facts():
     with _lock:
         try:
             d = json.loads(FACTS.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            d = {}
         except Exception:
+            log_exception("learner facts read")     # a broken facts.json starts empty; the log says it happened
             d = {}
     d.setdefault("version", 1)
     d.setdefault("facts", [])
