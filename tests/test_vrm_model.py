@@ -18,7 +18,8 @@ def test_another_character_can_be_asked_for(client, monkeypatch):
 
 def test_model_file_is_served_from_her_folder(client):
     r = client.get("/characters/lucy/model.vrm")
-    assert r.status_code == 200 and r.data[:4] == b"glTF"
+    # The file itself on a laptop; a Git LFS pointer in CI, which checks out without LFS (roadmap R3).
+    assert r.status_code == 200 and (r.data[:4] == b"glTF" or r.data.startswith(b"version https://git-lfs"))
     assert client.get("/characters/nobody/model.vrm").status_code == 404
 
 
@@ -38,3 +39,15 @@ def test_new_export_gets_a_new_url(client, monkeypatch, tmp_path):
     before = client.get("/api/model").get_json()["vrm"]
     os.utime(f, ns=(f.stat().st_mtime_ns + 10**9,) * 2)
     assert client.get("/api/model").get_json()["vrm"] != before
+
+
+def test_joint_check_fingerprint_is_the_same_for_a_model_and_its_lfs_pointer(tmp_path):
+    """CI checks out the models as Git LFS pointers; the joint report made on the laptop must still count as current."""
+    import hashlib
+    from nova.avatar import joint_check
+    real = tmp_path / "real.vrm"
+    real.write_bytes(b"glTF" + bytes(range(256)) * 10)
+    sha = hashlib.sha256(real.read_bytes()).hexdigest()
+    pointer = tmp_path / "pointer.vrm"
+    pointer.write_text(f"version https://git-lfs.github.com/spec/v1\noid sha256:{sha}\nsize {real.stat().st_size}\n")
+    assert joint_check.model_id(real) == joint_check.model_id(pointer) == sha

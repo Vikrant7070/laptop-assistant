@@ -1,3 +1,5 @@
+Status: active — 2026-11-21, Phase 0 and WP 1.1 done; WP 1.2 next (child brain sessions).
+
 # Child brain — full development plan
 
 Status: **building** — **Phase 0 done** 2026-11-20 (WP 0.1–0.7; write-up in reports/childbrain/phase0.md). **WP 1.1 done** 2026-11-21 (7 of 9 games; mazes left for Phase 2). Next: WP 1.2.
@@ -338,7 +340,7 @@ end of each phase.
 - **Tests:** `childbrain/tests/test_timing.py`. The three-run test skips itself (with the reason) when the GPU
   isn't quiet, so the suite doesn't fail just because Nova is running.
 
-Phase 0 write-up: [reports/childbrain/phase0.md](../reports/childbrain/phase0.md).
+Phase 0 write-up: [reports/childbrain/phase0.md](../../reports/childbrain/phase0.md).
 
 ### Phase 1 — Show the problem (≈ 1 week)
 
