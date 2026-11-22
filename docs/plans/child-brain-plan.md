@@ -3,7 +3,7 @@ Status: active — 2026-11-21, the research idea; the build follows child-brain-
 # Child brain — research plan
 
 Status: **plan only, no code yet** (2026-11-20). A separate research track from Nova's manager plan
-([nova-manager-plan.md](../nova-manager-plan.md), section 9b).
+([nova-manager-plan.md](nova-manager-plan.md), section 9b).
 The step-by-step build plan is in [child-brain-dev-plan.md](child-brain-dev-plan.md).
 
 ## 1. The idea, in four steps

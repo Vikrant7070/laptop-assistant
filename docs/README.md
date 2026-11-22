@@ -20,12 +20,12 @@ changes.
 | [child-brain-plan.md](plans/child-brain-plan.md) | active: the research idea |
 | [child-brain-dev-plan.md](plans/child-brain-dev-plan.md) | active: Phase 0 and WP 1.1 done |
 | [device-network-plan.md](plans/device-network-plan.md) | active: phases 1–3 built |
+| [nova-manager-plan.md](plans/nova-manager-plan.md) | active: phases 1–3 and Phase 4 step 0 built; the manager loop waits for the go-ahead |
 | [nova-upgrade-plan.md](plans/nova-upgrade-plan.md) | active: B1 done, Part A not started |
 | [heard-bubble-latency-plan.md](plans/heard-bubble-latency-plan.md) | done |
 | [mic-sensitivity-plan.md](plans/mic-sensitivity-plan.md) | done |
 | [part-b-plan-v3.md](plans/part-b-plan-v3.md) | done (PRs #8–#18) |
 | [skills-v2-plan.md](plans/skills-v2-plan.md) | done (phase 10 dropped) |
-| [nova-manager-plan.md](nova-manager-plan.md) | active: Phase 4 under way. **Still in `docs/`**: the Phase 4 branch is editing it. It moves to `plans/` (with its status line) when Phase 4 merges. |
 
 The improvement roadmap (`improvement-roadmap.md`), the project review and the file-split plan stay in `docs/` while
 the roadmap is being worked through.
