@@ -7,9 +7,9 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-import ctypes
 from ctypes import wintypes
 
+from nova import platform
 from nova import runtime
 from nova import store
 from nova.actions.registry import tool
@@ -114,8 +114,8 @@ def run_in_terminal(command, folder="", show=False):
         return "Error in run_in_terminal: the terminal window didn't open."
     hwnd = w[0]
     if show:                                      # only when the user asks to watch it
-        if windows._user32.IsIconic(hwnd):
-            windows._user32.ShowWindow(hwnd, 9)
+        if platform.current().is_minimized(hwnd):
+            platform.current().show(hwnd, 9)
         windows._focus(hwnd)
     job = f"{int(time.time() * 1000)}"
     out, done = store.current().terminal / f"out_{job}.txt", store.current().terminal / f"done_{job}.txt"
@@ -153,11 +153,10 @@ def drag_window(window="", to="center"):
     if not w:
         return f"No open window matches '{window}'."
     hwnd, title, _ = w
-    if windows._user32.IsIconic(hwnd) or windows._user32.IsZoomed(hwnd):
-        windows._user32.ShowWindow(hwnd, 9)             # a maximized or minimized window can't be moved: restore it first
+    if platform.current().is_minimized(hwnd) or platform.current().is_maximized(hwnd):
+        platform.current().show(hwnd, 9)                # a maximized or minimized window can't be moved: restore it first
         time.sleep(0.4)
-    r = wintypes.RECT()
-    windows._user32.GetWindowRect(hwnd, ctypes.byref(r))
+    r = wintypes.RECT(*platform.current().window_rect(hwnd))
     area = wintypes.RECT(*work_area())
     ww, wh = r.right - r.left, r.bottom - r.top
     aw, ah = area.right - area.left, area.bottom - area.top
@@ -176,7 +175,7 @@ def drag_window(window="", to="center"):
         return f"'{title[:60]}' is already at the {spot}."
 
     def place(k):                               # k = 0 (where it was) .. 1 (where it is going)
-        windows._user32.SetWindowPos(hwnd, 0, int(ox + (nx - ox) * k), int(oy + (ny - oy) * k), 0, 0, 0x0001 | 0x0004 | 0x0010)
+        platform.current().move(hwnd, int(ox + (nx - ox) * k), int(oy + (ny - oy) * k), 0, 0, 0x0001 | 0x0004 | 0x0010)
 
     windows._focus(hwnd)
     start = _avatar_pos() if avatar_client.running() else None

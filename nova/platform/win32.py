@@ -41,6 +41,12 @@ class _MemStatus(ctypes.Structure):
                 ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
 
 
+class _WINDOWPLACEMENT(ctypes.Structure):
+    _fields_ = [("length", ctypes.c_uint), ("flags", ctypes.c_uint), ("showCmd", ctypes.c_uint),
+                ("ptMinPosition", ctypes.c_long * 2), ("ptMaxPosition", ctypes.c_long * 2),
+                ("rcNormalPosition", ctypes.c_long * 4)]
+
+
 class _Blob(ctypes.Structure):
     _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
 
@@ -204,6 +210,116 @@ class Win32Desktop:
             return True
         except Exception:
             return False
+
+    # -- one window's state and actions (step 5)
+    def is_window(self, hwnd):
+        return bool(hwnd) and bool(user32.IsWindow(hwnd))
+
+    def is_visible(self, hwnd):
+        return bool(user32.IsWindowVisible(hwnd))
+
+    def is_minimized(self, hwnd):
+        return bool(user32.IsIconic(hwnd))
+
+    def is_maximized(self, hwnd):
+        return bool(user32.IsZoomed(hwnd))
+
+    def is_hung(self, hwnd):
+        return bool(user32.IsHungAppWindow(hwnd))
+
+    def show(self, hwnd, cmd):
+        """ShowWindow: SW_MAXIMIZE 3, SW_SHOWNOACTIVATE 4, SW_MINIMIZE 6, SW_SHOWMINNOACTIVE 7, SW_RESTORE 9."""
+        user32.ShowWindow(hwnd, cmd)
+
+    def close(self, hwnd):
+        """WM_CLOSE, like clicking its X: the app may still ask to save."""
+        user32.PostMessageW(hwnd, 0x0010, 0, 0)
+
+    def window_pid(self, hwnd):
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return pid.value
+
+    def class_name(self, hwnd):
+        buf = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buf, 256)
+        return buf.value
+
+    def title(self, hwnd):
+        n = user32.GetWindowTextLengthW(hwnd)
+        if not n:
+            return ""
+        buf = ctypes.create_unicode_buffer(n + 1)
+        user32.GetWindowTextW(hwnd, buf, n + 1)
+        return buf.value
+
+    def dpi(self, hwnd):
+        return user32.GetDpiForWindow(hwnd) or 96
+
+    def frame_rect(self, hwnd):
+        """The window's visible rectangle (without the invisible resize borders)."""
+        r = wintypes.RECT()
+        if ctypes.windll.dwmapi.DwmGetWindowAttribute(hwnd, 9, ctypes.byref(r), ctypes.sizeof(r)) != 0:
+            user32.GetWindowRect(hwnd, ctypes.byref(r))
+        return r.left, r.top, r.right, r.bottom
+
+    def move(self, hwnd, x, y, w, h, flags=0):
+        """SetWindowPos without a z-order change target (flags: SWP_NOZORDER 0x4, SWP_NOACTIVATE 0x10, SWP_SHOWWINDOW 0x40)."""
+        user32.SetWindowPos(hwnd, 0, x, y, w, h, flags)
+
+    def set_placement(self, hwnd, rect, show_cmd):
+        """The window's normal (restored) rectangle and how it is shown, in one SetWindowPlacement."""
+        wp = _WINDOWPLACEMENT()
+        wp.length = ctypes.sizeof(wp)
+        user32.GetWindowPlacement(hwnd, ctypes.byref(wp))
+        wp.showCmd = show_cmd
+        wp.rcNormalPosition[:] = list(rect)
+        user32.SetWindowPlacement(hwnd, ctypes.byref(wp))
+
+    def virtual_screen(self):
+        """(left, width) of the area all monitors cover together."""
+        return user32.GetSystemMetrics(76), user32.GetSystemMetrics(78)    # SM_XVIRTUALSCREEN, SM_CXVIRTUALSCREEN
+
+    def top_level(self):
+        """Every visible top-level window, titled or not: [(hwnd, class, title, pid, process name)]."""
+        out = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def cb(hwnd, _):
+            if user32.IsWindowVisible(hwnd):
+                pid = self.window_pid(hwnd)
+                try:
+                    proc = psutil.Process(pid).name()
+                except psutil.Error:
+                    proc = "?"
+                out.append((hwnd, self.class_name(hwnd), self.title(hwnd), pid, proc))
+            return True
+        user32.EnumWindows(cb, 0)
+        return out
+
+    def children(self, hwnd):
+        """A window's child windows: [(hwnd, class, title, visible)]."""
+        out = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def cb(child, _):
+            out.append((child, self.class_name(child), self.title(child), bool(user32.IsWindowVisible(child))))
+            return True
+        user32.EnumChildWindows(hwnd, cb, 0)
+        return out
+
+    # -- the mouse
+    def cursor_pos(self):
+        pt = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(pt))
+        return pt.x, pt.y
+
+    def set_cursor(self, x, y):
+        user32.SetCursorPos(int(x), int(y))
+
+    def mouse(self, flags, data=0):
+        """mouse_event: LEFTDOWN 0x2, LEFTUP 0x4, RIGHTDOWN 0x8, RIGHTUP 0x10, WHEEL 0x800 (data = +-120 a notch)."""
+        user32.mouse_event(flags, 0, 0, data, 0)
 
     # -- the system (step 4)
     def protect(self, data):

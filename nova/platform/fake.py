@@ -14,6 +14,10 @@ class FakeDesktop:
         self.clipboard = clipboard          # plain text, or [(format, bytes)] for a "rich" clipboard
         self.clip_seq = 0
         self.text_in_focus = focused_text   # what the focused box holds; None = can't be read
+        # one window's state, filled in by a test: alive = handles that exist without being in the scene (a hidden
+        # or parked window, a dialog); kids = {hwnd: [(child, class, title, visible)]}
+        self.minimized, self.maximized, self.hung, self.alive = set(), set(), set(), set()
+        self.pids, self.classes, self.kids, self.virtual = {}, {}, {}, (0, 1920)
         self.set_windows(windows, front)
 
     def logged(self, kind):
@@ -34,11 +38,6 @@ class FakeDesktop:
         if front:
             self.front = hwnd
         return self
-
-    def close(self, hwnd):
-        self.scene = [w for w in self.scene if w.hwnd != hwnd]
-        if self.front == hwnd:
-            self.front = self.scene[0].hwnd if self.scene else 0
 
     # -- the Desktop interface
     def windows(self):
@@ -121,6 +120,85 @@ class FakeDesktop:
 
     def dpi_aware(self):
         return True
+
+    # one window's state and actions
+    def is_window(self, hwnd):
+        return bool(hwnd) and (hwnd in self.alive or any(w.hwnd == hwnd for w in self.scene))
+
+    def is_visible(self, hwnd):
+        return any(w.hwnd == hwnd for w in self.scene)
+
+    def is_minimized(self, hwnd):
+        return hwnd in self.minimized
+
+    def is_maximized(self, hwnd):
+        return hwnd in self.maximized
+
+    def is_hung(self, hwnd):
+        return hwnd in self.hung
+
+    def show(self, hwnd, cmd):
+        self.log.append(("show", hwnd, cmd))
+        if cmd in (2, 6, 7):                    # minimise
+            self.minimized.add(hwnd)
+            self.maximized.discard(hwnd)
+        elif cmd == 9:                          # restore
+            self.minimized.discard(hwnd)
+            self.maximized.discard(hwnd)
+        elif cmd == 3:                          # maximise
+            self.minimized.discard(hwnd)
+            self.maximized.add(hwnd)
+
+    def close(self, hwnd):
+        """WM_CLOSE: here the window simply goes (a test that wants "Save changes?" adds that window itself)."""
+        self.log.append(("close", hwnd))
+        self.alive.discard(hwnd)
+        self.scene = [w for w in self.scene if w.hwnd != hwnd]
+        if self.front == hwnd:
+            self.front = self.scene[0].hwnd if self.scene else 0
+
+    def window_pid(self, hwnd):
+        return self.pids.get(hwnd, 1000 + int(hwnd or 0))
+
+    def class_name(self, hwnd):
+        return self.classes.get(hwnd, "")
+
+    def title(self, hwnd):
+        return next((w.title for w in self.scene if w.hwnd == hwnd), "")
+
+    def dpi(self, hwnd):
+        return 96
+
+    def frame_rect(self, hwnd):
+        return self.window_rect(hwnd)
+
+    def move(self, hwnd, x, y, w, h, flags=0):
+        self.log.append(("move", hwnd, (x, y, x + w, y + h)))
+        self.rects = {**getattr(self, "rects", {}), hwnd: (x, y, x + w, y + h)}
+
+    def set_placement(self, hwnd, rect, show_cmd):
+        self.log.append(("placement", hwnd, tuple(rect), show_cmd))
+
+    def virtual_screen(self):
+        return self.virtual
+
+    def top_level(self):
+        return [(w.hwnd, self.class_name(w.hwnd), w.title, self.window_pid(w.hwnd), w.proc) for w in self.scene]
+
+    def children(self, hwnd):
+        return list(self.kids.get(hwnd, []))
+
+    # the mouse: the pointer moves silently; buttons and the wheel are logged
+    cursor = (0, 0)
+
+    def cursor_pos(self):
+        return self.cursor
+
+    def set_cursor(self, x, y):
+        self.cursor = (int(x), int(y))
+
+    def mouse(self, flags, data=0):
+        self.log.append(("mouse", flags, data, self.cursor))
 
     # the system: a reversible stand-in for DPAPI, and settings that are only recorded
     display_name = "Test User"

@@ -3,8 +3,6 @@
 
 import re
 import time
-import ctypes
-from ctypes import wintypes
 
 
 from nova import platform
@@ -101,13 +99,12 @@ def scroll(direction="down", amount=5, window=""):
     """Turn the mouse wheel over a window (amount = wheel notches; ~5 is about half a page)."""
     w = _target_window(window)
     if w:
-        r = wintypes.RECT()
-        windows._user32.GetWindowRect(w[0], ctypes.byref(r))
+        left, top, right, bottom = platform.current().window_rect(w[0])
         windows._focus(w[0])
-        _move_mouse_smoothly((r.left + r.right) // 2, (r.top + r.bottom) // 2 + 60, 0.2)
+        _move_mouse_smoothly((left + right) // 2, (top + bottom) // 2 + 60, 0.2)
     sign = -1 if direction == "down" else 1
     for _ in range(max(1, min(int(amount), 40))):
-        windows._user32.mouse_event(0x0800, 0, 0, sign * 120, 0)   # MOUSEEVENTF_WHEEL
+        platform.current().mouse(0x0800, sign * 120)               # MOUSEEVENTF_WHEEL
         time.sleep(0.04)
     return f"Scrolled {direction} {amount} notches" + (f" in '{w[1]}'." if w else ".")
 
@@ -260,9 +257,7 @@ def _gone(ctrl, title, hwnd, w_title_now):
 
 
 def _title_of(hwnd):
-    buf = ctypes.create_unicode_buffer(512)
-    windows._user32.GetWindowTextW(hwnd, buf, 512)
-    return buf.value
+    return platform.current().title(hwnd)[:511]
 
 
 @tool("Help the user sign in to a website: you click the login box so their browser / password "
@@ -451,15 +446,13 @@ def click_nth(contains, number, window=""):
 
 
 def _move_mouse_smoothly(x, y, secs=0.35):
-    pt = wintypes.POINT()
-    windows._user32.GetCursorPos(ctypes.byref(pt))
-    sx, sy = pt.x, pt.y
+    sx, sy = platform.current().cursor_pos()
     steps = 22
     bend = (x - sx) * 0.08
     for i in range(1, steps + 1):
         t = i / steps
         e = t * t * (3 - 2 * t)  # ease in-out, like a hand
-        windows._user32.SetCursorPos(int(sx + (x - sx) * e), int(sy + (y - sy) * e - bend * (t - t * t) * 4))
+        platform.current().set_cursor(int(sx + (x - sx) * e), int(sy + (y - sy) * e - bend * (t - t * t) * 4))
         time.sleep(secs / steps)
 
 
@@ -467,9 +460,9 @@ def _mouse_click(x, y, button="left", double=False):
     down, up = (0x0008, 0x0010) if button == "right" else (0x0002, 0x0004)
     _move_mouse_smoothly(x, y)
     for _ in range(2 if double else 1):
-        windows._user32.mouse_event(down, 0, 0, 0, 0)
+        platform.current().mouse(down)
         time.sleep(0.05)
-        windows._user32.mouse_event(up, 0, 0, 0, 0)
+        platform.current().mouse(up)
         time.sleep(0.08)
 
 

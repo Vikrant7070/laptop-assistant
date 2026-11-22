@@ -31,47 +31,46 @@ def test_powershell_is_turned_back_unless_she_says_why(monkeypatch):
 
 
 @pytest.fixture
-def fake_window(monkeypatch):
-    state = {"closed": False, "clicks": [], "messages": []}
+def fake_window(monkeypatch, desktop):
+    state = {"closed": False, "clicks": []}
+    desktop.set_windows([(42, "Notes - Notepad", "notepad.exe")])
     monkeypatch.setattr(avatar_client, "running", lambda: True)
     monkeypatch.setattr(tools.windows, "_find_window", lambda q: (42, "Notes - Notepad", "notepad.exe"))
     monkeypatch.setattr(tools.windows, "_caption_button", lambda h, which: (900, 10))
-    monkeypatch.setattr(tools._user32, "IsIconic", lambda h: False)
-    monkeypatch.setattr(tools._user32, "PostMessageW", lambda h, m, w, l: state["messages"].append(m))
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
     return state
 
 
-def test_close_is_a_click_on_the_x(monkeypatch, fake_window):
+def test_close_is_a_click_on_the_x(monkeypatch, fake_window, desktop):
     def click(x, y, button="left", double=False, label=""):
         fake_window["clicks"].append((x, y, label))
         fake_window["closed"] = True
     monkeypatch.setattr(tools.forms, "_nova_click", click)
     monkeypatch.setattr(tools.windows, "_done", lambda h, a: fake_window["closed"])
     assert tools.window_action("notepad", "close") == "Closed 'Notes - Notepad'."
-    assert fake_window["clicks"] == [(900, 10, "X on Notes - Notepad")] and fake_window["messages"] == []
+    assert fake_window["clicks"] == [(900, 10, "X on Notes - Notepad")] and desktop.logged("close") == []
 
 
-def test_a_save_question_is_left_to_the_user(monkeypatch, fake_window):
+def test_a_save_question_is_left_to_the_user(monkeypatch, fake_window, desktop):
     monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
     monkeypatch.setattr(tools.windows, "_done", lambda h, a: False)
     monkeypatch.setattr(tools.windows, "_asks_to_save", lambda h, pid: True)
     out = tools.window_action("notepad", "close")
-    assert "asking whether to save" in out and fake_window["messages"] == []     # no forced close
+    assert "asking whether to save" in out and desktop.logged("close") == []     # no forced close
 
 
-def test_a_click_that_missed_falls_back_to_closing_it(monkeypatch, fake_window):
+def test_a_click_that_missed_falls_back_to_closing_it(monkeypatch, fake_window, desktop):
     monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
     monkeypatch.setattr(tools.windows, "_done", lambda h, a: False)
     monkeypatch.setattr(tools.windows, "_asks_to_save", lambda h, pid: False)
     assert tools.window_action("notepad", "close") == "Closed 'Notes - Notepad'."
-    assert fake_window["messages"] == [0x0010]                                  # WM_CLOSE
+    assert desktop.logged("close") == [42]                                  # WM_CLOSE
 
 
-def test_without_her_body_windows_close_the_old_way(monkeypatch, fake_window):
+def test_without_her_body_windows_close_the_old_way(monkeypatch, fake_window, desktop):
     monkeypatch.setattr(avatar_client, "running", lambda: False)
     monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: pytest.fail("clicked without a body"))
-    assert tools.window_action("notepad", "close") == "Closed 'Notes - Notepad'." and fake_window["messages"] == [0x0010]
+    assert tools.window_action("notepad", "close") == "Closed 'Notes - Notepad'." and desktop.logged("close") == [42]
 
 
 def test_terminal_checks_its_input():

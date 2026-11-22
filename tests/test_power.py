@@ -56,19 +56,8 @@ def test_sleep_and_cancel_do_not_tidy(monkeypatch):
 def test_close_all_windows_spares_nova_and_the_shell(monkeypatch, desktop):
     desktop.set_windows([(1, "Nova", "pythonw.exe"), (2, "Docs - Word", "WINWORD.EXE"),
                          (3, "Downloads", "explorer.exe"), (4, "Shell", "explorer.exe")])
-    pids = {1: 100, 2: 200, 3: 300, 4: 300}
-    classes = {3: "CabinetWClass", 4: "Shell_TrayWnd"}
+    desktop.pids.update({1: 100, 2: 200, 3: 300, 4: 300})
+    desktop.classes.update({3: "CabinetWClass", 4: "Shell_TrayWnd"})
     monkeypatch.setattr(tools.windows, "_own_pids", lambda: {100})
-    monkeypatch.setattr(tools._user32, "IsWindow", lambda h: True)      # fake handles count as real windows
-
-    def get_pid(hwnd, ref):
-        ref._obj.value = pids[hwnd]
-    monkeypatch.setattr(tools._user32, "GetWindowThreadProcessId", get_pid)
-
-    def get_class(hwnd, buf, n):
-        buf.value = classes.get(hwnd, "")
-    monkeypatch.setattr(tools._user32, "GetClassNameW", get_class)
-    closed = []
-    monkeypatch.setattr(tools._user32, "PostMessageW", lambda h, m, w, l: closed.append(h))
     assert tools.close_all_windows() == "Closed 2 windows."
-    assert closed == [2, 3]
+    assert desktop.logged("close") == [2, 3]

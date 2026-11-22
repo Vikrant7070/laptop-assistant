@@ -12,8 +12,6 @@ chat page's Show button) brings that window to the front. Jobs live in memory on
 
 app.py wires it up: configure(write=..., on_done=..., on_note=...).
 """
-import ctypes
-import ctypes.wintypes
 import itertools
 import os
 import re
@@ -28,7 +26,12 @@ from nova import prompts as promptfiles
 from nova import store
 from nova.actions import tools
 
-_user32 = ctypes.windll.user32
+def _desk():
+    """The desktop (nova.platform): every window call here goes through it."""
+    from nova import platform
+    return platform.current()
+
+
 SW_MINIMIZE, SW_SHOWMINNOACTIVE, SW_RESTORE, SW_MAXIMIZE = 6, 7, 9, 3
 
 jobs = []                      # newest last: {id, kind, title, status, step, hwnd, result, error, started, finished}
@@ -230,13 +233,13 @@ def show(job):
     if not job:
         return "There's no finished background job to show."
     hwnd = job.get("hwnd")
-    if not hwnd or not _user32.IsWindow(hwnd):
+    if not _desk().is_window(hwnd):
         if job.get("path") and Path(job["path"]).exists():
             os.startfile(job["path"])          # the window was closed: open the saved file again
             return f"Opened '{job['title']}'."
         return f"The window for '{job['title']}' was closed."
-    _user32.ShowWindow(hwnd, SW_RESTORE)
-    _user32.ShowWindow(hwnd, SW_MAXIMIZE)
+    _desk().show(hwnd, SW_RESTORE)
+    _desk().show(hwnd, SW_MAXIMIZE)
     tools._focus(hwnd)
     return f"Here it is: '{job['title']}'."
 
@@ -265,7 +268,7 @@ def _windows_of(proc):
 def open_hidden(args, proc, match=None, wait=15):
     """Start a program and tuck its new window away (minimised, without taking the focus), so whatever the user is
     doing stays in front. Returns the window handle (None if no new window showed up)."""
-    front = _user32.GetForegroundWindow()
+    front = _desk().foreground()
     hwnd = None
     with _window_lock:                   # nobody else opens a window while we look for ours
         before = _windows_of(proc)
@@ -330,15 +333,14 @@ def _watcher():
 
 def _bring_on_screen(hwnd):
     """Move a parked window (off the edge of the screen) onto the user's screen, in front."""
-    r = ctypes.wintypes.RECT()
-    if _user32.IsIconic(hwnd):
-        _user32.ShowWindow(hwnd, SW_RESTORE)
-    _user32.GetWindowRect(hwnd, ctypes.byref(r))
-    if r.left >= _offscreen_x() - 50 or r.left < -20000:       # parked past the edge (or hidden at -32000)
+    if _desk().is_minimized(hwnd):
+        _desk().show(hwnd, SW_RESTORE)
+    r_left = _desk().window_rect(hwnd)[0]
+    if r_left >= _offscreen_x() - 50 or r_left < -20000:       # parked past the edge (or hidden at -32000)
         from nova.shared import work_area
         left, top, right, bottom = work_area()
         w, h = min(1280, right - left - 120), min(900, bottom - top - 80)
-        _user32.SetWindowPos(hwnd, 0, left + 60, top + 40, w, h, 0x0040)       # SWP_SHOWWINDOW
+        _desk().move(hwnd, left + 60, top + 40, w, h, 0x0040)                  # SWP_SHOWWINDOW
     try:
         tools._focus(hwnd)
     except Exception:
@@ -348,11 +350,11 @@ def _bring_on_screen(hwnd):
 def user_took(hwnd):
     """Is this background window in the user's hands right now? Pulled to the front -> theirs (moved onto the
     screen); minimized by them again -> back in the background, where the job keeps using it."""
-    if not hwnd or not _user32.IsWindow(hwnd):
+    if not _desk().is_window(hwnd):
         _forget(hwnd)
         return False
     if hwnd in claimed:
-        if not _user32.IsIconic(hwnd):
+        if not _desk().is_minimized(hwnd):
             return True
         claimed.discard(hwnd)                  # the user put it away: back to the job
         if _mode.get(hwnd) == "park":
@@ -360,7 +362,7 @@ def user_took(hwnd):
         _note("🪟 Got my window back - carrying on in the background.")
         return False
     born = _born.setdefault(hwnd, time.time())
-    if time.time() - born < CLAIM_GRACE or _user32.GetForegroundWindow() != hwnd:
+    if time.time() - born < CLAIM_GRACE or _desk().foreground() != hwnd:
         return False
     claimed.add(hwnd)
     try:
@@ -373,14 +375,14 @@ def user_took(hwnd):
 
 def keep_hidden(hwnd, front=None):
     """Minimise the job's window again if it popped up, and hand the screen back to the user's window."""
-    if not _user32.IsWindow(hwnd):
+    if not _desk().is_window(hwnd):
         return
     _track(hwnd, "min")
     if user_took(hwnd):
         return
-    if not _user32.IsIconic(hwnd):
-        _user32.ShowWindow(hwnd, SW_MINIMIZE if _user32.GetForegroundWindow() == hwnd else SW_SHOWMINNOACTIVE)
-    if front and front != hwnd and _user32.IsWindow(front) and _user32.GetForegroundWindow() == hwnd:
+    if not _desk().is_minimized(hwnd):
+        _desk().show(hwnd, SW_MINIMIZE if _desk().foreground() == hwnd else SW_SHOWMINNOACTIVE)
+    if front and front != hwnd and _desk().is_window(front) and _desk().foreground() == hwnd:
         try:
             tools._focus(front)          # give the user their window back
         except Exception:
@@ -388,10 +390,7 @@ def keep_hidden(hwnd, front=None):
 
 
 def _title(hwnd):
-    n = _user32.GetWindowTextLengthW(hwnd)
-    buf = ctypes.create_unicode_buffer(n + 1)
-    _user32.GetWindowTextW(hwnd, buf, n + 1)
-    return buf.value
+    return _desk().title(hwnd)
 
 
 # ------------------------------------------------------------------ the jobs
@@ -439,7 +438,7 @@ def draft_email(to="", about="", subject="", sign=""):
         job["hwnd"] = hwnd
         end, title = time.time() + LOAD_SECS, ""
         while time.time() < end:
-            if not _user32.IsWindow(hwnd):
+            if not _desk().is_window(hwnd):
                 raise RuntimeError("the Gmail window was closed")
             keep_hidden(hwnd)
             title = _title(hwnd)
@@ -510,34 +509,23 @@ def write_document(title="", about=""):
 # lays out the page (a minimised window shows Windows' accessibility view almost nothing), so she can read it,
 # while the user's own window keeps the screen and the keyboard. When she's done she closes them and writes a report.
 
-class _WINDOWPLACEMENT(ctypes.Structure):
-    _fields_ = [("length", ctypes.c_uint), ("flags", ctypes.c_uint), ("showCmd", ctypes.c_uint),
-                ("ptMinPosition", ctypes.c_long * 2), ("ptMaxPosition", ctypes.c_long * 2),
-                ("rcNormalPosition", ctypes.c_long * 4)]
-
-
 def _offscreen_x():
     """Just right of every monitor (the virtual screen), so a parked window is never on any display."""
-    left, width = _user32.GetSystemMetrics(76), _user32.GetSystemMetrics(78)    # SM_XVIRTUALSCREEN, SM_CXVIRTUALSCREEN
+    left, width = _desk().virtual_screen()
     return left + max(width, 800) + 200
 
 
 def park(hwnd, front=None):
     """Show a job's window off-screen without activating it (so Chrome keeps the page alive and readable)."""
-    if not hwnd or not _user32.IsWindow(hwnd):
+    if not _desk().is_window(hwnd):
         return
     _track(hwnd, "park")
     if user_took(hwnd):
         return
     x = _offscreen_x()
-    wp = _WINDOWPLACEMENT()
-    wp.length = ctypes.sizeof(wp)
-    _user32.GetWindowPlacement(hwnd, ctypes.byref(wp))
-    wp.showCmd = 4                                            # SW_SHOWNOACTIVATE
-    wp.rcNormalPosition[:] = [x, 0, x + 1280, 900]
-    _user32.SetWindowPlacement(hwnd, ctypes.byref(wp))
-    _user32.SetWindowPos(hwnd, 0, x, 0, 1280, 900, 0x0010 | 0x0004)   # SWP_NOACTIVATE | SWP_NOZORDER
-    if front and front != hwnd and _user32.IsWindow(front) and _user32.GetForegroundWindow() == hwnd:
+    _desk().set_placement(hwnd, (x, 0, x + 1280, 900), 4)    # SW_SHOWNOACTIVATE
+    _desk().move(hwnd, x, 0, 1280, 900, 0x0010 | 0x0004)       # SWP_NOACTIVATE | SWP_NOZORDER
+    if front and front != hwnd and _desk().is_window(front) and _desk().foreground() == hwnd:
         try:
             tools._focus(front)
         except Exception:
@@ -545,11 +533,11 @@ def park(hwnd, front=None):
 
 
 def close_window(hwnd):
-    if hwnd and _user32.IsWindow(hwnd):
+    if _desk().is_window(hwnd):
         if user_took(hwnd):
             _forget(hwnd)                                      # the user is looking at it: it's simply theirs now
             return
-        _user32.PostMessageW(hwnd, 0x0010, 0, 0)              # WM_CLOSE: like clicking its X
+        _desk().close(hwnd)                                    # WM_CLOSE: like clicking its X
     _forget(hwnd)
 
 
@@ -613,7 +601,7 @@ def result_links(links, limit=6):
 
 def _open_parked(url, proc, exe, wait_title=None, secs=PAGE_SECS):
     """Open a URL in a new Chrome window parked off-screen and wait for it to load. Returns the window handle."""
-    front = _user32.GetForegroundWindow()
+    front = _desk().foreground()
     x = _offscreen_x()
     checkpoint()
     with _window_lock:                                        # nobody else opens a window while we look for ours
@@ -638,7 +626,7 @@ def _open_parked(url, proc, exe, wait_title=None, secs=PAGE_SECS):
         except Stopped:
             close_window(hwnd)                                # not in the caller's list yet: close it here
             raise
-        if _user32.GetForegroundWindow() == hwnd or _user32.IsIconic(hwnd):
+        if _desk().foreground() == hwnd or _desk().is_minimized(hwnd):
             park(hwnd, front)
         title = _title(hwnd)
         if wait_title:
