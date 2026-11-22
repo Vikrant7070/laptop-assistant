@@ -44,7 +44,8 @@ FILES = {
     "voice_profile": "voice_profile.json",
     "workers": "workers.json",             # coding workers' settings (workers.py, ⚙ Workers)
     "jobs": "jobs.json",                   # coding job history before nova.db (imported once, then *.imported)
-    "db_file": "nova.db",                  # episodes, jobs and events (nova/db.py)
+    "db_file": "nova.db",                  # episodes, jobs, events and task cards (nova/db.py)
+    "chat_tail": "chat_tail.json",         # the last few chat turns, loaded back after a restart (app.resume)
 }
 # name -> folder under the data folder
 DIRS = {

@@ -248,6 +248,12 @@ old `/api/events` clearing is gone, and idle CPU before/after is measured and re
 tests pass unchanged.
 **Done when:** the voice flags are gone, and a single `state` (shown in the ear bubble) explains what she's doing.
 
+**Open item (from manager 4-pre, 2026-11-22): barge-in takes her own echo for the user.** On 2026-11-21 at 21:33:46 barge-in
+stopped her on her own words ("Not too bad, boss. R.E.M. is a big..."). Fix it on the voice side (the barge-in
+check, not the manager code). The test replays that log line: her own played words coming back through the mic
+must not count as the user. Since 4-pre (b), a cut-off reply is kept and "continue" finishes it, which softens the
+damage, but the false stop is still the bug.
+
 ### R11 Named, supervised threads (point 2b). Effort S–M
 
 **Steps**

@@ -51,18 +51,79 @@ def clean(text, n):
     return line if len(line) <= n else line[: n - 1].rstrip() + "…"
 
 
-def new(goal, steps=(), source="none"):
+def new(goal, steps=(), source="none", tid=None):
     """A fresh card for a task. `steps` are {"text", "tool"} dicts (see steps_from_plan / steps_from_skill)."""
-    card = {"version": VERSION, "goal": clean(goal, 300), "status": "running", "why": "", "source": "none",
-            "plan": [], "runs": [], "open": [], "started": time.time(), "updated": time.time()}
+    now = time.time()
+    card = {"version": VERSION, "id": str(tid or f"{now:.3f}"), "goal": clean(goal, 300), "status": "running", "why": "",
+            "source": "none", "plan": [], "runs": [], "open": [], "started": now, "updated": now, "app": "",
+            "unsaid": "", "replanned": False}
     set_plan(card, steps, source)
     return card
 
 
 def attach(task, steps=(), source="none"):
     """Give a task dict its card (replacing any old one). -> the card."""
-    task["card"] = new(task.get("goal", ""), steps, source)
+    task["card"] = new(task.get("goal", ""), steps, source, task.get("id"))
+    task["card"]["app"] = clean(task.get("app") or "", 60)
     return task["card"]
+
+
+# ------------------------------------------------------------------ saved cards (step b)
+
+RESUMABLE = ("stopped", "interrupted")
+_DEFAULTS = {"id": "", "goal": "", "status": "stopped", "why": "", "source": "none", "plan": [], "runs": [], "open": [],
+             "started": 0.0, "updated": 0.0, "app": "", "unsaid": "", "replanned": False}
+
+
+def upgrade(card):
+    """A card loaded from disk, made safe to use with this code. -> the card, or None if it isn't a card at all.
+
+    Older (or version-less) cards get the fields added since; a card from a NEWER Nova is kept read-only (shown,
+    never resumed), so a code update - or going back to an older one - never crashes on a saved card."""
+    if not isinstance(card, dict) or not card.get("goal"):
+        return None
+    try:
+        v = int(card.get("version") or 0)
+    except (TypeError, ValueError):
+        v = 0
+    for k, default in _DEFAULTS.items():
+        card.setdefault(k, list(default) if isinstance(default, list) else default)
+    if v > VERSION:
+        card["read_only"] = True
+        return card
+    for i, run in enumerate(card["runs"]):
+        run.setdefault("id", i + 1)
+        run.setdefault("step", None)
+        run.setdefault("hint", "")
+        run.setdefault("result", "")
+    card["next"] = max([r["id"] for r in card["runs"]] + [card.get("next") or 0])
+    card["version"] = VERSION
+    return card
+
+
+def resumable(card):
+    """Stopped or interrupted, with something done or planned, and not from a newer Nova."""
+    return (card is not None and card.get("status") in RESUMABLE and not card.get("read_only")
+            and bool(card.get("runs") or card.get("plan")))
+
+
+def unconfirmed(card):
+    """Runs that started but never finished (a Stop or a restart in the middle of the step)."""
+    return [r for r in (card or {}).get("runs", []) if r["state"] == "started" and r["id"] not in card["open"]]
+
+
+def interrupt(card, why):
+    """A restart found this card still running or waiting: every open run is now *started, not confirmed*."""
+    card["open"] = []
+    mark(card, "interrupted", why)
+
+
+def outcomes(card):
+    """One line per plan step (or per run, with no plan): its words and how it went, never a raw result. This is
+    all a re-planner is sent (plan rule 7)."""
+    if card["plan"]:
+        return [f"step {i + 1} {st['text']}: {st['state']}" for i, st in enumerate(card["plan"])]
+    return [f"{r['tool']}: {r['state']}" for r in card["runs"][-8:]]
 
 
 def of(task):
@@ -274,6 +335,13 @@ def render(card, limit=MAX_CHARS):
         line += f" (+{cut} earlier)"
     text = "\n".join(head + [line] + tail)
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def where(card):
+    """'step 3 of 5 of <goal>' / '<goal>' - how she names a task out loud."""
+    i = current(card)
+    goal = card["goal"][:80]
+    return f"step {i + 1} of {len(card['plan'])} of “{goal}”" if i is not None and card["plan"] else f"“{goal}”"
 
 
 def summary(card):

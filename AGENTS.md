@@ -10,6 +10,11 @@ other's way. Background: `docs/ARCHITECTURE.md`, `docs/improvement-roadmap.md`.
   edit there breaks her for the user.
 - Never touch another session's worktree or branch. In particular OpenCode's `refactor/part-b` worktree is its own.
 
+- **Live tests never use the real Nova.** A live test runs a separate copy, started from your worktree with
+  `NOVA_DATA` and `NOVA_SKILLS` pointing at a *copy* of `data/` and `skills/`, never at the Nova the user is talking
+  to. Quitting or restarting the real Nova cuts off whatever she is doing and loses the chat (24 restarts on
+  2026-11-21). If a test really needs the real one, ask the user first.
+
 ## 2. Before you edit a file
 ```
 python scripts/who_edits.py <files or folders>

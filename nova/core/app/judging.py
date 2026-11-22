@@ -172,8 +172,9 @@ def execute(calls, approved, activity, model):
         outs.append(out)
         skillrun._trace(c, out)
     session.state["last_outs"] = outs
+    resume.save()                         # the card after every batch of steps: a restart loses at most this batch
     return [llm.tool_result_message(model, c, out) for c, out in zip(calls, outs)]
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import config, conversation, session, skillrun  # noqa: E402
+from nova.core.app import config, conversation, resume, session, skillrun  # noqa: E402

@@ -138,14 +138,15 @@ def new_task(goal):
         session.state["last_trace"] = {"goal": last.get("goal", ""), "trace": list(last["trace"])}
     if not last.get("paused"):
         learning.record_episode(last)                 # the last task is over: one line in the episode log (learner.py)
-    if last.get("paused") and intents.CONTINUE.search(clean):
+    resumed = resume.take()                           # "continue" picked a stopped task (resume.direct checked it)
+    if resumed:
+        task_log(f"RESUMING task: {resumed['card']['goal'][:200]}")
+        session.think(f"▶️ Carrying on with: {resumed['card']['goal'][:120]}", cloud_too=False)
+    if resumed and task_state.of(last) is resumed["card"]:      # the task still in memory: carry on with it as it is
         last["paused"] = False
-        task_state.mark(task_state.of(last), "running", "the user said carry on")
-        task_log(f"RESUMING paused task: {last['goal'][:200]}")
-        session.think(f"▶️ Carrying on with: {last['goal'][:120]}", cloud_too=False)
-        return "\n" + protocol.note(
-            "You paused this task after many steps and the user wants you to carry "
-            f"on: {last['goal']}\nContinue from where you stopped. Don't redo steps that already worked.")
+        return resume.note(resumed)
+    resume.leave(last)                                # one laptop task at a time: the last one stays stopped
+    clean = resumed["card"]["goal"] if resumed else clean
     skill = how = None
     try:
         skill, how = skills.pick(clean)       # exact (it said the skill), fuzzy (it only sounds like it) or neither
@@ -171,7 +172,10 @@ def new_task(goal):
                      "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": [],
                      "skill": skill["name"] if skill else "", "skill_how": how or "",
                      "app": tools.named_app(clean)}      # "type hello in notepad": keys and typing go only there
-    task_state.attach(session.state["task"], *((task_state.steps_from_skill(skill), "skill") if skill and how == "exact" else ()))
+    if resumed:
+        session.state["task"]["card"] = resumed["card"]
+    else:
+        task_state.attach(session.state["task"], *((task_state.steps_from_skill(skill), "skill") if skill and how == "exact" else ()))
     direct = skillrun.plan_direct(session.state["task"], skill, how)     # an exact routine match: no brain turn first
     try:
         made = judge.goal_checks(clean)   # the Judge's checks for this goal (more may be proposed later)
@@ -194,7 +198,7 @@ def new_task(goal):
         choose_local_route(session.state["task"], s)
     task_log(f"PICKED {len(picked) if picked else 'all'} tools ({retrieval.status()}): "
              + (", ".join(n for n in picked if n not in toolpick.CORE) if picked else "-"))
-    return ""
+    return resume.note(resumed) if resumed else ""
 
 
 def task_brain(s, task=None):
@@ -501,6 +505,7 @@ def agent_loop(activity):
             session.state["task"]["stopped"] = True      # the episode log: a stopped task never counts as one that worked
             task_state.mark(task_state.of(session.state["task"]), "stopped", "Stop pressed")
         out = {"reply": STOPPED_REPLY, "activity": activity, "say": STOPPED_REPLY, "stopped": True}
+    resume.save()                                     # the card as the task ended (done / failed / stopped / waiting)
     voice_io.nap["last_task"] = time.time()          # the 5-minute nap clock counts from when she finished, not from the ask
     out["images"] = session.state.pop("images", [])
     if session.state.get("check_image"):
@@ -778,4 +783,4 @@ def ready_info():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, config, judging, learning, prompts, session, skillrun, voice_io  # noqa: E402
+from nova.core.app import body, config, judging, learning, prompts, resume, session, skillrun, voice_io  # noqa: E402

@@ -7,6 +7,7 @@ The episode log, the job history and the event log used to be JSON files rewritt
     jobs(seq, key, id, started, kind, worker, status, data)        workers.load_jobs() / _save_record()
     events(id, ts, kind, text, data)       log.note() / log.event() / log_exception(); task_log.txt is the
                                            readable copy, nothing reads it back
+    tasks(seq, id, started, updated, status, goal, data)    task cards (nova/task_state.py, saved by app.resume)
 
 so "research jobs from Tuesday" is a query (`find_jobs`, `find_events`). The modules keep their old functions.
 
@@ -35,6 +36,11 @@ MIGRATIONS = {
         "CREATE INDEX jobs_started ON jobs(started)",
         "CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, kind TEXT NOT NULL, text TEXT, data TEXT)",
         "CREATE INDEX events_kind_ts ON events(kind, ts)",
+    ],
+    2: [
+        "CREATE TABLE tasks (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, started REAL, updated REAL, "
+        "status TEXT, goal TEXT, data TEXT NOT NULL)",
+        "CREATE INDEX tasks_updated ON tasks(updated)",
     ],
 }
 KEEP_EVENTS = 50_000          # the oldest events go once there are more (checked every PRUNE_EVERY inserts)
@@ -199,6 +205,35 @@ def find_jobs(since=0.0, until=None, **match):
         raise TypeError(f"find_jobs: unknown filter {sorted(match)}")
     with connect() as con:
         return [json.loads(r[0]) for r in con.execute(sql + " ORDER BY seq", args).fetchall()]
+
+
+# ------------------------------------------------------------------ task cards
+
+def save_task(card):
+    """Add or replace one task card (by its id)."""
+    with connect() as con:
+        con.execute("INSERT INTO tasks (id, started, updated, status, goal, data) VALUES (?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(id) DO UPDATE SET updated = excluded.updated, status = excluded.status, "
+                    "goal = excluded.goal, data = excluded.data",
+                    (str(card["id"]), float(card.get("started") or 0), float(card.get("updated") or 0),
+                     str(card.get("status") or ""), str(card.get("goal") or "")[:300], json.dumps(card, ensure_ascii=False)))
+
+
+def load_tasks(statuses=None, since=0.0, limit=50):
+    """The newest `limit` task cards changed since `since` (newest first), only these statuses if given."""
+    sql, args = "SELECT data FROM tasks WHERE updated >= ?", [since]
+    if statuses:
+        sql += f" AND status IN ({', '.join('?' * len(statuses))})"
+        args += list(statuses)
+    with connect() as con:
+        rows = con.execute(sql + " ORDER BY updated DESC LIMIT ?", [*args, limit]).fetchall()
+    return [json.loads(r[0]) for r in rows]
+
+
+def prune_tasks(before):
+    """Forget task cards last changed before `before`. -> how many went."""
+    with connect() as con:
+        return con.execute("DELETE FROM tasks WHERE updated < ?", (before,)).rowcount
 
 
 # ------------------------------------------------------------------ events

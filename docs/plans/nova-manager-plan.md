@@ -544,6 +544,30 @@ it shows. The question card is needed by 4a, which asks the questions.
   failed when she answers.
 - Not yet: saving, resume, cut-off replies, "continue" (b); new planning triggers and the cloud planner; the UI.
 
+**4-pre (b) as built (2026-11-22, branch `feat/manager-task-resume`, stacked on (a)):** `nova/core/app/resume.py`.
+- **Saved:** cards go to nova.db's new `tasks` table (migration 2) after every batch of steps and when the task ends;
+  deleted after 30 days. `task_state.upgrade` fills in old cards; a card from a newer Nova is read-only.
+- **Chat:** the last 12 user/assistant turns go to `chat_tail.json` after every answer (no hidden notes, no window
+  lists, no secret-looking lines) and come back at start-up. A character switch or ⟲ reset clears it.
+- **Restart:** start-up marks running/waiting cards *interrupted (restart)* and she says "Before the restart I was on
+  step N of … Should I continue?". Only a yes / "continue" carries on.
+- **"Continue" in code** (`resume.direct`, before any brain turn; `intents.RESUME` = the whole message is "carry
+  on", so "continue playing the video" is still a new request):
+  1. right after a barge-in, it says the part she didn't get to say;
+  2. else the newest stopped/interrupted task from the last 24 h; with several she asks "one: …, two: …"
+     (`intents.choice` reads "two" / "the second one");
+  3. safe resume: covering goal checks pass → "That's already done"; a changing step started but never confirmed →
+     "Should I do that step again?" (no → it's skipped); read-only ones are simply redone; the task's app gone →
+     one re-plan by the deep brain, sent step outcomes only;
+  4. the brain gets the card with "carry on from where you stopped, don't redo ✅ steps".
+- **One task at a time:** a new request marks a task still running/waiting as stopped ("a new request came").
+- **Cut-off replies:** on barge-in, `resume.cut_off` matches the sentences really played (Mouth.said_lines) to the
+  reply. Only when a sentence of that reply was playing at the stop. The history keeps what was said +
+  `[cut off here …]`; "continue" says the rest as its own turn.
+- The old "paused after many steps" path is now this one (status *stopped, out of steps*).
+- Also: AGENTS.md's live-test rule; the barge-in echo bug is an open item under R10 in the roadmap.
+- Not yet: step time limits; new planning triggers, the cloud planner and its privacy setting; the UI (c–e).
+
 ## 7. Phase 5 — Judges for workers' results
 
 Quality comes from measurement, not from the user's habits or the worker's own claim:

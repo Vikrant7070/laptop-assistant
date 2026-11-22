@@ -182,6 +182,7 @@ def answer(text, quiet=False, remote=False):
     quiet: don't say the answer out loud (📱 phone requests - the user isn't at the laptop).
     remote: the request came from the phone, so every action that changes something asks first (is_risky)."""
     voice_io.note_task()
+    t_start = time.time()                        # her spoken sentences for this request start after this
     with session.lock:
         conversation.stop_flag.clear()           # a Stop pressed for the last request doesn't cancel this one
         session.state["remote"] = remote
@@ -199,15 +200,17 @@ def answer(text, quiet=False, remote=False):
             screen = ""
         missing = conversation.not_open_note(text)
         screen = (screen or "none") + missing if missing else screen
-        resume = conversation.new_task(text)
+        by_code = resume_module.direct(text)      # "continue": a cut-off reply's rest, or which task / redo? (no brain)
+        carry_on = "" if by_code else conversation.new_task(text)
         # (Tried also passing the time and battery here to save a tool call: the small model then read the line
         # out loud and stopped calling tools for other facts. Only the window list is passed.)
         session.state["messages"].append({"role": "user", "content":
-                                  text + resume + (protocol.windows_note(screen) if screen else "")})
+                                  text + carry_on + (protocol.windows_note(screen) if screen else "")})
         try:
-            out = look_first(text, activity)
-            if out:     # done without the brain (reading out selected text)
+            out = by_code or look_first(text, activity)
+            if out:     # done without the brain (reading out selected text, or carrying on in code)
                 session.state["messages"].append({"role": "assistant", "content": out["reply"]})
+                out.pop("by_code", None)
                 voice_io.nap["last_task"] = time.time()
             else:
                 out = conversation.agent_loop(activity)
@@ -229,9 +232,11 @@ def answer(text, quiet=False, remote=False):
         if asked:                            # the daily list: asked at the laptop, after her answer, one at a time
             out["reply"] = (out.get("reply") or "").rstrip() + "\n\n" + asked
             out["say"] = ((out.get("say") or "").rstrip() + " " + asked).strip()
+    resume_module.save_chat()                        # the last few turns survive a restart
     if quiet:
         out.pop("say", None)
     else:
+        resume_module.spoke(out.get("reply"), t_start)   # a barge-in can then tell what was really said
         voice_io.speak(out.pop("say", out.get("reply")))
         voice_io.bubble(out.get("reply"))
     learning.after_turn(text, out)
@@ -357,3 +362,4 @@ def react_later(reaction, wait_for_speech=True, repeat=None):
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
 from nova.core.app import config, conversation, judging, learning, session, voice_io  # noqa: E402
+from nova.core.app import resume as resume_module  # noqa: E402

@@ -77,6 +77,7 @@ def apply_character(cid):
     with session.lock:                # a fresh chat: the small brain copies its old name and tone from the history otherwise
         session.state["messages"].clear()
         session.state["pending"] = None
+    resume.clear_chat()
     if mouth.voice_name and mouth.voice_name.startswith("Kokoro"):
         mouth.voice_name = f"Kokoro {ch['voice']} (natural voice)"
     try:
@@ -603,7 +604,9 @@ def on_barge(kind, text):
     for what comes next."""
     if kind == "stop" and session.lock.locked():
         conversation.stop_now()
+    t_stop = time.time()
     mouth.stop(quick=True)
+    runtime.spawn("resume.cut_off", resume.cut_off, args=(t_stop,))     # keep what she didn't get to say
     _shadow("barge_in")
     ears._note(f"you talked over me: “{text[:50]}” - stopped ({kind})")
     if whisper:
@@ -716,4 +719,4 @@ def idle_watch():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, host, integrations, judging, learning, prompts, session, skillrun  # noqa: E402
+from nova.core.app import body, host, integrations, judging, learning, prompts, resume, session, skillrun  # noqa: E402
