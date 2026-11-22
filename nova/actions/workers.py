@@ -23,7 +23,7 @@ Safety, in layers (a worker may never commit, push, publish, deploy, delete or p
   Jobs run only in a git folder (so every change can be seen and undone), one job per folder at a time.
 
 Settings: data/workers.json (exe paths, models, budgets - written with defaults the first time). Job history:
-data/jobs.json, each job's raw output in data/jobs/<key>.log. Runs as a coworker.py job, so "how's it going?",
+the jobs table in data/nova.db, each job's raw output in data/jobs/<key>.log. Runs as a coworker.py job, so "how's it going?",
 "stop it", the "done - want to see it?" offer and the Telegram away report all work as for research.
 """
 import glob
@@ -37,6 +37,7 @@ import time
 from pathlib import Path
 
 from nova import runtime
+from nova import db
 from nova import store
 from nova.log import log_exception
 
@@ -218,19 +219,15 @@ def overview(fresh=False):
 def load_jobs():
     with _lock:
         try:
-            return json.loads(store.current().jobs.read_text(encoding="utf-8"))
+            return db.load_jobs()
         except Exception:
+            log_exception("workers jobs read")
             return []
 
 
 def _save_record(rec):
     with _lock:
-        recs = [r for r in load_jobs() if r.get("key") != rec["key"]] + [rec]
-        path = store.current().jobs
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(recs[-KEEP_JOBS:], ensure_ascii=False, indent=1), encoding="utf-8")
-        tmp.replace(path)
+        db.save_job(rec, KEEP_JOBS)
 
 
 def spent_today(now=None):

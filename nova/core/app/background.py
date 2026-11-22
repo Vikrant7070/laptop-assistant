@@ -8,7 +8,7 @@ import re
 import time
 import ctypes
 
-from nova import runtime
+from nova import db, runtime
 from flask import Response, jsonify, request, send_from_directory
 
 from nova import prompts as promptfiles
@@ -309,6 +309,7 @@ def quit_nova():
     left = runtime.stop_all(wait=1.0)                  # loops started with every= / restart= end here
     if left:
         conversation.task_log(f"QUIT: still running after 1 s: {', '.join(left[:12])}")
+    db.close()                                         # a clean checkpoint of nova.db before we go
 
 
 @api.app.get("/api/threads")

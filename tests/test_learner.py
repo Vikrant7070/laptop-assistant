@@ -55,7 +55,8 @@ def test_episodes_are_updated_in_place_and_old_ones_pruned():
     learner.record(learner.episode_from_task(t))
     eps = learner.load()
     assert [e["id"] for e in eps] == ["t1"] and len(eps[0]["steps"]) == 2
-    assert len(store.current().episodes.read_text(encoding="utf-8").splitlines()) == 1     # the 40-day-old one is gone
+    with store.current().db() as con:                                   # the 40-day-old one is gone, not just hidden
+        assert con.execute("SELECT id FROM episodes").fetchall() == [("t1",)]
 
 
 def test_worked_is_strict():

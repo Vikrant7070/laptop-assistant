@@ -43,7 +43,8 @@ FILES = {
     "look": "look.json",
     "voice_profile": "voice_profile.json",
     "workers": "workers.json",             # coding workers' settings (workers.py, ⚙ Workers)
-    "jobs": "jobs.json",                   # coding job history (workers.py)
+    "jobs": "jobs.json",                   # coding job history before nova.db (imported once, then *.imported)
+    "db_file": "nova.db",                  # episodes, jobs and events (nova/db.py)
 }
 # name -> folder under the data folder
 DIRS = {
@@ -74,6 +75,11 @@ class Store:
     def file(self, name):
         """A loose file in the data folder (generated scripts and the like)."""
         return self.root / name
+
+    def db(self):
+        """A connection to this folder's nova.db, as a context manager (nova/db.py)."""
+        from nova import db
+        return db.connect(self)
 
     def data_paths(self):
         """Every named file and folder that must live under the data folder."""
