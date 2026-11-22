@@ -11,7 +11,8 @@ import os
 import time
 
 from nova import runtime
-from nova.avatar import body, win32
+from nova.avatar import body
+from nova.platform import avatar_window as win32
 
 
 def cmd_anim(nova, cmd, done, result):

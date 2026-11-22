@@ -10,13 +10,9 @@ ROOT = Path(__file__).resolve().parent.parent
 NOTEPAD = (2, "Untitled - Notepad", "notepad.exe")
 CHROME = (5, "News - Google Chrome", "chrome.exe")
 
-# Files that still call Win32 themselves (ctypes.windll / WinDLL). Each R12 PR moves one area into nova/platform/
-# and takes files off this list. Shrink it; never grow it.
-WIN32_OUTSIDE_PLATFORM = {
-    "nova/actions/recorder.py",           # its own hooks thread
-    "nova/avatar/avatar.py",
-    "nova/avatar/win32.py",               # the avatar's drawing calls (last step)
-}
+# Files outside nova/platform/ that may call Win32 themselves (ctypes.windll / WinDLL): none since R12. Keep it
+# that way - new Win32 code goes in nova/platform/.
+WIN32_OUTSIDE_PLATFORM = set()
 
 
 def test_tests_run_on_a_fake_desktop():
@@ -159,3 +155,24 @@ def test_scrolling_turns_the_wheel(desktop, monkeypatch):
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
     tools.forms.scroll("down", 3)
     assert [m[1:3] for m in desktop.log if m[0] == "mouse"] == [(0x0800, -120)] * 3
+
+
+def test_the_avatar_process_modules_import():
+    """3D Nova runs in her own process, so the suite never imported avatar.py/commands.py; a broken import there
+    (e.g. after moving her window code into nova/platform) only showed when she failed to start."""
+    import importlib
+    for name in ("nova.avatar.avatar", "nova.avatar.commands", "nova.platform.avatar_window", "nova.platform.hooks"):
+        importlib.import_module(name)
+    from nova.avatar import commands
+    assert commands.win32.blit and commands.win32.top_level_of
+
+
+def test_the_recorder_hands_only_clicks_and_keys_on():
+    from nova.actions import recorder
+    cap = recorder.Capture()
+    cap._on_mouse(0x200, 5, 6)                          # a mouse move: not kept
+    cap._on_mouse(recorder.WM_LBUTTONDOWN, 10, 20)
+    cap._on_key(recorder.WM_KEYDOWN, 0x41)
+    got = [cap.q.get_nowait()[:4] for _ in range(2)]
+    assert got == [("mouse", recorder.WM_LBUTTONDOWN, 10, 20), ("key", recorder.WM_KEYDOWN, 0x41, got[1][3])]
+    assert cap.q.empty()

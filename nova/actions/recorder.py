@@ -7,7 +7,7 @@
     listen  - while a skill runs: only notes THAT the user clicked or typed (nothing about what), so the skill can
               stop and ask "you took over - want to show me how this step should go?" (app.run_skill).
 
-How it works: two Windows low-level hooks (mouse and keyboard) via ctypes - no extra package, nothing injected into
+How it works: two Windows low-level hooks (mouse and keyboard, nova/platform/hooks.py) - nothing injected into
 other programs. The hook callbacks only put a tiny tuple on a queue and return at once: a slow hook makes the whole
 mouse lag, and Windows drops a hook that is too slow. A worker thread does the slow part (UI Automation: which
 button, which box, what's in it). Hooks run only while recording or listening, never otherwise.
@@ -20,15 +20,14 @@ Privacy, by design:
   * Clicks and typing in Nova's own windows are skipped. The recording is kept in memory only (never on disk), and
     only the cleaned-up steps go anywhere (see skill_hints in app.py).
 """
-import ctypes
 import os
 import queue
 import re
 import threading
 import time
-from ctypes import wintypes
 
-from nova import runtime
+from nova import platform, runtime
+from nova.platform import hooks
 
 MAX_EVENTS = 300
 MAX_SECS = 600
@@ -215,10 +214,8 @@ def events_to_trace(events):
 
 # ------------------------------------------------------------------ live capture (Windows only)
 
-WH_KEYBOARD_LL, WH_MOUSE_LL = 13, 14
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x100, 0x101, 0x104, 0x105
-WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_QUIT = 0x201, 0x204, 0x12
-LLKHF_INJECTED, LLKHF_LOWER_IL_INJECTED, LLMHF_INJECTED, LLMHF_LOWER_IL_INJECTED = 0x10, 0x02, 0x01, 0x02
+WM_LBUTTONDOWN, WM_RBUTTONDOWN = 0x201, 0x204
 MODS = {0x10: "shift", 0xA0: "shift", 0xA1: "shift", 0x11: "ctrl", 0xA2: "ctrl", 0xA3: "ctrl", 0x12: "alt", 0xA4: "alt",
         0xA5: "alt", 0x5B: "windows", 0x5C: "windows"}
 NAMED = {0x0D: "enter", 0x09: "tab", 0x1B: "esc", 0x20: "space", 0x08: "backspace", 0x2E: "delete", 0x25: "left",
@@ -241,64 +238,17 @@ def printable(vk):
     return 0x41 <= vk <= 0x5A or 0x30 <= vk <= 0x39 or 0x60 <= vk <= 0x6F or vk == 0x20 or 0xBA <= vk <= 0xE2
 
 
-class KBDLLHOOKSTRUCT(ctypes.Structure):
-    _fields_ = [("vkCode", wintypes.DWORD), ("scanCode", wintypes.DWORD), ("flags", wintypes.DWORD),
-                ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
-
-
-class MSLLHOOKSTRUCT(ctypes.Structure):
-    _fields_ = [("pt", wintypes.POINT), ("mouseData", wintypes.DWORD), ("flags", wintypes.DWORD),
-                ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
-
-
-LRESULT = ctypes.c_ssize_t
-HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
-_u = _k = None
-
-
-def _dlls():
-    """Our own copies of user32/kernel32, so the argtypes set here never change how the tools package's calls behave."""
-    global _u, _k
-    if _u is None:
-        u = ctypes.WinDLL("user32", use_last_error=True)
-        k = ctypes.WinDLL("kernel32", use_last_error=True)
-        u.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
-        u.SetWindowsHookExW.restype = wintypes.HHOOK
-        u.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
-        u.CallNextHookEx.restype = LRESULT
-        u.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
-        u.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
-        u.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-        u.WindowFromPoint.argtypes = [wintypes.POINT]
-        u.WindowFromPoint.restype = wintypes.HWND
-        u.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
-        u.GetAncestor.restype = wintypes.HWND
-        u.GetForegroundWindow.restype = wintypes.HWND
-        u.GetWindowTextLengthW.argtypes = [wintypes.HWND]
-        u.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-        u.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-        u.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-        k.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
-        k.GetModuleHandleW.restype = wintypes.HMODULE
-        _u, _k = u, k
-    return _u, _k
-
-
 def _window_info(hwnd):
     import psutil
-    u, _ = _dlls()
     if not hwnd:
         return "", "", 0
-    n = u.GetWindowTextLengthW(hwnd)
-    buf = ctypes.create_unicode_buffer(n + 1)
-    u.GetWindowTextW(hwnd, buf, n + 1)
-    pid = wintypes.DWORD()
-    u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    d = platform.current()
+    pid = d.window_pid(hwnd)
     try:
-        proc = psutil.Process(pid.value).name()
+        proc = psutil.Process(pid).name()
     except Exception:
         proc = ""
-    return buf.value, proc, pid.value
+    return d.title(hwnd), proc, pid
 
 
 def _is_shell(hwnd, proc):
@@ -307,10 +257,7 @@ def _is_shell(hwnd, proc):
         return True
     if str(proc).lower() != "explorer.exe":
         return False
-    u, _ = _dlls()
-    buf = ctypes.create_unicode_buffer(128)
-    u.GetClassNameW(hwnd, buf, 128)
-    return buf.value in SHELL_CLASSES
+    return platform.current().class_name(hwnd) in SHELL_CLASSES
 
 
 def _is_nova(title, proc, pid):
@@ -327,50 +274,18 @@ class Capture:
         self.started = 0.0
         self.last_user = 0.0              # listen mode: when the user last clicked / typed (outside Nova)
         self.limit_hit = False
-        self._hook_tid = 0
+        self._hooks = None                # nova.platform.hooks.InputHooks while watching
         self._threads = []
         self._running = False
         self._lock = threading.Lock()
 
-    # ---- the hooks: as little as possible, never raise, always pass the event on
-    def _on_mouse(self, n, wp, lp):
-        try:
-            if n >= 0 and wp in (WM_LBUTTONDOWN, WM_RBUTTONDOWN):
-                m = ctypes.cast(lp, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
-                if not (m.flags & (LLMHF_INJECTED | LLMHF_LOWER_IL_INJECTED)):
-                    self.q.put(("mouse", wp, m.pt.x, m.pt.y, time.time()))
-        except Exception:
-            pass  # intentional: hook callbacks must never raise into Windows
-        return _u.CallNextHookEx(None, n, wp, lp)
+    # ---- what the hooks hand over (nova.platform.hooks filters out injected events and never lets these raise)
+    def _on_mouse(self, wp, x, y):
+        if wp in (WM_LBUTTONDOWN, WM_RBUTTONDOWN):
+            self.q.put(("mouse", wp, x, y, time.time()))
 
-    def _on_key(self, n, wp, lp):
-        try:
-            if n >= 0:
-                k = ctypes.cast(lp, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-                if not (k.flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED)):
-                    self.q.put(("key", wp, k.vkCode, time.time()))
-        except Exception:
-            pass  # intentional: hook callbacks must never raise into Windows
-        return _u.CallNextHookEx(None, n, wp, lp)
-
-    def _hook_loop(self, ready):
-        u, k = _dlls()
-        self._hook_tid = k.GetCurrentThreadId()
-        mod = k.GetModuleHandleW(None)
-        self._mproc, self._kproc = HOOKPROC(self._on_mouse), HOOKPROC(self._on_key)   # kept alive while hooked
-        hm = u.SetWindowsHookExW(WH_MOUSE_LL, self._mproc, mod, 0)
-        hk = u.SetWindowsHookExW(WH_KEYBOARD_LL, self._kproc, mod, 0)
-        ready["ok"] = bool(hm and hk)
-        ready["ev"].set()
-        msg = wintypes.MSG()
-        try:
-            while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
-                pass
-        finally:
-            if hm:
-                u.UnhookWindowsHookEx(hm)
-            if hk:
-                u.UnhookWindowsHookEx(hk)
+    def _on_key(self, wp, vk):
+        self.q.put(("key", wp, vk, time.time()))
 
     # ---- start / stop
     def start(self, mode, goal=""):
@@ -384,7 +299,8 @@ class Capture:
             self.q = queue.SimpleQueue()
             self._running = True                   # set before the worker starts, so a quick stop() can't be missed
             ready = {"ev": threading.Event(), "ok": False}
-            hook = runtime.spawn("nova-recorder-hooks", self._hook_loop, args=(ready,), start=False)
+            self._hooks = hooks.InputHooks(self._on_mouse, self._on_key)
+            hook = runtime.spawn("nova-recorder-hooks", self._hooks.run, args=(ready,), start=False)
             hook.start()
             ready["ev"].wait(3)
             if not ready["ok"]:
@@ -403,13 +319,12 @@ class Capture:
             return list(self.events) if mode == "record" else []
 
     def _stop_threads(self):
-        u, _ = _dlls()
-        if self._hook_tid:
-            u.PostThreadMessageW(self._hook_tid, WM_QUIT, 0, 0)
+        if self._hooks:
+            self._hooks.stop()
         self._running = False
         for t in self._threads:
             t.join(timeout=3)
-        self._threads, self._hook_tid = [], 0
+        self._threads, self._hooks = [], None
 
     # ---- the worker: everything slow happens here
     def _work(self):
@@ -421,16 +336,15 @@ class Capture:
             self._record(auto)
 
     def _listen(self):
-        u, _ = _dlls()
         while self._running and self.mode == "listen":
             try:
                 item = self.q.get(timeout=0.3)
             except queue.Empty:
                 continue
             if item[0] == "mouse":
-                hwnd = u.GetAncestor(u.WindowFromPoint(wintypes.POINT(item[2], item[3])), 2)
+                hwnd = hooks.window_at(item[2], item[3])
             elif item[1] in (WM_KEYDOWN, WM_SYSKEYDOWN) and item[2] not in MODS:
-                hwnd = u.GetForegroundWindow()
+                hwnd = hooks.foreground()
             else:
                 continue
             title, proc, pid = _window_info(hwnd)
@@ -439,7 +353,6 @@ class Capture:
 
     def _record(self, auto):
         from nova.actions import tools
-        u, _ = _dlls()
         try:
             start_procs = {w[2].lower() for w in tools._windows()}
         except Exception:
@@ -469,7 +382,7 @@ class Capture:
             now = time.time()
             if item and item[0] == "mouse":
                 _, wp, x, y, t = item
-                hwnd = u.GetAncestor(u.WindowFromPoint(wintypes.POINT(x, y)), 2)
+                hwnd = hooks.window_at(x, y)
                 title, proc, pid = _window_info(hwnd)
                 if _is_nova(title, proc, pid):
                     continue
@@ -495,7 +408,7 @@ class Capture:
                     continue
                 held = [m for m in ("ctrl", "alt", "shift", "windows") if m in mods]
                 chord = [m for m in held if m != "shift"]
-                title, proc, pid = _window_info(u.GetForegroundWindow())
+                title, proc, pid = _window_info(hooks.foreground())
                 if _is_nova(title, proc, pid):
                     continue
                 combo = "+".join(held + [name]) if chord or (held and not printable(vk)) else name   # shift+tab
@@ -519,7 +432,7 @@ class Capture:
             # every half second: which window is in front, and which page each browser shows
             if now - last_poll >= 0.5:
                 last_poll = now
-                fg = u.GetForegroundWindow()
+                fg = hooks.foreground()
                 if fg != last_fg:
                     title, proc, pid = _window_info(fg)
                     last_fg = fg

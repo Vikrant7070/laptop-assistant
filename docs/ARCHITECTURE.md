@@ -51,7 +51,7 @@ the same approval rules as a direct tool call.
 | `nova/actions/skills/` | ~1.2k in 5 modules | Parse and render (`format`), match (`matching`), the folder and edits (`library`), side files (`stats`), drafts from a trace (`drafts`) for `skills/*.md` |
 | `nova/avatar/avatar.py` | ~0.74k | 3D window, frame bridge, speech gestures |
 | `nova/avatar/commands.py` | ~0.2k | Her commands (`{"do": ...}`): one `cmd_<name>` each, looked up by `Nova.handle` |
-| `nova/avatar/win32.py` | ~0.1k | The layered Win32 window: ctypes structs, styles, `blit` |
+| `nova/platform/` | ~1.1k in 5 files | **The only place Win32 is called** (R12; `tests/test_platform.py` guards it). `platform.current()` is the desktop: windows, focus, keys, typing, the clipboard, the mouse, screen readings, DPAPI, system settings. `win32.py` is the real one, `fake.py` the `FakeDesktop` every test runs on (`conftest` installs it; the `desktop` fixture sets a scene). `hooks.py` holds the recorder's low-level mouse/keyboard hooks; `avatar_window.py` 3D Nova's layered window and `blit` (moved from `nova/avatar/win32.py`) |
 | `nova/actions/coworker.py` | ~0.77k | Background jobs (research, drafts) |
 | `nova/actions/recorder.py` | ~0.65k | "Watch me" recording of user actions |
 | `nova/actions/learner.py` | ~0.42k | Episode log, learned facts, skill offers from repeated tasks |
