@@ -121,3 +121,29 @@ class FakeDesktop:
 
     def dpi_aware(self):
         return True
+
+    # the system: a reversible stand-in for DPAPI, and settings that are only recorded
+    display_name = "Test User"
+    memory = (4 * 2**30, 16 * 2**30)        # (used, limit) bytes
+
+    def protect(self, data):
+        return b"FAKE-DPAPI:" + bytes(data)[::-1]
+
+    def unprotect(self, data):
+        if not bytes(data).startswith(b"FAKE-DPAPI:"):
+            raise OSError("Windows couldn't encrypt/decrypt the saved key.")
+        return bytes(data)[len(b"FAKE-DPAPI:"):][::-1]
+
+    def user_display_name(self):
+        return self.display_name
+
+    def memory_commit(self):
+        return self.memory
+
+    def set_wallpaper(self, path):
+        self.log.append(("wallpaper", str(path)))
+        return True
+
+    def set_dark_mode(self, on):
+        self.log.append(("dark_mode", bool(on)))
+        self.dark = bool(on)

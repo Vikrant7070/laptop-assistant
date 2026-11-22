@@ -6,6 +6,7 @@ import re
 import threading
 import time
 
+from nova import platform
 from nova import runtime
 from nova import intents
 from nova.avatar import avatar_client
@@ -31,15 +32,8 @@ recorder.busy = lock.locked     # 👀 while she handles a request, the windows 
 
 def _windows_display_name():
     """The first name on the Windows account, e.g. 'Vikrant' - a starting point for the user's profile."""
-    try:
-        import ctypes
-        size = ctypes.c_ulong(256)
-        buf = ctypes.create_unicode_buffer(256)
-        if ctypes.windll.secur32.GetUserNameExW(3, buf, ctypes.byref(size)) and buf.value.strip():
-            return buf.value.strip().split()[0]
-    except Exception:
-        pass        # intentional: the Windows display name is a nicety; "boss" is the fallback
-    return ""
+    name = platform.current().user_display_name()
+    return name.split()[0] if name else ""
 
 
 knowledge.seed(_windows_display_name())

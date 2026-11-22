@@ -9,13 +9,12 @@ read them). Environment variables GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_AP
 Images never go to a cloud model: screen and camera looks always use the local vision model (see llm.vision_model).
 """
 import base64
-import ctypes
 import json
 import os
 import re
 import urllib.error
 import urllib.request
-from ctypes import wintypes
+from nova import platform
 from nova import store
 
 PROVIDERS = {
@@ -61,20 +60,14 @@ def parse(model):
 
 # ------------------------------------------------------------------ keys (Windows DPAPI)
 
-class _Blob(ctypes.Structure):
-    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
 
 
 def _dpapi(data, protect):
-    buf = ctypes.create_string_buffer(data, len(data))
-    src, out = _Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char))), _Blob()
-    fn = ctypes.windll.crypt32.CryptProtectData if protect else ctypes.windll.crypt32.CryptUnprotectData
-    if not fn(ctypes.byref(src), None, None, None, None, 0, ctypes.byref(out)):
-        raise CloudError("Windows couldn't encrypt/decrypt the saved key.")
+    """Encrypt (protect=True) or decrypt a saved key so only this Windows account can read it (nova.platform)."""
     try:
-        return ctypes.string_at(out.pbData, out.cbData)
-    finally:
-        ctypes.windll.kernel32.LocalFree(out.pbData)
+        return platform.current().protect(data) if protect else platform.current().unprotect(data)
+    except OSError as e:
+        raise CloudError(str(e)) from e
 
 
 def _load_keys():

@@ -5,16 +5,15 @@ check_memory looks at RAM *and* the pagefile (the part of the SSD Windows uses a
 programs does. list_startup_apps / set_startup_app read and flip the same on/off switch as Settings > Apps > Startup and
 Task Manager (the StartupApproved registry keys), so anything turned off can be turned back on there.
 """
-import ctypes
 import os
 import struct
 import time
 import winreg
-from ctypes import wintypes
 from pathlib import Path
 
 import psutil
 
+from nova import platform
 from nova.actions.registry import tool
 from nova.log import note
 
@@ -35,21 +34,11 @@ def _gb(n):
     return f"{n / 1024 ** 3:.1f} GB"
 
 
-class _MemStatus(ctypes.Structure):
-    _fields_ = [("dwLength", wintypes.DWORD), ("dwMemoryLoad", wintypes.DWORD),
-                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
 
 
 def _commit():
     """(used, limit) in bytes: RAM + pagefile that programs have claimed, and the most they can claim."""
-    m = _MemStatus()
-    m.dwLength = ctypes.sizeof(m)
-    if not ctypes.WinDLL("kernel32").GlobalMemoryStatusEx(ctypes.byref(m)):
-        return None
-    return m.ullTotalPageFile - m.ullAvailPageFile, m.ullTotalPageFile
+    return platform.current().memory_commit()
 
 
 def _top_programs(limit=6):
