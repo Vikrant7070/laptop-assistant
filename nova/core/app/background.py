@@ -313,6 +313,17 @@ def threads_api():
     return jsonify(threads=runtime.threads())
 
 
+@api.app.get("/api/voice_machine")
+def voice_machine_api():
+    """Debug (R10 shadow week): the voice state machine now, its last transitions, and every time it disagreed with
+    the old flags or got an event its table doesn't allow. Empty `mismatches` and `illegal` = ready to switch."""
+    m = voice_io.machine
+    return jsonify(state=m.state, mode=m.mode, ears=m.ears,
+                   history=[{"at": t, "event": e, "from": a, "to": b} for t, e, a, b in m.history[-20:]],
+                   mismatches=db.find_events(kind="voice_mismatch", limit=50),
+                   illegal=db.find_events(kind="voice_illegal", limit=50))
+
+
 @api.app.post("/api/quit")
 def quit_api():
     """The chat's ⏻ Quit button."""

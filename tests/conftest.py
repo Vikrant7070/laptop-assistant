@@ -118,6 +118,7 @@ def isolated(tmp_path, monkeypatch):
         raise AssertionError("a test tried to open a real window")
     monkeypatch.setattr(coworker, "open_hidden", no_real_windows)
     app.nap.update(asleep=False, reason=None, last_task=__import__("time").time())
+    app.voice_io.machine = app.voice_io.voice_machine.VoiceState(publish=app.eventbus.publish)    # R10 shadow: a fresh one
     app.offer.update(job=None, until=0.0)
     app.offers_waiting.clear()
     app.convo.update(on=False, last_heard=0.0, thinking=False)
