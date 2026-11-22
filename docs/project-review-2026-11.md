@@ -120,14 +120,14 @@ change, and the logs can't be queried.
 ## 8. Breadth before depth, and no success metric from day one
 
 **Now:** a voice assistant, 3D companion, PC automation, phone remote, mail reader, MCP client, skill learner, coding
-manager and an RL "child brain", on a 4B local model, with heuristics (3, 4) making up for what the model can't do. Task
+manager, on a 4B local model, with heuristics (3, 4) making up for what the model can't do. Task
 success has only recently started being measured (the episode log, the Judge's verdicts).
 **Why it hurts:** each feature works in the demo path, but the core loop ("do what I asked, correctly, and say so
 honestly") stays the bottleneck, and it's hard to know whether a change made Nova better overall.
 **Better:** pick 20–30 real tasks early and measure success rate, time and honest-failure rate on every change, local
 and cloud. Grow features only when the core number holds. The Judge and the episode log are the start of this;
 `tests/routing.jsonl` is the offline half.
-**Now?** Yes (M). Turn the episode log plus the Judge into a weekly "task exam" (like the child brain's nightly exam),
+**Now?** Yes (M). Turn the episode log plus the Judge into a weekly "task exam",
 and gate model, prompt and heuristic changes on it.
 
 ## 9. Several AI agents on one repository without rules
@@ -142,27 +142,24 @@ worktree was half-deleted. CI only arrived with Part B.
 - short-lived branches merged within a day or two;
 - one rule file the agents read (`CLAUDE.md` / `AGENTS.md`): work only in a worktree, never in the main folder (the
   live Nova runs from there), check `git worktree list` before touching a shared file, one writer per area at a time;
-- an `OWNERS`-style map: which session owns `tools/`, `app/`, `childbrain/` this week.
+- an `OWNERS`-style map: which session owns `tools/`, `app/` this week.
 
 **Now?** Yes (S). Write `CLAUDE.md` / `AGENTS.md` with these rules today. It's the cheapest item on this list.
 
 ## 10. Repository hygiene
 
-**Now:** 41 MB of `.vrm` models and voice-sample `.wav` files committed straight to git; `childbrain/` (4.6k lines, its
-own requirements with PyTorch) inside the product repository; 10 plan documents in `docs/` plus more outside the repo
+**Now:** 41 MB of `.vrm` models and voice-sample `.wav` files committed straight to git; 10 plan documents in `docs/` plus more outside the repo
 (`~/.opencode/plan`), several partly stale.
-**Why it hurts:** every clone carries every version of every model forever, the product's CI and tooling see a research
-project, and nobody knows which plan is current.
-**Better:** Git LFS for `.vrm`/`.wav` (or a download step like the Whisper and Kokoro models); `childbrain` as its own
-repository or at least its own package with its own CI job; `docs/plans/` with a status line at the top of each plan
+**Why it hurts:** every clone carries every version of every model forever, and nobody knows which plan is current.
+**Better:** Git LFS for `.vrm`/`.wav` (or a download step like the Whisper and Kokoro models); `docs/plans/` with a status line at the top of each plan
 (active / done / dropped), and short ADRs (architecture decision records) for decisions like "packages answer
 `tools.<name>` from the home module".
-**Now?** LFS and the plans folder yes (S). Moving `childbrain` out is the owner's call.
+**Now?** LFS and the plans folder yes (S).
 
 ## 11. Packaging and setup
 
 **Now:** one `requirements.txt` mixing core, GPU (CUDA wheels), voice, camera and cloud packages, plus
-`requirements-test.txt`, `requirements-dev.txt` and `requirements-childbrain.txt`. `pyproject.toml` has no dependencies.
+`requirements-test.txt` and `requirements-dev.txt`. `pyproject.toml` has no dependencies.
 Setup is a README walkthrough and `Start Nova.bat`.
 **Better:** dependencies in `pyproject.toml` with extras (`nova[voice]`, `nova[gpu]`, `nova[camera]`, `nova[cloud]`,
 `nova[dev]`), a lock file, and a first-run check that says what's missing ("no GPU: using the CPU voice model") rather than

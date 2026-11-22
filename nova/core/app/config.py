@@ -90,7 +90,6 @@ class Settings:
     skill_teach: bool = True
     barge_in: bool = True
     character: str = characters.DEFAULT
-    childbrain_home: str = ""            # the child brain folder picked in its tab ("" = the best-equipped one)
     phone_banners_hidden: bool = False   # Nova hid Phone Link's own pop-ups, so she turns them back on
     schema: int = SCHEMA
     extra: dict = field(default_factory=dict)

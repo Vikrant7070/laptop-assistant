@@ -8,9 +8,9 @@ every access. Patch or assign a name in its home module (`app.config.settings`),
 tests/test_app_package.py checks that.
 """
 # Import order: each module finds what it needs at import time already there.
-from nova.core.app import eventbus, config, prompts, session, conversation, skillrun, judging, body, api, voice_io, learning, host, integrations, background, childbrain_tab, childbrain_watch  # noqa: F401
+from nova.core.app import eventbus, config, prompts, session, conversation, skillrun, judging, body, api, voice_io, learning, host, integrations, background  # noqa: F401
 
-_MODULES = {m.__name__.rsplit(".", 1)[1]: m for m in (eventbus, config, prompts, session, conversation, skillrun, judging, learning, api, host, voice_io, body, integrations, background, childbrain_tab, childbrain_watch)}
+_MODULES = {m.__name__.rsplit(".", 1)[1]: m for m in (eventbus, config, prompts, session, conversation, skillrun, judging, learning, api, host, voice_io, body, integrations, background)}
 _HOME = {name: _MODULES[mod] for mod, names in {
     'eventbus': ['Bus', 'BusyLock', 'HEARTBEAT', 'KEEP', 'MAX_QUEUE', 'bus', 'publish'],
     'config': ['ASSISTANT_NAME', 'CLOUD_HISTORY_MAX', 'DEFAULT_MODEL', 'MAX_EVENTS', 'MAX_HISTORY', 'MAX_STORED', 'PORT', 'PROMPT_TOKENS', 'ROOT', '_unspoken', 'brain', 'save_settings', 'settings'],
@@ -26,8 +26,6 @@ _HOME = {name: _MODULES[mod] for mod, names in {
     'body': ['BODY_WORDS', 'DANCE_NAMES', 'DANCE_WORDS', 'REACT_RULES', 'STYLE_WORDS', '_TIMES', '_cap_history', '_known_move', 'answer', 'body_command', 'look_first', 'pick_reaction', 'queue_new_move', 'queue_reaction', 'react_later'],
     'integrations': ['AWAY_IDLE', 'GREET_EVERY', 'HELP_EVERY', 'HELP_SECS', 'MOBILE_TAG', 'OFFER_SECS', 'PHONE_CALL_WAIT', 'PHONE_NOTE_MAX', 'PHONE_NOTE_SECS', 'PHONE_TAG', 'SECRETY', '_first_name', '_greeted', '_hide_codes', '_next_offer', '_phone_hint', '_speakable', 'email_allowed', 'forms_get', 'forms_set', 'gmail_get', 'gmail_set', 'help_answer', 'help_first', 'help_offer', 'help_queue', 'help_step', 'help_watch', 'job_done', 'mcp_get', 'mcp_set', 'mobile', 'mobile_confirm', 'mobile_get', 'mobile_info', 'mobile_message', 'mobile_set', 'notif_watcher', 'offer', 'offer_help', 'offers_waiting', 'on_notifications', 'on_presence', 'phone', 'phone_confirm', 'phone_get', 'phone_message', 'phone_note', 'phone_seen', 'phone_set', 'phone_status', 'presence_idle', 'presence_watch', 'ring_cue', 'say_only', 'screen_watch', 'sync_phone_banners', 'tailscale_url', 'take_help', 'take_offer', 'tell_away', 'user_away', 'workers_get', 'workers_set', 'write_text'],
     'background': ['NOVA_WINDOWS', 'SUGGEST_EVERY', 'SUGGEST_PROMPT', '_LASTINPUTINFO', '_alerts', '_background', '_front_title', 'busy_now', 'chat', 'confirm', 'ear_idle', 'ear_page', 'ear_poll', 'ear_said', 'get_events', 'get_thoughts', 'offer_answer', 'PULSE_EVERY', '_sse', 'pulse', 'pulse_now', 'pulse_watch', 'stream', 'stream_events', 'voice_state', 'quit_api', 'quit_hook', 'quit_nova', 'reset', 'start_background', 'stop', 'suggest_api', 'suggest_now', 'suggest_state', 'suggest_watch', 'user_idle_secs', 'voice_stop', 'work_watch'],
-    'childbrain_tab': ['childbrain_page', 'childbrain_status', 'childbrain_overview', 'childbrain_gpu', 'childbrain_run', 'childbrain_set_home', 'childbrain_train', 'childbrain_rerun', 'childbrain_nightly', 'childbrain_finish', 'childbrain_kill', 'childbrain_off', 'childbrain_clear', 'childbrain_check', 'childbrain_rollback', 'childbrain_open', 'childbrain_log'],
-    'childbrain_watch': ['childbrain_brains', 'childbrain_watch_get', 'childbrain_watch_start'],
 }.items() for name in names}
 
 
