@@ -334,8 +334,8 @@ in, the same way `toolpick.CODING` does: build/make/create + site/app/page, "res
    - The Learner turns that into worker notes ("OpenCode did small README fixes 3/3"), which step 4 uses.
 
 **Build order (each its own commit and live check):**
-- **4-pre:** the task state (below): one working memory for Nova's own laptop tasks and worker jobs. 4a's brief is
-  built on it.
+- **4-pre:** the task state (below): one working memory for Nova's own laptop tasks and worker jobs, plus a live
+  task strip and a `/tasks` page to watch them. 4a's brief is built on it.
 - **4a:** triage, questions, brief. For now it shows the brief and the user says "go".
 - **4b:** worker pick from history, plus the research→coding chain.
 - **4c:** checks, one send-back round, report.
@@ -419,6 +419,43 @@ size limit.
 
 **Related:** upgrade plan A2 (saved, searchable chat history) and B3 (steering a running task) are planned and not
 built. The task state is what B3 would steer, so build it first.
+
+#### 4-pre UI — see what Nova is doing (the user's request, 2026-11-22)
+
+The user wants to **track what is going on**, so the task state needs a screen. Today what's shown is spread out:
+the thought cloud (`/api/thoughts`, gone after a few seconds), ⚙ Workers → Recent jobs (worker jobs only), and
+`data/task_log.txt` (raw, for developers). Nothing shows Nova's own tasks, their plan, or why one stopped.
+
+**1. A live task strip in the main window** (`static/index.html` / `nova.js`, always visible while a task runs):
+- One line: the goal, `step 3 of 4`, the current step, and how long it has been running.
+- Click to open the card: the plan with ✅ / ⏳ / ❌ / ⏭ (skipped) per step, the one-line result of each done step,
+  and which brain is working (4B / planner / cloud / a worker).
+- Buttons: **Stop**, and when stopped or interrupted, **Continue** and **Drop it**.
+- When a step waits for the user (an approval, a "go" on a brief), the strip says so plainly, in a different colour.
+
+**2. A Tasks page at `/tasks`** (copy the `/childbrain` and `/knowledge` page pattern), one list for **both** kinds:
+Nova's own laptop tasks and worker jobs (coding, research), newest first.
+- Filter: running / waiting for me / stopped / done / failed; laptop tasks / workers.
+- Each row: when, goal, who did it, status, steps done / total, time taken, and the Judge's verdict.
+- Open a row: the full card, the plan and where it came from (skill / cloud / deep brain), every step with its tool,
+  result and check, the brief (for worker jobs), and **why it ended**: done, Stop pressed, barge-in, restart, a check
+  failed, out of steps. This answers "what happened?" without reading the task log.
+- "Interrupted" tasks after a restart are at the top with **Continue** / **Drop it**.
+- Worker jobs link to their existing actions (show changes, commit, retry, report).
+
+**3. Phone:** `/tasks` must work at phone width, for the mobile view. Telegram stays "done or blocked only" (the
+user's answer in section 9); its message gets a short "see it on the Tasks page" line, no new message types.
+
+**Data:** the page reads the saved task-state records (point 7 above) through one endpoint, `GET /api/tasks`
+(list) and `GET /api/tasks/<id>` (one card), plus the existing thoughts poll for live updates. No new storage. Old
+records are trimmed after N days (default 30), like other logs. Secrets are never shown: the card holds the same
+cleaned text as the task log (`SECRETY` filter), never form values or codes.
+
+**Tests:** the endpoints return the saved cards; filters work; a restart-interrupted task shows Continue; nothing
+secret in a card; the page loads at 375 px wide.
+
+**Build order inside 4-pre:** (a) task state + card for the brain, (b) save and resume, (c) the live strip, (d) the
+`/tasks` page. Each its own commit; the UI can't come before the data it shows.
 
 ## 7. Phase 5 — Judges for workers' results
 
