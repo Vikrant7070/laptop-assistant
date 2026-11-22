@@ -172,3 +172,38 @@ def test_watch_checks_its_input_and_the_off_switch(setup, client):
     assert client.get("/api/childbrain/watch/..%2Fx.json").status_code in (400, 404)
     (h / "childbrain" / "runs" / "STOP").write_text("x", encoding="utf-8")
     assert client.post("/api/childbrain/watch", json=ok).status_code == 409
+
+
+# ---------- the Training switch: the laptop stays awake while it trains ----------
+
+def test_the_laptop_stays_awake_only_while_a_training_run_goes(setup, monkeypatch):
+    import threading
+    h = _fake_childbrain(setup, python=True)
+    flags, job = [], {"running": True, "kind": "train"}
+    monkeypatch.setattr(cb, "_set_awake", flags.append)
+    monkeypatch.setattr(cb, "AWAKE_CHECK", 0.02)
+    monkeypatch.setattr(cb, "current_job", lambda h=None: dict(job))
+    cb.keep_awake(h)
+    t = cb._awake["thread"]
+    assert isinstance(t, threading.Thread) and flags == [True]
+    cb.keep_awake(h)                                     # called again (every status poll): still one holder
+    assert cb._awake["thread"] is t and flags == [True]
+    job["running"] = False                               # the run ended (finished, killed, switched off)
+    t.join(2)
+    assert flags == [True, False] and cb._awake == {"thread": None, "on": False}
+    job.update(running=True, kind="nightly")             # other jobs don't hold the laptop awake
+    cb.keep_awake(h)
+    assert cb._awake["thread"] is None and flags == [True, False]
+
+
+def test_status_says_whether_it_is_kept_awake(setup, client):
+    _fake_childbrain(setup, python=True)
+    assert client.get("/api/childbrain/status").get_json()["awake"] is False
+
+
+def test_a_folder_without_python_uses_another_copys(setup, client):
+    _fake_childbrain(setup)                                            # Nova's folder: the latest code, no Python
+    _fake_childbrain(setup / ".claude" / "worktrees" / "cb", python=True)
+    folders = {f["name"]: f for f in client.get("/api/childbrain/status").get_json()["folders"]}
+    assert folders["Nova's folder"]["python"] and folders["Nova's folder"]["python_from"] == "cb"
+    assert folders["cb"]["python"] and folders["cb"]["python_from"] == ""

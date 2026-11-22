@@ -67,9 +67,11 @@ def _candidates():
 def _describe(folder):
     runs = folder / "childbrain" / "runs"
     n = sum(1 for p in runs.glob("*/card.json")) if runs.is_dir() else 0
+    own = (folder / VENV).exists()
+    borrowed = None if own else python_exe(folder)          # runs this folder's code with another copy's Python
     return {"path": str(folder), "name": "Nova's folder" if folder == config.ROOT else folder.name,
             "learner": (folder / "childbrain" / "measure" / "learn_alone.py").exists(),
-            "python": (folder / VENV).exists(), "runs": n}
+            "python": own or bool(borrowed), "python_from": borrowed.parents[2].name if borrowed else "", "runs": n}
 
 
 def home():
@@ -219,6 +221,45 @@ def _start(h, kind, label, args):
                "log": str(log), "state": "running", "home": str(h)}
         _write_job(h, job)
     return job
+
+
+# ---------- keep the laptop awake while it trains (the Training switch) ----------
+# A sleeping laptop freezes the run (on battery it sleeps after a few minutes). While a training job runs, a small
+# thread holds Windows' "system required" flag; the screen may still turn off, and closing the lid still sleeps.
+
+ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+AWAKE_CHECK = 30
+_awake = {"thread": None, "on": False}
+
+
+def _set_awake(on):
+    import ctypes
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if on else 0))
+
+
+def _training(h):
+    job = current_job(h)
+    return bool(job and job["running"] and job["kind"] == "train")
+
+
+def _hold_awake(h):
+    _set_awake(True)                     # the flag belongs to this thread: set and cleared here
+    _awake["on"] = True
+    try:
+        while _training(h):
+            time.sleep(AWAKE_CHECK)
+    finally:
+        _set_awake(False)
+        _awake.update(on=False, thread=None)
+
+
+def keep_awake(h):
+    """While a training job is running, the laptop doesn't go to sleep. Safe to call often."""
+    with _lock:
+        if _awake["thread"] or not _training(h):
+            return
+        _awake["thread"] = threading.Thread(target=_hold_awake, args=(h,), daemon=True)
+        _awake["thread"].start()
 
 
 def _kill_tree(pid):
@@ -513,7 +554,8 @@ def childbrain_status():
     stop = rd / "STOP"
     job = current_job(h)
     others = _others(job)
-    return jsonify(found=True, home=str(h), folders=[_describe(p) for p in _candidates()],
+    keep_awake(h)                        # also picks up a run that was started before Nova restarted
+    return jsonify(found=True, home=str(h), folders=[_describe(p) for p in _candidates()], awake=_awake["on"],
                    python=str(python_exe(h) or ""), off_switch=stop.exists(),
                    off_since=stop.read_text(encoding="utf-8").strip() if stop.exists() else "",
                    job=job, others=others, processes=len(others) + bool(job and job["running"]), runs_dir=str(rd))
@@ -610,7 +652,9 @@ def childbrain_train():
         args += ["--set", *sets]
     game = (b.get("settings") or {}).get("game")
     label = f"training {game or exp}" + (f" ({name})" if name else "")
-    return jsonify(ok=True, job=_start(h, "train", label, args))
+    job = _start(h, "train", label, args)
+    keep_awake(h)
+    return jsonify(ok=True, job=job)
 
 
 @api.app.post("/api/childbrain/rerun")
