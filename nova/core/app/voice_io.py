@@ -17,11 +17,33 @@ from nova.audio import voice
 from nova import intents
 from nova import protocol
 from nova.log import log_exception
-from nova.core.app import config, conversation, eventbus
+from nova.core.app import config, conversation, eventbus, voice_machine
 
 
 mouth = voice.Mouth()
-mouth.on_lips = lambda on: eventbus.publish("speak_start" if on else "speak_end")    # the chat page's talking face
+
+
+# R10 shadow mode: one state machine next to the flags below (convo, nap, listen_state). Nothing reads it yet; every
+# event is checked against the flags and a disagreement is logged (voice_mismatch). See voice_machine.py.
+machine = voice_machine.VoiceState(publish=eventbus.publish)
+
+
+def _shadow(event):
+    """Tell the shadow machine, then compare it with the flags. Never lets the voice side fail."""
+    try:
+        machine.fire(event)
+        machine.check({"ears_off": listen_state.get("ears_off", False), "convo_on": convo["on"],
+                     "asleep": nap["asleep"], "deep": nap.get("deep", False), "thinking": convo["thinking"]})
+    except Exception:
+        log_exception("voice_state shadow")
+
+
+def _lips(on):
+    eventbus.publish("speak_start" if on else "speak_end")    # the chat page's talking face
+    _shadow("reply_started" if on else "reply_done")
+
+
+mouth.on_lips = _lips
 
 
 def ears_changed(status, heard):
@@ -49,6 +71,7 @@ def apply_character(cid):
         convo["on"] = False
         listen_state["single"] = False
         ear_close()
+        _shadow("conversation_over")
     conversation.task_log(f"CHARACTER {ch['name']}: voice {ch['voice']}, wake word \"Hey {ch['name']}\"")
     eventbus.publish("wake_phrase", {"phrase": prompts.wake_phrase()})
     with session.lock:                # a fresh chat: the small brain copies its old name and tone from the history otherwise
@@ -241,6 +264,7 @@ def set_ears(on):
             ears.start()
         avatar_client.send("thought", text="👂 ears on", secs=3, timeout=2)
         conversation.task_log("EARS ON (👂)")
+        _shadow("ears_on")
         return
     ears.stop()
     convo["on"] = False
@@ -248,6 +272,7 @@ def set_ears(on):
     ear_close()
     avatar_client.send("thought", text="🙉 ears off", secs=4, timeout=2)
     conversation.task_log("EARS OFF (👂) - not listening at all")
+    _shadow("ears_off")
 
 
 def silent_ok():
@@ -287,7 +312,12 @@ def ears_on():
             done.wait(0.15)
         avatar_client.send("listen", on=False, timeout=1)
     runtime.spawn("voice_io.beat", beat)
-    return done.set
+    _shadow("hearing_started")
+
+    def stop():
+        done.set()
+        _shadow("hearing_ended")
+    return stop
 
 
 def silent_loop():
@@ -346,6 +376,7 @@ def _start_conversation(greet=True):
     """From now on she keeps listening after every answer, until "Nova, go to sleep" or 5 minutes without a task."""
     if not convo["on"]:
         convo.update(on=True, last_heard=time.time())
+        _shadow("wake_heard")
         if greet:
             name = characters.get(config.settings().get("character"))["name"]
             announce(f"I'm awake! 👂 Talk to me. Say “{name}, go to sleep” when you're done.", spoken="I'm awake! I'm listening.")
@@ -388,6 +419,7 @@ def go_to_sleep(reason="asked", quiet=False):
         sleep_body(after_words=True)      # the goodnight first, then she lies down
     else:
         sleep_body()
+    _shadow("sleep_asked" if reason == "asked" else "nap_due")
 
 
 def confirm_pending(approved, quiet=False, remote=None):
@@ -478,6 +510,7 @@ def heard(text, via="bubble"):
             ear_listen_after_speech() if convo["on"] else ear_close()
         return
     convo["thinking"] = True
+    _shadow("request_heard")
     eventbus.publish("thinking", {"on": True})
     avatar_client.send("anim", name="think", timeout=2)
     try:
@@ -487,6 +520,7 @@ def heard(text, via="bubble"):
             out, status = body.answer(f"{protocol.SPOKEN} {text}")
     finally:
         convo["thinking"] = False
+        _shadow("answered")
         eventbus.publish("thinking", {"on": False})
     convo["asked"] = time.time() if str(out.get("say") or out.get("reply") or "").rstrip().endswith("?") else 0.0
     if not (out.get("say") or out.get("reply")) and not mouth.busy():
@@ -570,6 +604,7 @@ def on_barge(kind, text):
     if kind == "stop" and session.lock.locked():
         conversation.stop_now()
     mouth.stop(quick=True)
+    _shadow("barge_in")
     ears._note(f"you talked over me: “{text[:50]}” - stopped ({kind})")
     if whisper:
         whisper.next_floor = barge.floor       # the user is still talking: don't take their voice for the room's noise
@@ -634,9 +669,11 @@ def go_deep():
     conversation.task_log("DEEP SLEEP - mic off until clicked or messaged")
     push_event({"reply": "💤 I'm deep asleep now - my mic is off. Click me (or type to me) to wake me up.", "kind": "suggestion"})
     avatar_client.send("sleep", on=True, deep=True, timeout=3)
+    _shadow("deep_due")
 
 
 def wake_body(clicked=False):
+    was_asleep = nap["asleep"] or nap.get("deep")
     if nap.get("deep"):
         nap["deep"] = False
         if config.settings()["wake"]:
@@ -647,6 +684,8 @@ def wake_body(clicked=False):
         nap["reason"] = None
         nap["gen"] = nap.get("gen", 0) + 1
         avatar_client.send("sleep", on=False, clicked=clicked, timeout=3)
+    if was_asleep:
+        _shadow("woken")
 
 
 def note_task():
