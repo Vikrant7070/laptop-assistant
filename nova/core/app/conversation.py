@@ -21,7 +21,7 @@ from nova.actions import recorder
 from nova.actions import tools
 from nova import shared
 from nova import intents
-from nova import protocol
+from nova import protocol, task_state
 from nova import log
 from nova.log import log_exception
 
@@ -140,6 +140,7 @@ def new_task(goal):
         learning.record_episode(last)                 # the last task is over: one line in the episode log (learner.py)
     if last.get("paused") and intents.CONTINUE.search(clean):
         last["paused"] = False
+        task_state.mark(task_state.of(last), "running", "the user said carry on")
         task_log(f"RESUMING paused task: {last['goal'][:200]}")
         session.think(f"▶️ Carrying on with: {last['goal'][:120]}", cloud_too=False)
         return "\n" + protocol.note(
@@ -170,6 +171,7 @@ def new_task(goal):
                      "screen": "", "nudged": False, "tools": picked, "facts": facts, "used": [],
                      "skill": skill["name"] if skill else "", "skill_how": how or "",
                      "app": tools.named_app(clean)}      # "type hello in notepad": keys and typing go only there
+    task_state.attach(session.state["task"], *((task_state.steps_from_skill(skill), "skill") if skill and how == "exact" else ()))
     direct = skillrun.plan_direct(session.state["task"], skill, how)     # an exact routine match: no brain turn first
     try:
         made = judge.goal_checks(clean)   # the Judge's checks for this goal (more may be proposed later)
@@ -260,6 +262,7 @@ def route_task(kind, why=""):
         return f"No plan available ({m}). Work it out yourself, one step at a time."
     task_log(f"ROUTE deep -> plan from {m} in {time.time() - t0:.0f}s:\n      " + plan.replace("\n", "\n      "))
     task["plan"] = plan
+    task_state.set_plan(task_state.of(task), task_state.steps_from_plan(plan, {t["name"] for t in tools.TOOLS}), "deep brain")
     task["facts"] = (task.get("facts", "") + "\n\nPLAN for this task, written by your deep-thinking brain - "
                      "follow it step by step:\n" + plan + "\nThe plan is advice from another brain: it may name tools "
                      "you don't have or add silly or unsafe steps. Use only your real tools, skip steps that don't "
@@ -496,6 +499,7 @@ def agent_loop(activity):
         activity.append("Stopped")
         if session.state.get("task") is not None:
             session.state["task"]["stopped"] = True      # the episode log: a stopped task never counts as one that worked
+            task_state.mark(task_state.of(session.state["task"]), "stopped", "Stop pressed")
         out = {"reply": STOPPED_REPLY, "activity": activity, "say": STOPPED_REPLY, "stopped": True}
     voice_io.nap["last_task"] = time.time()          # the 5-minute nap clock counts from when she finished, not from the ask
     out["images"] = session.state.pop("images", [])
@@ -676,8 +680,9 @@ def _agent_loop(activity):
             session.state["messages"].append({"role": "user", "content":
                 protocol.note(("A check shows the task is not finished yet:\n" if by_check else
                                "Your last look at the screen says the task is not finished yet:\n")
-                              + f"{task['screen']}\nThe task: {task['goal']}\nThe only steps you have really done so far:\n- "
-                              + "\n- ".join(task["did"]) + "\nWork out which part of the task has no step yet and do it now with "
+                              + f"{task['screen']}\n" + (task_state.render(task_state.of(task)) or f"The task: {task['goal']}\n"
+                              "The only steps you have really done so far:\n- " + "\n- ".join(task["did"]))
+                              + "\nWork out which part of the task has no step yet and do it now with "
                               "a tool. " + ("You may not say the task is done until the check passes. " if by_check else "")
                               + "If you are truly stuck, tell the user honestly in one sentence what is left.")})
             continue
@@ -702,6 +707,7 @@ def _agent_loop(activity):
             # "Sure! Let's run the command:" said before a step isn't part of the answer once a real answer follows
             # (it read "...in your terminal: Ah! Looks like Python 3.12..."). Out loud she still says both.
             answer_only_text = [t for i, t in enumerate(spoken) if i not in lead_ins]
+            task_state.mark(task_state.of(task), "failed" if task and task["done"] is False else "done")
             return result(" ".join(answer_only_text if text else spoken).strip() or "Done!")
         sig = json.dumps([(c["name"], c["args"]) for c in calls], sort_keys=True, default=str)
         repeatable = any(c["name"] in REPEATABLE for c in calls)
@@ -709,12 +715,14 @@ def _agent_loop(activity):
             # Told to stop repeating and did it again: end here rather than spending the whole step budget on it.
             session.state["messages"].extend(llm.tool_result_message(model, c, "Not run - same as before.") for c in calls)
             task_log(f"STUCK: {calls[0]['name']} called {same_calls} times in a row with the same arguments")
+            task_state.mark(task_state.of(task), "stuck", f"{calls[0]['name']} {same_calls} times with the same arguments")
             session.think("🔁 I keep doing the same step and getting nowhere - stopping here.")
             line = "I kept repeating the same step without getting anywhere, so I stopped. Can you tell me a bit more?"
             unsaid.append(line)
             return result((" ".join(spoken) + " " + line).strip())
         if any(session.is_risky(c) for c in calls):
             session.state["pending"] = calls
+            task_state.mark(task_state.of(task), "waiting", "an approval")
             session.think("✋ I need your OK before I " + ", ".join((session.ask_text(c) if c["name"] == "run_skill" else session.ASK.get(c["name"], c["name"])).lower()
                                                             for c in calls if session.is_risky(c)) + ".")
             return result(" ".join(spoken).strip(),
@@ -745,6 +753,7 @@ def _agent_loop(activity):
                               "what you already know, or do a different step if one is really needed.")})
     if task is not None:
         task["paused"] = True               # "keep going" now carries on with this task
+        task_state.mark(task_state.of(task), "stopped", "out of steps")
     session.think("🛑 That's a lot of steps - pausing here.")
     line = "That was a lot of steps, so I paused here. Say “keep going” and I'll carry on."
     unsaid.append(line)
