@@ -48,5 +48,3 @@ PR merges.
 - A PowerShell/terminal command that changes anything **always asks**, at every autonomy level, with no setting to turn
   that off. Read-only commands may run freely.
 - The task exam runs only when the user starts it (`--yes`), never on a schedule and never by an agent on its own.
-- The child brain is its own project (`C:\Users\vikra\OneDrive\Desktop\child-brain`, since 2026-11-22), not part of Nova.
-  Nova only writes the graphics-card signal it reads (`nova/brain/gpu_signal.py`), so Nova goes first on the card.

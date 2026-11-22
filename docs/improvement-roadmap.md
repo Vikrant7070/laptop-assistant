@@ -16,7 +16,7 @@ exact files, steps, tests and a "done when" check for each. Written 2026-11-21 a
 | 7 Loose JSON, untyped settings | R7 typed settings; R13 SQLite + structured log |
 | 8 No success metric | R5 task exam |
 | 9 Agents without rules | R1 `AGENTS.md` + collision check |
-| 10 Repository hygiene | R3 LFS, plans folder, child brain boundary |
+| 10 Repository hygiene | R3 LFS, plans folder |
 | 11 Packaging | R4 extras + `nova doctor` |
 | 12 Prompts in code | R15 prompt files |
 | (file sizes) | R6 split tooling, `voice.py`, `avatar.py`; `skills.py` and `coworker.py` with Phase 4 |
@@ -92,7 +92,7 @@ first.
      so new changes already go to LFS.
    - **1b (the rewrite, in a quiet window):** `git lfs migrate import --include="*.vrm,*.wav" --everything`, then
      force-push `master` and every live branch. Before it runs:
-     1. Every other worktree has committed and pushed (Phase 4, `claude/child-brain-wp1.1`, the child brain tab,
+     1. Every other worktree has committed and pushed (Phase 4,
         `manager-phase3`). `scripts/who_edits.py` (R1) shows nothing uncommitted.
      2. No open PRs, or each is noted with its branch and re-pushed after the rewrite.
      3. A backup tag `pre-lfs-rewrite` pushed, plus a `git bundle` of the whole repo kept outside the repo.
@@ -106,10 +106,6 @@ first.
    superseded.
 3. `docs/adr/`: short decision records for decisions that are already made: 0001 deterministic-first Judge,
    0002 `@tool` registry, 0003 packages answer from the home module, 0004 data paths via `store`.
-4. Child brain stays in this repository (decided 2026-11-21), with a separate CI job: `childbrain` tests on
-   `requirements-childbrain.txt` (CPU PyTorch in CI), triggered only when `childbrain/**` changes. The product's CI job
-   ignores `childbrain/`. **Changed 2026-11-22:** the child brain and its page moved out to their own project
-   (`C:\Users\vikra\OneDrive\Desktop\child-brain`); Nova keeps only the graphics-card signal (`nova/brain/gpu_signal.py`).
 
 **Done when:** `.gitattributes` is on master, a new `.vrm` commit stores a pointer, `docs/plans/` has a status line on
 every plan, and CI runs two jobs.
@@ -354,8 +350,6 @@ Items within a phase that touch different files can run in parallel sessions. R1
 
 1. **LFS: rewrite history too.** R3 step 1b, in a quiet window after Phase 4 merges, with a backup tag and bundle;
    all worktrees recreated afterwards.
-2. ~~**Child brain: stays in this repository**, with its own CI job (R3 step 4).~~ Moved out to its own project on
-   2026-11-22 (`C:\Users\vikra\OneDrive\Desktop\child-brain`).
-3. **Shell: never run a changing command without asking**, at any autonomy level, and no setting to turn that off
+2. **Shell: never run a changing command without asking**, at any autonomy level, and no setting to turn that off
    (R2 step 3). Read-only commands still run freely.
-4. **Task exam: only when you start it** (`python -m nova.exam --yes`), never on a schedule (R5 step 4).
+3. **Task exam: only when you start it** (`python -m nova.exam --yes`), never on a schedule (R5 step 4).
