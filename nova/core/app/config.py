@@ -1,8 +1,11 @@
 """Settings (data/settings.json), the brain to use, and the constants every part of the server shares."""
 
 
+import copy
 import json
 import os
+import typing
+from dataclasses import dataclass, field, fields
 
 from nova import store
 from nova.brain import cloud
@@ -44,23 +47,130 @@ def _unspoken(text):
     return protocol.unspoken(text)
 
 
+SCHEMA = 1   # bump it when a key is renamed or its meaning changes, and add a step to MIGRATIONS
+
+
+@dataclass
+class Settings:
+    """Every key of data/settings.json, with its type and default, in one place (roadmap R7). Loading never drops a
+    key: one this class doesn't know is kept in `extra` (the model-routing overrides live there on purpose - a key in
+    settings.json overrides data/model_routing.json, so they must not get a default here). A value of the wrong type
+    becomes the default, and the bad value is logged."""
+    model: str = DEFAULT_MODEL
+    think: bool = False
+    autonomy: typing.Literal["careful", "trusted", "full"] = "careful"
+    camera: bool = False
+    screen: bool = False
+    voice: bool = True
+    wake: bool = False
+    provider: str = "ollama"
+    cloud_models: dict = field(default_factory=dict)
+    notifications: bool = False
+    notif_sleep: bool = False
+    deep_sleep: bool = True
+    listen_pause: float = 0.7
+    listen_max: int = 10
+    mic_level: int = 5
+    notif_muted: list = field(default_factory=list)
+    phone_calls: bool = True
+    email_cloud: bool = False
+    mobile: bool = False
+    phone_quiet: bool = True
+    phone_notes_cloud: bool = False
+    suggest: bool = False
+    reaction_sounds: bool = True
+    power_ok: bool = False
+    reasoning: str = "auto"
+    react_to_sound: bool = True
+    avatar_roam: str = "corner"
+    presence: bool = False
+    presence_lock: bool = False
+    error_help: bool = True
+    skill_screen_checks: bool = False
+    skill_teach: bool = True
+    barge_in: bool = True
+    character: str = characters.DEFAULT
+    childbrain_home: str = ""            # the child brain folder picked in its tab ("" = the best-equipped one)
+    phone_banners_hidden: bool = False   # Nova hid Phone Link's own pop-ups, so she turns them back on
+    schema: int = SCHEMA
+    extra: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, raw):
+        """A dict (from the file or a caller) -> Settings: migrated, each known key checked against its type."""
+        raw = _migrate(dict(raw))
+        known, extra = {}, {}
+        for k, v in raw.items():
+            (known if k in _FIELDS else extra)[k] = v
+        out = cls(extra=copy.deepcopy(extra))
+        for name, v in known.items():
+            f = _FIELDS[name]
+            ok, value = _typed(v, f.type)
+            if ok:
+                setattr(out, name, copy.deepcopy(value))
+            else:
+                log_exception(f"settings.json: {name}", TypeError(
+                    f"{name}={v!r} isn't {_type_name(f.type)}; using the default {getattr(out, name)!r}"))
+        out.schema = SCHEMA
+        return out
+
+    def to_dict(self):
+        """The plain dict every caller reads (`settings()["x"]`): the known keys, then the unknown ones."""
+        d = {f.name: copy.deepcopy(getattr(self, f.name)) for f in fields(self) if f.name != "extra"}
+        return {**d, **{k: copy.deepcopy(v) for k, v in self.extra.items() if k not in d}}
+
+
+_FIELDS = {f.name: f for f in fields(Settings) if f.name != "extra"}
+
+MIGRATIONS = {}   # {old schema: function(raw dict) -> raw dict for old schema + 1}
+
+
+def _migrate(raw):
+    v = raw.get("schema", SCHEMA)
+    v = v if isinstance(v, int) and not isinstance(v, bool) else SCHEMA
+    while v < SCHEMA:
+        raw = MIGRATIONS[v](raw)
+        v += 1
+    return raw
+
+
+def _type_name(tp):
+    if typing.get_origin(tp) is typing.Literal:
+        return "one of " + ", ".join(map(repr, typing.get_args(tp)))
+    return tp.__name__
+
+
+def _typed(v, tp):
+    """(fits, value): whether v fits the field type, and the value to keep (an int for a float field becomes float)."""
+    if typing.get_origin(tp) is typing.Literal:
+        return v in typing.get_args(tp), v
+    if tp is float:
+        ok = isinstance(v, (int, float)) and not isinstance(v, bool)
+        return ok, float(v) if ok else v
+    if tp is int:
+        return isinstance(v, int) and not isinstance(v, bool), v
+    return isinstance(v, tp), v
+
+
 def settings():
-    s = {"model": DEFAULT_MODEL, "think": False, "autonomy": "careful", "camera": False, "screen": False, "voice": True, "wake": False,
-         "provider": "ollama", "cloud_models": {}, "notifications": False, "notif_sleep": False, "deep_sleep": True, "listen_pause": 0.7, "listen_max": 10, "mic_level": 5, "notif_muted": [], "phone_calls": True, "email_cloud": False, "mobile": False, "phone_quiet": True, "phone_notes_cloud": False, "suggest": False,
-         "reaction_sounds": True, "power_ok": False, "reasoning": "auto",
-         "react_to_sound": True, "avatar_roam": "corner", "presence": False, "presence_lock": False, "error_help": True,
-         "skill_screen_checks": False, "skill_teach": True, "barge_in": True, "character": characters.DEFAULT}
+    """The settings as a plain dict, every known key present and of its type (Settings.to_dict)."""
+    raw = {}
     try:
-        s.update(json.loads(store.current().settings.read_text(encoding="utf-8")))
+        raw = json.loads(store.current().settings.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError(f"settings.json holds a {type(raw).__name__}, not an object")
     except Exception:
+        raw = {}
         log_exception("settings.json")     # keep the defaults; the broken file is reported in the task log
-    return s
+    return Settings.from_dict(raw).to_dict()
 
 
 def save_settings(s):
-    """Atomic write: every request reads this file, and must never see it half-written."""
+    """Validate (wrong types -> defaults, unknown keys kept), then write atomically: every request reads this file,
+    and must never see it half-written."""
+    data = (s if isinstance(s, Settings) else Settings.from_dict(s)).to_dict()
     tmp = store.current().settings.with_suffix(".tmp")
-    tmp.write_text(json.dumps(s, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     tmp.replace(store.current().settings)
 
 
