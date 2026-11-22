@@ -6,8 +6,8 @@ import os
 import queue
 import re
 import time
-import ctypes
 
+from nova import platform
 from nova import db, runtime
 from flask import Response, jsonify, request, send_from_directory
 
@@ -32,16 +32,11 @@ SUGGEST_PROMPT = promptfiles.load("suggest")
 suggest_state = {"last": 0.0, "title": "", "running": False}
 
 
-class _LASTINPUTINFO(ctypes.Structure):
-    _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
 
 
 def user_idle_secs():
-    """Seconds since the user last touched the keyboard or mouse."""
-    info = _LASTINPUTINFO(ctypes.sizeof(_LASTINPUTINFO), 0)
-    if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
-        return 0.0
-    return max(0.0, (ctypes.windll.kernel32.GetTickCount() - info.dwTime) / 1000)
+    """Seconds since the user last touched the keyboard or mouse (nova.platform)."""
+    return platform.current().idle_seconds()
 
 
 NOVA_WINDOWS = ("Nova", "Nova 3D", "Nova ear", "tk")

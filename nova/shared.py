@@ -2,10 +2,8 @@
 
 Avoids duplicating definitions across the tools package, avatar.py, desktop.py, knowledge.py and cloud.py.
 """
-import ctypes
 import os
 import re
-from ctypes import wintypes
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent   # the project folder (nova/ lives inside it)
@@ -63,28 +61,17 @@ def stage_reaction(found):
 
 
 def work_area():
-    """Usable screen rectangle (left, top, right, bottom) excluding the taskbar."""
-    r = wintypes.RECT()
-    ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(r), 0)
-    return r.left, r.top, r.right, r.bottom
+    """Usable screen rectangle (left, top, right, bottom) excluding the taskbar (nova.platform)."""
+    from nova import platform
+    return platform.current().work_area()
 
 
-class _APPBARDATA(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND), ("uCallbackMessage", wintypes.UINT),
-                ("uEdge", wintypes.UINT), ("rc", wintypes.RECT), ("lParam", wintypes.LPARAM)]
 
 
 def autohide_taskbar():
     """(edge, rect) of the taskbar when it is set to auto-hide (edge 0 left, 1 top, 2 right, 3 bottom), else None."""
-    try:
-        ab = _APPBARDATA()
-        ab.cbSize = ctypes.sizeof(ab)
-        if not ctypes.windll.shell32.SHAppBarMessage(4, ctypes.byref(ab)) & 1:     # ABM_GETSTATE: ABS_AUTOHIDE
-            return None
-        ctypes.windll.shell32.SHAppBarMessage(5, ctypes.byref(ab))                 # ABM_GETTASKBARPOS
-        return ab.uEdge, (ab.rc.left, ab.rc.top, ab.rc.right, ab.rc.bottom)
-    except Exception:
-        return None
+    from nova import platform
+    return platform.current().autohide_taskbar()
 
 
 def stand_area(area=None, taskbar=...):

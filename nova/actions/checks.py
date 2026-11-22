@@ -87,38 +87,23 @@ def page_lacks(arg, ctx):
 
 
 def fullscreen(arg, ctx):
-    import ctypes
-    from ctypes import wintypes
-    u = ctypes.windll.user32
     hwnd = _front_hwnd()
     if not hwnd:
         return False, "no window in front"
-    rect = wintypes.RECT()
-    u.GetWindowRect(hwnd, ctypes.byref(rect))
-
-    class MonitorInfo(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
-                    ("dwFlags", wintypes.DWORD)]
-    info = MonitorInfo()
-    info.cbSize = ctypes.sizeof(MonitorInfo)
-    mon = u.MonitorFromWindow(hwnd, 2)
-    if not mon or not u.GetMonitorInfoW(mon, ctypes.byref(info)):
+    left, top, right, bottom = platform.current().window_rect(hwnd)
+    m = platform.current().monitor_rect(hwnd)
+    if not m:
         return False, "couldn't read the screen size"
-    m = info.rcMonitor
-    full = rect.left <= m.left and rect.top <= m.top and rect.right >= m.right and rect.bottom >= m.bottom
+    full = left <= m[0] and top <= m[1] and right >= m[2] and bottom >= m[3]
     return full, "fills the screen" if full else "doesn't fill the screen"
 
 
 def dark_mode(arg, ctx):
-    import winreg
     want_dark = arg.strip().lower() in ("on", "true", "yes", "dark")
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
-            light = winreg.QueryValueEx(k, "AppsUseLightTheme")[0]
-    except OSError:
+    dark = platform.current().dark_mode()
+    if dark is None:
         return False, "couldn't read the colour mode"
-    return (light == 0) == want_dark, "dark" if light == 0 else "light"
+    return dark == want_dark, "dark" if dark else "light"
 
 
 def process_running(arg, ctx):
