@@ -13,7 +13,7 @@ from nova.actions import checks
 from nova.actions import recorder
 from nova.brain import toolpick
 from nova.actions import tools
-from nova import protocol
+from nova import protocol, task_state
 
 
 FAIL_RE = re.compile(r"^\W*(error|not done|no open window|no '|i couldn'?t|couldn'?t|i can'?t|can'?t|failed|the user declined)", re.I)
@@ -235,6 +235,8 @@ def _skill_loop(s, steps, ids, run, i, approved, activity, model, task, watch):
             conversation.task_log(f"  SKILL SCREEN CHECK {sid} -> {'ok' if ok_ else 'NOT ok'} ({seen[:120]})")
             if not ok_:
                 out = f"{_short(out, 80)} - but the screen doesn't show it worked: {seen[:100]}"
+        if "tool" in st:
+            task_state.record(task_state.of(task), call, out, ok_)   # the task card ticks the skill's step (checked above)
         last_done, t_mark = sid, step_started      # the user acting from now on means they took over after this step
         if ok_:
             run["ok"].append(sid)

@@ -6,6 +6,6 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 
 | Area (paths) | Owner (session, agent or person) | Branch | Since |
 |---|---|---|---|
-| Manager Phase 4: step 0 merged (PR #24); step 4-pre (task state) added to `docs/plans/nova-manager-plan.md` (doc only); the code and the manager loop (`nova/actions/manager.py`) aren't started, they wait for the user's go-ahead | Claude session (manager plan) | `docs/manager-task-state` | 2026-11-22 |
+| Manager Phase 4, step 4-pre (a): the task card (`nova/task_state.py`, hooks in `conversation.py` / `judging.py` / `skillrun.py`); next 4-pre (b) save + resume, then the strip, `/tasks`, the question card, then 4a-4d (`nova/actions/manager.py`) | Claude session (manager loop) | `feat/manager-task-card` | 2026-11-22 |
 | Improvement roadmap Phase 1: R10 voice state machine (`nova/core/app/voice_machine.py`, the shadow calls in `voice_io.py`); R14, R15, R11, R13, R12 merged | Claude session (roadmap structure) | `feat/r10-voice-state` | 2026-11-22 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |

@@ -1,0 +1,292 @@
+"""The task card: one working memory per task, written by code and shown to the brain on every step (plan 4-pre a).
+
+    TASK: clean my laptop and tell me how much space was freed
+    PLAN (deep brain): 1 check disk ✅  2 clean temp files ✅  3 empty recycle bin ⏳  4 report ·
+    DONE (really): get_system_status → disk 77%; clean_temp_files → 937 MB freed
+    NOW: step 3 - empty recycle bin
+
+The card lives on the task (`task["card"]`). Only code changes it, never the brain:
+- `start(card, call)` just before a tool runs: the run (and the plan step it belongs to) is *started, not confirmed*;
+- `finish(card, out, ok)` when the tool has really run: done (✅) only when it ran and didn't fail, else failed (❌);
+  "Not run" / "declined" results are skipped (⏭). A Stop in between leaves the run *started* - step (b)'s safe
+  resume checks such a step before redoing it.
+- `mark(card, status, why)`: running / waiting / stopped / interrupted / done / failed / stuck, with why it changed.
+What the brain says ("done!", "I opened it") never ticks a step.
+
+Plans come from a skill's own steps or the deep brain's plan text; a step that names a tool Nova doesn't have is
+dropped. `render(card)` stays under MAX_CHARS (~250 tokens): the oldest results go first.
+
+The card is plain JSON (a `version` field for later upgrades), so step (b) can save it and the /tasks page show it.
+"""
+import json
+import re
+import time
+
+VERSION = 1
+MAX_CHARS = 1000            # ~250 tokens: the card is sent after every step, inside the 8K window
+MAX_RUNS = 40               # runs kept on the card (the oldest go first)
+MAX_PLAN = 12               # the planner is asked for at most 12 steps
+STEP_CHARS = 48             # one plan step's text on the card
+RESULT_CHARS = 70           # one run's result on the card
+
+ICONS = {"pending": "·", "started": "⏳", "done": "✅", "failed": "❌", "skipped": "⏭"}
+STATUSES = ("running", "waiting", "stopped", "interrupted", "done", "failed", "stuck")
+SOURCES = ("skill", "deep brain", "cloud", "none")
+
+# A result that says the step never ran: not a failure of the step, it was skipped.
+_SKIPPED_RE = re.compile(r"^\W*(not (?:run|done)\b|the user declined|the user pressed stop)", re.I)
+# A planner's "tool" slot that looks like a tool name (snake_case) - checked against Nova's real tools.
+_TOOLISH_RE = re.compile(r"\b[a-z]+(?:_[a-z0-9]+)+\b")
+_NUMBERED_RE = re.compile(r"^\s*(\d+)[.)]\s+(.+)$")
+# Never on the card: anything that looks like a code, password or key (same words as the task log's filter).
+_SECRET_RE = re.compile(r"\b(otp|one[- ]time|passcode|password|pin|cvv|verification|security code|login code|api[ _-]?key|token)\b", re.I)
+_HIDDEN = "(hidden)"
+
+
+def clean(text, n):
+    """One line, at most n characters, nothing secret-looking."""
+    line = " ".join(str(text or "").split())
+    if _SECRET_RE.search(line):
+        return _HIDDEN
+    return line if len(line) <= n else line[: n - 1].rstrip() + "…"
+
+
+def new(goal, steps=(), source="none"):
+    """A fresh card for a task. `steps` are {"text", "tool"} dicts (see steps_from_plan / steps_from_skill)."""
+    card = {"version": VERSION, "goal": clean(goal, 300), "status": "running", "why": "", "source": "none",
+            "plan": [], "runs": [], "open": [], "started": time.time(), "updated": time.time()}
+    set_plan(card, steps, source)
+    return card
+
+
+def attach(task, steps=(), source="none"):
+    """Give a task dict its card (replacing any old one). -> the card."""
+    task["card"] = new(task.get("goal", ""), steps, source)
+    return task["card"]
+
+
+def of(task):
+    """The task's card, or None (a task made before cards, or no task)."""
+    card = (task or {}).get("card")
+    return card if isinstance(card, dict) else None
+
+
+# ------------------------------------------------------------------ plans
+
+def steps_from_plan(text, known):
+    """The deep brain's numbered plan ("1. step - tool - how to tell it worked") -> [{"text", "tool"}].
+
+    A step whose tool slot names a tool Nova doesn't have (a snake_case word not in `known`) is dropped; an app or
+    plain words in that slot are fine (tool ""). RISKS / DONE WHEN lines are not steps."""
+    out = []
+    for line in str(text or "").splitlines():
+        m = _NUMBERED_RE.match(line)
+        if not m:
+            continue
+        parts = [p.strip() for p in re.split(r"\s+[-–—]\s+", m.group(2))]
+        what = parts[0].strip(" *")
+        slot = parts[1] if len(parts) > 1 else ""
+        named = _TOOLISH_RE.findall(slot) or [w for w in _TOOLISH_RE.findall(what) if w in known]
+        if any(n not in known for n in named):
+            continue                    # the plan names a tool Nova doesn't have: never shown to the brain as a step
+        if what:
+            out.append({"text": clean(what, STEP_CHARS), "tool": named[0] if named else ""})
+    return out[:MAX_PLAN]
+
+
+def steps_from_skill(skill):
+    """A routine skill's own steps -> [{"text", "tool"}] (steps without a tool - say / ask lines - are left out)."""
+    out = []
+    for st in (skill or {}).get("steps") or []:
+        tool = st.get("tool") if isinstance(st, dict) else None
+        if not tool:
+            continue
+        args = st.get("args") or {}
+        hint = next((str(v) for v in args.values() if isinstance(v, (str, int, float)) and str(v).strip()), "")
+        out.append({"text": clean(f"{tool} {hint}".strip(), STEP_CHARS), "tool": tool})
+    return out[:MAX_PLAN]
+
+
+def set_plan(card, steps, source):
+    """Use these plan steps from here on. Runs that already happened tick the steps they match."""
+    if card is None:
+        return
+    card["plan"] = [{"text": s["text"], "tool": s.get("tool", ""), "state": "pending", "result": ""}
+                    for s in steps or [] if s.get("text")][:MAX_PLAN]
+    card["source"] = source if card["plan"] and source in SOURCES else "none"
+    for run in card["runs"]:
+        run["step"] = _step_for(card, run["tool"]) if run["state"] != "skipped" else None
+        if run["step"] is not None:
+            _set_step(card, run)
+    _touch(card)
+
+
+def _step_for(card, tool):
+    """The plan step a call of `tool` belongs to: the first unfinished step naming that tool; else the current
+    step when it names no tool (plain words, an app); else none (an extra step not in the plan)."""
+    for i, st in enumerate(card["plan"]):
+        if st["tool"] == tool and st["state"] in ("pending", "started", "failed"):
+            return i
+    i = current(card)
+    if i is not None and not card["plan"][i]["tool"]:
+        return i
+    return None
+
+
+def current(card):
+    """Index of the first plan step not done or skipped, or None (no plan, or all done)."""
+    for i, st in enumerate((card or {}).get("plan") or []):
+        if st["state"] not in ("done", "skipped"):
+            return i
+    return None
+
+
+def _set_step(card, run):
+    st = card["plan"][run["step"]]
+    if st["state"] == "done" and run["state"] != "done":
+        return                          # a later failed retry doesn't undo a step that really worked
+    st["state"], st["result"] = run["state"], run.get("result", "")
+
+
+# ------------------------------------------------------------------ runs (only code calls these)
+
+def start(card, call):
+    """A tool is about to run: record it as started, not confirmed. -> the run's index (or None without a card)."""
+    if card is None:
+        return None
+    tool = str(call.get("name") or "")
+    args = call.get("args") or {}
+    hint = next((str(v) for v in args.values() if isinstance(v, (str, int, float)) and str(v).strip()), "") \
+        if isinstance(args, dict) else ""
+    run = {"tool": tool, "hint": clean(hint, 40), "state": "started", "result": "", "t": time.time(), "step": None}
+    run["step"] = _step_for(card, tool)
+    _add(card, run)
+    card["open"].append(run["id"])
+    if run["step"] is not None:
+        _set_step(card, run)
+    if card["status"] != "running":
+        mark(card, "running")
+    _touch(card)
+    return run["id"]
+
+
+def _add(card, run):
+    run["id"] = card["next"] = card.get("next", 0) + 1
+    card["runs"].append(run)
+    if len(card["runs"]) > MAX_RUNS:
+        del card["runs"][: len(card["runs"]) - MAX_RUNS]
+
+
+def _run(card, rid):
+    return next((r for r in card["runs"] if r["id"] == rid), None)
+
+
+def finish(card, out, ok, tool=None, run=None):
+    """An open run has really finished with result `out` (run = the id start() gave; None = the newest open run).
+    ok=False -> failed; a "Not run" / "declined" result -> skipped. Does nothing when that run isn't open any more
+    (already finished, or Stop left it unconfirmed). Runs nest: a skill's brain step runs inside run_skill."""
+    if card is None or not card["open"]:
+        return
+    rid = card["open"][-1] if run is None else run
+    if rid not in card["open"]:
+        return
+    card["open"].remove(rid)
+    run = _run(card, rid)
+    if run is None:
+        return
+    if tool and tool != run["tool"]:                # web_research ran as research_in_background: show what really ran
+        run["tool"] = tool
+    text = str(out or "")
+    run["state"] = "skipped" if _SKIPPED_RE.search(text) else "done" if ok else "failed"
+    run["result"] = clean((text.strip().splitlines() or [""])[0], RESULT_CHARS)
+    if run["step"] is not None:
+        if run["state"] == "skipped" and card["plan"][run["step"]]["state"] == "started":
+            card["plan"][run["step"]]["state"] = "pending"        # it never ran: the step is still to do
+        elif run["state"] != "skipped":
+            _set_step(card, run)
+    _touch(card)
+
+
+def leave_open(card, run=None):
+    """Stop pressed while a tool ran: the run stays *started, not confirmed* and is no longer open."""
+    if card is not None and card["open"]:
+        rid = card["open"][-1] if run is None else run
+        if rid in card["open"]:
+            card["open"].remove(rid)
+
+
+def record(card, call, out, ok):
+    """A step that started and finished in one go (a skill's own step, run by code): add it, done or failed."""
+    if card is None:
+        return
+    rid = start(card, call)
+    finish(card, out, ok, run=rid)
+
+
+def mark(card, status, why=""):
+    """The task's status changed (running / waiting / stopped / interrupted / done / failed / stuck)."""
+    if card is None or status not in STATUSES:
+        return
+    card["status"], card["why"] = status, clean(why, 120) if why else ""
+    _touch(card)
+
+
+def _touch(card):
+    card["updated"] = time.time()
+
+
+# ------------------------------------------------------------------ what the brain sees
+
+def _run_line(run):
+    return f"{run['tool']} → {run['result']}" if run["result"] else run["tool"]
+
+
+def render(card, limit=MAX_CHARS):
+    """The card as the brain sees it, under `limit` characters. Empty without a card."""
+    if card is None:
+        return ""
+    head = [f"TASK: {clean(card['goal'], 200)}"]
+    if card["plan"]:
+        steps = "  ".join(f"{i + 1} {st['text']} {ICONS[st['state']]}" for i, st in enumerate(card["plan"]))
+        head.append(f"PLAN ({card['source']}): {steps}")
+    unconfirmed = [r for r in card["runs"] if r["state"] == "started" and r["id"] not in card["open"]]
+    failed = [r for r in card["runs"] if r["state"] == "failed"][-2:]
+    tail = []
+    if unconfirmed:
+        tail.append("STARTED, NOT CONFIRMED: " + "; ".join(f"{r['tool']} {r['hint']}".strip() for r in unconfirmed[-2:]))
+    if failed:
+        tail.append("FAILED: " + "; ".join(_run_line(r) for r in failed))
+    i = current(card)
+    if i is not None:
+        tail.append(f"NOW: step {i + 1} - {card['plan'][i]['text']}")
+    elif card["plan"]:
+        tail.append("NOW: every plan step has really run - check the goal is reached, then tell the user.")
+    if card["status"] != "running":
+        tail.append(f"STATUS: {card['status']}" + (f" ({card['why']})" if card["why"] else ""))
+    done = [_run_line(r) for r in card["runs"] if r["state"] == "done"]
+    fixed = len("\n".join(head + tail)) + 1
+    shown, cut = list(done), 0
+    while shown and fixed + len("DONE (really): " + "; ".join(shown)) + 16 > limit:
+        shown.pop(0)                    # the oldest results go first
+        cut += 1
+    line = "DONE (really): " + ("; ".join(shown) if shown else "nothing yet")
+    if cut:
+        line += f" (+{cut} earlier)"
+    text = "\n".join(head + [line] + tail)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def summary(card):
+    """A short dict for logs and (later) the strip: status, step N of M, the current step."""
+    if card is None:
+        return {}
+    i = current(card)
+    return {"goal": card["goal"], "status": card["status"], "why": card["why"], "source": card["source"],
+            "steps": len(card["plan"]), "step": (i + 1) if i is not None else None,
+            "now": card["plan"][i]["text"] if i is not None else "",
+            "done": sum(r["state"] == "done" for r in card["runs"]),
+            "secs": round(card["updated"] - card["started"], 1)}
+
+
+def to_json(card):
+    return json.dumps(card, ensure_ascii=False)

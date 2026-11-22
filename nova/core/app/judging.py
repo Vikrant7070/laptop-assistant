@@ -8,7 +8,7 @@ from nova.brain import cloud
 from nova.brain import llm
 from nova.actions import judge
 from nova.actions import tools
-from nova import protocol
+from nova import protocol, task_state
 
 
 def settle(tool_name, quick=False):
@@ -91,6 +91,8 @@ def check_step(call, out, activity, model):
     for key in ("into_window", "title_or_app", "window"):
         if call["args"].get(key):
             task["window"] = str(call["args"][key])     # page checks look at the window she worked in
+    card = task_state.of(task)
+    task_state.finish(card, out, not skillrun._failed(out))      # the tool really ran: the card ticks it before she reads it
     windows = settle(call["name"], quick=True)
     note = protocol.check_note(task["steps"], windows)
     task["done"] = None            # an earlier verdict is out of date after a new step
@@ -103,13 +105,14 @@ def check_step(call, out, activity, model):
         if verdict["done"]:
             task["done"] = True
             session.think("✅ My checks say it's done: " + verdict["why"])
+    about = "\n" + (task_state.render(card) or f"The task: {task['goal']}")
     if task["done"]:
-        return (out + note + f"\nThe task: {task['goal']}\nThe task looks finished. Do NOT press or click anything "
+        return (out + note + about + "\nThe task looks finished. Do NOT press or click anything "
                 "else - just tell the user in one short sentence.")
     if verdict and verdict["done"] is False:
-        return (out + note + f"\nThe task: {task['goal']}\nNot true yet: {verdict['why']}.\nIf it isn't finished, "
+        return (out + note + about + f"\nNot true yet: {verdict['why']}.\nIf it isn't finished, "
                 "do the next step now. If this step didn't work, try another way.")
-    return (out + note + f"\nThe task: {task['goal']}\nIf it isn't finished, do the next step now. "
+    return (out + note + about + "\nIf it isn't finished, do the next step now. "
             "If this step didn't work, try another way.")
 
 
@@ -154,13 +157,17 @@ def final_judge(task, text, activity, model):
 
 def execute(calls, approved, activity, model):
     outs = []
+    card = task_state.of(session.state.get("task"))
     for c in calls:
         session.state.pop("ran_as", None)
+        rid = task_state.start(card, c)   # the card: started, not confirmed - until the tool has really run
         try:
             out = conversation._execute_one(c, approved, activity, model)
             c = session.state.pop("ran_as", None) or c   # the call that really ran (web_research may become a background job)
+            task_state.finish(card, out, not skillrun._failed(out), c["name"], rid)   # no-op if check_step did
         except conversation.Stopped:      # every call still gets a result, so the history stays valid for the next request
             out = "The user pressed Stop before this step finished. It was not done (or only partly)."
+            task_state.leave_open(card, rid)   # half-done: safe resume (4-pre b) checks it before anything redoes it
         conversation.task_log(f"TOOL {c['name']} {json.dumps(c['args'], ensure_ascii=False)[:300]}\n   -> " + out.replace("\n", "\n      "))
         outs.append(out)
         skillrun._trace(c, out)

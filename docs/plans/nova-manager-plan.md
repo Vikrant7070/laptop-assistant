@@ -525,6 +525,25 @@ secret in a card; the page loads at 375 px wide.
 `/tasks` page, (e) the question card (buttons / checkboxes). Each its own commit; the UI can't come before the data
 it shows. The question card is needed by 4a, which asks the questions.
 
+**4-pre (a) as built (2026-11-22, branch `feat/manager-task-card`):**
+- `nova/task_state.py`: the card (`task["card"]`, plain JSON, `version` 1). Plan steps and runs are each pending /
+  started (not confirmed) / done / failed / skipped. Status is running / waiting / stopped / interrupted / done /
+  failed / stuck, with why.
+- Only code writes it:
+  - `judging.execute` starts a run before the tool and finishes it after;
+  - `check_step` finishes it first, so the card she reads already has the step;
+  - `skillrun` records each of a skill's own steps after its `expect:` check.
+  - A result that says the step never ran ("Not run", "Not done - …", "declined") is *skipped*, not failed. A Stop
+    leaves the run *started, not confirmed*.
+- Plans: an exact skill's steps, or the deep brain's plan (parsed in `route_task`). A step that names a snake_case
+  tool Nova doesn't have is dropped.
+- The brain sees the card in place of the `The task: …` line after each on-screen step, and in the "not finished
+  yet" push. It stays out of the system prompt, which stays fixed for the whole task so Ollama can reuse it.
+  Under 1000 characters (~250 tokens); the oldest results go first; secret-looking lines show as "(hidden)".
+- Marks: stuck (the existing same-call limit), waiting (an approval), stopped (Stop pressed / out of steps), done or
+  failed when she answers.
+- Not yet: saving, resume, cut-off replies, "continue" (b); new planning triggers and the cloud planner; the UI.
+
 ## 7. Phase 5 — Judges for workers' results
 
 Quality comes from measurement, not from the user's habits or the worker's own claim:
