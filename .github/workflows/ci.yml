@@ -1,11 +1,9 @@
 name: ci
 
-# Nova itself. Child brain changes alone don't run it (they have their own job in childbrain.yml).
+# Nova itself.
 on:
   push:
-    paths-ignore: ["childbrain/**", "requirements-childbrain.txt", ".github/workflows/childbrain.yml"]
   pull_request:
-    paths-ignore: ["childbrain/**", "requirements-childbrain.txt", ".github/workflows/childbrain.yml"]
 
 jobs:
   test:

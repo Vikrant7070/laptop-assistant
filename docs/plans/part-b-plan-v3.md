@@ -25,7 +25,7 @@ Branch gate at review time: `ruff check .` → clean; pytest → **1005 passed, 
 ### What changed on `master` since the branch was cut (`03d0f4e` → `027af99`, 17 commits)
 
 - Manager phase 2: `nova/actions/judge.py`, `learner.py`, `questions.py`; `app.py` +383 lines, `tools.py` +268.
-- Child brain Phase 0 (`childbrain/`), app guard, typing-by-paste, mic level.
+- App guard, typing-by-paste, mic level.
 - Current sizes: `app.py` 4,620 lines, `tools.py` 3,098 (101 tools), `voice.py` 1,823, `skills.py` 1,212.
 
 ### Problems this creates
@@ -40,7 +40,7 @@ Branch gate at review time: `ruff check .` → clean; pytest → **1005 passed, 
    overruled by vision, vision looks at most once at the end and is advisory. That is the v1 Phase 7 design.
 4. **Parallel writers on the same files.** `feat/manager-phase3` (worktree `.claude/worktrees/manager-phase3`) has
    uncommitted changes in `app.py`, `tools.py`, `toolpick.py`, `coworker.py`, `skills.py` and a new `workers.py`.
-   Phases 2 and 3 rewrite exactly those files. `claude/child-brain-wp1.1` only touches `childbrain/` — no clash.
+   Phases 2 and 3 rewrite exactly those files.
 5. **Long-lived branch.** The real cause of 1–2: five phases piled up on one branch while master moved. v1's
    "one phase = one branch" was not followed in practice.
 6. **Numbers in v1 are stale.** 64 → 101 tools; 905 → ~1,000+ tests; "no file over ~800 lines" is not reachable for

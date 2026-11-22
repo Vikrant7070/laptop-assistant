@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 
 from nova import prompts as promptfiles
-from nova.brain import cloud, gpu_signal
+from nova.brain import cloud
 
 HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 if not HOST.startswith("http"):
@@ -57,7 +57,7 @@ def _post(path, body, timeout=600):
     req = urllib.request.Request(HOST + path, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     try:
-        with gpu_signal.busy(), urllib.request.urlopen(req, timeout=timeout) as r:   # training steps aside meanwhile
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="ignore")
@@ -223,7 +223,7 @@ def _post_stream(path, body, on_text, timeout=600, on_think=None):
     req = urllib.request.Request(HOST + path, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     msg = {"content": "", "tool_calls": []}
-    with gpu_signal.busy(), urllib.request.urlopen(req, timeout=timeout) as r:      # training steps aside meanwhile
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         for line in r:
             if not line.strip():
                 continue
