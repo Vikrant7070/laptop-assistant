@@ -446,6 +446,31 @@ Nova's own laptop tasks and worker jobs (coding, research), newest first.
 **3. Phone:** `/tasks` must work at phone width, for the mobile view. Telegram stays "done or blocked only" (the
 user's answer in section 9); its message gets a short "see it on the Tasks page" line, no new message types.
 
+**4. Answering Nova's questions by tapping** (the user's choice, 2026-11-22). Manager questions come from fixed lists
+written by code (step 2 of the loop above), so code knows the likely answers and shows them as choices. A tap is also
+clearer than a spoken answer that speech recognition may mishear.
+
+| Kind of question | Control | Example |
+|---|---|---|
+| Yes / no, go / stop | Two buttons | "Here's the brief. Start?" → **Go** · **Change it** |
+| Pick one | Buttons, one tap answers | "Which folder?" → **Laptop assistant** · **nova-site** · **Other…** |
+| Pick several | Checkboxes + **Done** | "What should the site have?" → ☐ Home ☐ Docs ☐ Download ☐ Contact |
+| Open answer | Text box | "What should the site be called?" |
+
+- **The user's own words always work.** Every question has **Other…**, and typing or speaking still answers it
+  ("the second one", "yes, go").
+- **At most 2 questions in one card**, each with its one-line reason (the user's rule, section 9); **Done** sends them.
+- **Choices come from what Nova knows:** folders from past projects and facts, the stack from `facts.json`; the last
+  one used is highlighted.
+- **A question can be skipped:** Nova then uses her best guess and says so in the brief.
+- **One question card everywhere:** the chat, the live task strip (shown as "waiting for you"), and `/tasks`. On the
+  phone, Telegram quick-reply buttons carry the same choices.
+- **Built on what exists:** the chat's **Allow** / **No thanks** approval buttons (`static/nova.js`, `showConfirm`,
+  `/api/confirm`). The same pattern gains choices, checkboxes and Done.
+- **Answers are saved as facts** (unconfirmed, as in step 2 of the loop), so the same question isn't asked again.
+- **Tests:** each control kind sends the right answer; Other / typed / spoken answers still work; a skipped question
+  uses the guess and the brief says so; the card works at 375 px wide.
+
 **Data:** the page reads the saved task-state records (point 7 above) through one endpoint, `GET /api/tasks`
 (list) and `GET /api/tasks/<id>` (one card), plus the existing thoughts poll for live updates. No new storage. Old
 records are trimmed after N days (default 30), like other logs. Secrets are never shown: the card holds the same
@@ -455,7 +480,8 @@ cleaned text as the task log (`SECRETY` filter), never form values or codes.
 secret in a card; the page loads at 375 px wide.
 
 **Build order inside 4-pre:** (a) task state + card for the brain, (b) save and resume, (c) the live strip, (d) the
-`/tasks` page. Each its own commit; the UI can't come before the data it shows.
+`/tasks` page, (e) the question card (buttons / checkboxes). Each its own commit; the UI can't come before the data
+it shows. The question card is needed by 4a, which asks the questions.
 
 ## 7. Phase 5 — Judges for workers' results
 
