@@ -227,8 +227,14 @@ def test_notices_a_really_frozen_window(monkeypatch):
             found = [f for f in w.scan() if f["hwnd"] == hwnd]
             time.sleep(0.5)
         assert found and found[0]["kind"] == "hung"
-        owner = watcher.psutil.Process(found[0]["pid"])          # python.exe may start the real interpreter as a child
-        assert proc.pid in (owner.pid, owner.ppid())
+        # python.exe may start the real interpreter as a child, so the window's owner is the child or the process
+        # itself. Ask psutil about OUR process (alive, we hold its handle) instead of looking the window's pid up
+        # afterwards: a process that has exited by then made psutil raise NoSuchProcess (flaky on CI).
+        try:
+            family = {proc.pid} | {c.pid for c in watcher.psutil.Process(proc.pid).children(recursive=True)}
+        except watcher.psutil.NoSuchProcess:
+            family = {proc.pid}
+        assert found[0]["pid"] in family
         assert watcher.close_hung(found[0]).startswith("Closed")
         proc.wait(15)
         assert proc.poll() is not None                     # it really was ended
