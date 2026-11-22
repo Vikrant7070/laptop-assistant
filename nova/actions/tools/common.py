@@ -7,6 +7,7 @@ import subprocess
 import threading
 from pathlib import Path
 
+from nova import platform
 from nova import store
 
 
@@ -49,11 +50,7 @@ N = {"type": "number"}
 B = {"type": "boolean"}
 
 
-try:  # real pixel coordinates, so clicks land where UI Automation says
-    import ctypes as _c
-    _c.windll.shcore.SetProcessDpiAwareness(2)
-except Exception:
-    pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
+platform.current().dpi_aware()       # real pixel coordinates, so clicks land where UI Automation says
 
 
 HOME = Path.home()

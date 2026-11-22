@@ -60,6 +60,30 @@ class Desktop(Protocol):
     def focused_text(self) -> str | None:
         """What the focused box holds, None if it can't be read."""
 
+    def window_rect(self, hwnd: int) -> tuple:
+        """(left, top, right, bottom) of the window."""
+
+    def monitor_rect(self, hwnd: int) -> tuple | None:
+        """(left, top, right, bottom) of the monitor the window is on, None if unknown."""
+
+    def work_area(self) -> tuple:
+        """The usable screen (left, top, right, bottom), without the taskbar."""
+
+    def autohide_taskbar(self) -> tuple | None:
+        """(edge, rect) of an auto-hiding taskbar, None if it doesn't auto-hide."""
+
+    def dark_mode(self) -> bool | None:
+        """Apps use the dark theme? None if it can't be read."""
+
+    def idle_seconds(self) -> float:
+        """Seconds since the user last touched the keyboard or mouse."""
+
+    def screen_locked(self) -> bool:
+        """Is the lock screen up?"""
+
+    def dpi_aware(self) -> bool:
+        """Make this process work in real pixels (so clicks land where UI Automation says)."""
+
 
 from nova.platform.fake import FakeDesktop  # noqa: E402  (fake.py imports Window from here)
 

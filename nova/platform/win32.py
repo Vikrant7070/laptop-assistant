@@ -1,7 +1,9 @@
 """The real desktop: Windows, through ctypes. The only place Win32 calls should live (roadmap R12).
 
 Moved here unchanged from nova/actions/tools/windows.py: window listing and focus (step 1); the clipboard save /
-set / restore and the focused box's text (step 2). Keys go through the `keyboard` package, plain clipboard text
+set / restore and the focused box's text (step 2); from checks.py, shared.py, presence.py, background.py and
+tools/common.py: window and monitor rectangles, the work area and an auto-hiding taskbar, dark mode, idle time, the
+lock screen and DPI awareness (step 3). Keys go through the `keyboard` package, plain clipboard text
 through `pyperclip`, both imported on use.
 """
 import ctypes
@@ -14,6 +16,20 @@ from nova.platform import Window
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
+
+
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD)]
+
+
+class _APPBARDATA(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND), ("uCallbackMessage", wintypes.UINT),
+                ("uEdge", wintypes.UINT), ("rc", wintypes.RECT), ("lParam", wintypes.LPARAM)]
+
+
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
 
 
 class Win32Desktop:
@@ -87,6 +103,82 @@ class Win32Desktop:
 
     def focused_text(self):
         return _focused_text()
+
+    # -- the screen (step 3)
+    def window_rect(self, hwnd):
+        rect = wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        return rect.left, rect.top, rect.right, rect.bottom
+
+    def monitor_rect(self, hwnd):
+        """The whole monitor the window is on (MONITOR_DEFAULTTONEAREST), or None."""
+        info = _MonitorInfo()
+        info.cbSize = ctypes.sizeof(_MonitorInfo)
+        mon = user32.MonitorFromWindow(hwnd, 2)
+        if not mon or not user32.GetMonitorInfoW(mon, ctypes.byref(info)):
+            return None
+        m = info.rcMonitor
+        return m.left, m.top, m.right, m.bottom
+
+    def work_area(self):
+        """Usable screen rectangle (left, top, right, bottom) excluding the taskbar."""
+        r = wintypes.RECT()
+        user32.SystemParametersInfoW(0x30, 0, ctypes.byref(r), 0)
+        return r.left, r.top, r.right, r.bottom
+
+    def autohide_taskbar(self):
+        """(edge, rect) of the taskbar when it is set to auto-hide (edge 0 left, 1 top, 2 right, 3 bottom), else None."""
+        try:
+            ab = _APPBARDATA()
+            ab.cbSize = ctypes.sizeof(ab)
+            if not ctypes.windll.shell32.SHAppBarMessage(4, ctypes.byref(ab)) & 1:     # ABM_GETSTATE: ABS_AUTOHIDE
+                return None
+            ctypes.windll.shell32.SHAppBarMessage(5, ctypes.byref(ab))                 # ABM_GETTASKBARPOS
+            return ab.uEdge, (ab.rc.left, ab.rc.top, ab.rc.right, ab.rc.bottom)
+        except Exception:
+            return None
+
+    def dark_mode(self):
+        """True when apps use the dark theme, False for light, None if it can't be read."""
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+                return winreg.QueryValueEx(k, "AppsUseLightTheme")[0] == 0
+        except OSError:
+            return None
+
+    def idle_seconds(self):
+        """Seconds since the user last touched the keyboard or mouse."""
+        info = _LASTINPUTINFO(ctypes.sizeof(_LASTINPUTINFO), 0)
+        if not user32.GetLastInputInfo(ctypes.byref(info)):
+            return 0.0
+        return max(0.0, (kernel32.GetTickCount() - info.dwTime) / 1000)
+
+    def screen_locked(self):
+        """True while the Windows lock screen is up (the input desktop isn't the user's 'Default' desktop)."""
+        try:
+            h = user32.OpenInputDesktop(0, False, 0x0001)          # DESKTOP_READOBJECTS
+            if not h:
+                return True
+            try:
+                buf = ctypes.create_unicode_buffer(64)
+                need = ctypes.c_ulong()
+                if not user32.GetUserObjectInformationW(h, 2, buf, ctypes.sizeof(buf), ctypes.byref(need)):   # UOI_NAME
+                    return False
+                return buf.value.lower() != "default"
+            finally:
+                user32.CloseDesktop(h)
+        except Exception:
+            return False
+
+    def dpi_aware(self):
+        """Real pixel coordinates for this process, so clicks land where UI Automation says. -> it worked?"""
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            return True
+        except Exception:
+            return False
 
 
 # ------------------------------------------------------------------ the clipboard (moved unchanged from tools/windows.py)

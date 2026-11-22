@@ -9,11 +9,11 @@ Frames stay in memory and are thrown away straight after the check; only OpenCV'
 them (OpenCV's small YuNet face detector on the CPU, nothing leaves the laptop). It finds A face, it doesn't recognise
 WHO it is.
 """
-import ctypes
 import os
 import threading
 from pathlib import Path
 
+from nova import platform
 from nova import runtime
 
 IDLE_HERE = 20          # input this recent = here, no camera needed
@@ -45,22 +45,8 @@ def missed(line):
 # ------------------------------------------------------------------ Windows: locked screen
 
 def screen_locked():
-    """True while the Windows lock screen is up (the input desktop isn't the user's 'Default' desktop)."""
-    try:
-        u = ctypes.windll.user32
-        h = u.OpenInputDesktop(0, False, 0x0001)          # DESKTOP_READOBJECTS
-        if not h:
-            return True
-        try:
-            buf = ctypes.create_unicode_buffer(64)
-            need = ctypes.c_ulong()
-            if not u.GetUserObjectInformationW(h, 2, buf, ctypes.sizeof(buf), ctypes.byref(need)):   # UOI_NAME
-                return False
-            return buf.value.lower() != "default"
-        finally:
-            u.CloseDesktop(h)
-    except Exception:
-        return False
+    """True while the Windows lock screen is up (nova.platform)."""
+    return platform.current().screen_locked()
 
 
 # ------------------------------------------------------------------ the camera: is there a face?

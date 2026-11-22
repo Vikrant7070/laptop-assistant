@@ -89,3 +89,35 @@ class FakeDesktop:
 
     def focused_text(self):
         return self.text_in_focus
+
+    # the screen: plain attributes a test can set
+    monitor = (0, 0, 1920, 1080)
+    work = (0, 0, 1920, 1040)
+    taskbar = None              # (edge, rect) when the taskbar auto-hides
+    dark = False                # None = can't be read
+    idle = 0.0
+    locked = False
+
+    def window_rect(self, hwnd):
+        return getattr(self, "rects", {}).get(hwnd, (100, 100, 900, 700))
+
+    def monitor_rect(self, hwnd):
+        return self.monitor
+
+    def work_area(self):
+        return self.work
+
+    def autohide_taskbar(self):
+        return self.taskbar
+
+    def dark_mode(self):
+        return self.dark
+
+    def idle_seconds(self):
+        return self.idle
+
+    def screen_locked(self):
+        return self.locked
+
+    def dpi_aware(self):
+        return True
