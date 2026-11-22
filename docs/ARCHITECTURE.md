@@ -48,7 +48,7 @@ the same approval rules as a direct tool call.
 | `nova/actions/tools/` | ~3.3k in 12 files (largest ~0.6k) | The tools, each declared with `@tool` above its function, one module per area: `system`, `apps`, `files`, `windows` (incl. typing by paste and the app guard), `forms` (clicking, forms, logins), `eyes`, `notes` (incl. Gmail), `routines`, `body`, `terminal`; `common` holds shared helpers; `__init__` the tables and `run_tool` |
 | `nova/actions/registry.py` | ~0.1k | `@tool`: one declaration per tool, fed into TOOLS/FUNCS/RISKY, FRIENDLY/ASK and toolpick |
 | `nova/audio/voice/` | ~1.8k in 6 files (largest ~0.55k) | A package, one module per job: `speak` (Kokoro/SAPI, `Mouth`), `wording` (text for speech, Hinglish), `whisper` (Whisper listening), `wake` (wake-word ears, `set_wake`), `barge_in`, `windows_ears` (Windows recognizer; its PowerShell in `listen.ps1`/`rt_listen.ps1`). `voice.<name>` reads the home module |
-| `nova/actions/skills.py` | ~1.2k | Parse, match, render, run and edit `skills/*.md` |
+| `nova/actions/skills/` | ~1.2k in 5 modules | Parse and render (`format`), match (`matching`), the folder and edits (`library`), side files (`stats`), drafts from a trace (`drafts`) for `skills/*.md` |
 | `nova/avatar/avatar.py` | ~0.74k | 3D window, frame bridge, speech gestures |
 | `nova/avatar/commands.py` | ~0.2k | Her commands (`{"do": ...}`): one `cmd_<name>` each, looked up by `Nova.handle` |
 | `nova/avatar/win32.py` | ~0.1k | The layered Win32 window: ctypes structs, styles, `blit` |
@@ -120,7 +120,7 @@ user's routines, `config/model_routing.json` the routing knobs, `characters/` th
   if it belongs with other tools, add it to `toolpick.GROUPS`. Add a case to `tests/routing.jsonl` for the sentence
   a user would say. Tests patch a tool helper in its home module (`tools.windows._windows`), never on `tools`
   itself - `tests/test_tools_package.py` checks that.
-- **A skill:** drop a `.md` in `skills/`. `nova/actions/skills.py` parses and matches it; a skill
+- **A skill:** drop a `.md` in `skills/`. `nova/actions/skills/` parses and matches it; a skill
   that should only run when named uses `invoke: explicit_only`.
 - **A route trigger:** edit `config/model_routing.json` (defaults live in `nova/brain/router.py`).
   Add the sentence to the `route` cases in `tests/routing.jsonl`.

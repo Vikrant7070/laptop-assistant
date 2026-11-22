@@ -7,7 +7,7 @@ from nova.shared import ROOT
 
 def _real_skills(monkeypatch):
     monkeypatch.setattr(store.current(), "skills_dir", ROOT / "skills")       # the skill files that ship with Nova
-    skills._cache.update(key=None, skills=[])
+    skills.library._cache.update(key=None, skills=[])
 
 
 def test_research_tools_registered_and_safe():

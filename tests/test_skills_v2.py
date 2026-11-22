@@ -456,7 +456,7 @@ def test_remember_that_with_nothing_to_remember(brain):
 def test_library_cap_and_duplicates(monkeypatch):
     skills.save("one", "Dim the screen for a movie", "set_brightness percent=30", when="dim for movie")
     assert "looks like my 'one'" in skills.save("two", "Dim the screen for a movie", "set_brightness percent=40", when="dim for movie")
-    monkeypatch.setattr(skills, "MAX_ACTIVE", 1)
+    monkeypatch.setattr(skills.format, "MAX_ACTIVE", 1)
     assert "already have 1 skills" in skills.save("three", "Open the garden gate", "open_app name=Gate", when="garden")
     assert skills.least_used() == "one"
 

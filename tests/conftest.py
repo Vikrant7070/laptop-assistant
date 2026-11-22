@@ -82,7 +82,7 @@ def _point_data_at(folder):
     store.use(store.Store(folder, skills_dir=folder / "skills", routing=folder / "model_routing.json"))
     log.reset()
     router._cache.update(key=None, conf=None)
-    skills._cache.update(key=None, skills=[])
+    skills.library._cache.update(key=None, skills=[])
     app.learn_state.update(last=0.0)
 
 

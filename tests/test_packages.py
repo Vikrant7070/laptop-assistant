@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from nova.actions import checks, tools
+from nova.actions import checks, skills, tools
 from nova.audio import voice
 from nova.core import app
 
@@ -45,6 +45,8 @@ PACKAGES = [
             frozenset({"banner_calls", "py", "app"})),
     Package(voice, ("voice", "app.voice"), re.compile(r"from nova\.audio import .*\bvoice\b|\bapp\.voice\b"),
             frozenset({"py", "RealMouth"})),
+    Package(skills, ("skills", "app.skills"), re.compile(r"from nova\.actions import .*\bskills\b|\bapp\.skills\b"),
+            frozenset({"py"})),
 ]
 IDS = [p.name for p in PACKAGES]
 

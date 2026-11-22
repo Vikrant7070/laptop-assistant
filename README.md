@@ -199,7 +199,7 @@ Nova's everyday brain is small and fast (`qwen3-vl:4b-instruct`). A bigger model
 - Choose the models in the ⚙ Model dialog. All settings and the trigger words are in `config/model_routing.json` (kept in git, applied on the next request). Set `"auto_route": false` to switch it off. Cloud brains are never switched.
 
 ## Skills: things you teach her (`skills/*.md`)
-A skill is a small text file of steps that **code** runs, one by one - not instructions the small model has to remember. After each step the code checks it really worked (a window opened, the page shows the text, the screen is fullscreen), and the "done" at the end is worded from what happened, never by the model. Format and rules: the docstring at the top of `nova/actions/skills.py`; the design and the research behind it: `docs/plans/skills-v2-plan.md`.
+A skill is a small text file of steps that **code** runs, one by one - not instructions the small model has to remember. After each step the code checks it really worked (a window opened, the page shows the text, the screen is fullscreen), and the "done" at the end is worded from what happened, never by the model. Format and rules: the docstring at the top of `nova/actions/skills/__init__.py`; the design and the research behind it: `docs/plans/skills-v2-plan.md`.
 - She starts a skill only on words that really ask for it. A request that merely sounds like one gets a "Run my '…' skill?" question first, and if you say no, that sentence never starts it again. Each skill can list `not_for` phrases.
 - Teach her: "when I say movie time, do X, Y, Z" (`save_skill`), or finish a task and say "remember that" (`save_task_as_skill`: a draft made from the steps she really did; it becomes a real skill after it works twice).
 - Show her: say **"watch me"** (or press **Ctrl+Alt+W**), do the task yourself, say **"done"**, then tell her its name. She records what you clicked (by name, not screen position), the page each browser shows, what you left in each box, and which app is in front - never passwords, codes or keystrokes (a sign-in becomes one "sign in if needed" step). Nothing is recorded unless you say "watch me"; the recording stays in memory and only the cleaned-up steps are kept (`nova/actions/recorder.py`).
@@ -222,7 +222,7 @@ The code lives in the `nova/` package; `desktop.py` in the project folder is onl
 - `nova/avatar/body.py` checks and stores the moves she invents (`data/moves.json`) and her look (`data/look.json`), and picks her speech gestures. `nova/avatar/hearing.py` finds the beat in what the laptop plays.
 - `nova/brain/`: `llm.py` talks to Ollama, `cloud.py` to Gemini, OpenAI and Claude; `router.py` decides which local model does a task; `toolpick.py` and `retrieval.py` pick the tools and knowledge that matter for each request.
 - `nova/audio/`: the `voice/` package speaks and listens, `sfx.py` plays her reaction sounds.
-- `nova/actions/`: the `tools/` package holds all the tools (one module per area: system, apps, files, windows, forms, eyes, notes, routines, body, terminal), plus `skills.py`, `notifications.py`, `coworker.py` and the knowledge bank (`knowledge.py`). `phone.py` is the Telegram link, `mcp.py` the connector client (stdio + HTTP JSON-RPC, no extra package), `presence.py` the here/away logic, and `watcher.py` spots error boxes and frozen apps.
+- `nova/actions/`: the `tools/` package holds all the tools (one module per area: system, apps, files, windows, forms, eyes, notes, routines, body, terminal), plus the `skills/` package, `notifications.py`, `coworker.py` and the knowledge bank (`knowledge.py`). `phone.py` is the Telegram link, `mcp.py` the connector client (stdio + HTTP JSON-RPC, no extra package), `presence.py` the here/away logic, and `watcher.py` spots error boxes and frozen apps.
 - `nova/shared.py` holds the project and data folder paths and small helpers used everywhere.
 - `static/index.html` is the chat window (styles in `nova.css`, script in `nova.js`, markup helpers in `markup.js`). `data/` stores notes, memories and settings.
 
@@ -231,7 +231,7 @@ Where to change what:
 | I want to change... | Start here |
 |---|---|
 | What Nova can do | one function with `@tool(...)` (`nova/actions/registry.py`): schema, labels, risk and hints in one place. Put it in the area module under `nova/actions/tools/` it belongs to. Then a case in `tests/routing.jsonl` |
-| How a request is understood | `nova/brain/router.py` (model choice), `nova/brain/toolpick.py` (tools), `nova/actions/skills.py` (routines) |
+| How a request is understood | `nova/brain/router.py` (model choice), `nova/brain/toolpick.py` (tools), `nova/actions/skills/` (routines) |
 | The conversation loop or an API route | `nova/core/app/conversation.py` (the loop), `nova/core/app/api.py` (most routes; each module keeps its own); the module map is in `docs/ARCHITECTURE.md` |
 | The words in the prompt | `PERSONA` / `system_prompt` in `nova/core/app/prompts.py`; markers in `nova/protocol.py` |
 | Voice, listening or the wake word | `nova/audio/voice/` (`speak.py`, `whisper.py`, `wake.py`, `barge_in.py`...) |
