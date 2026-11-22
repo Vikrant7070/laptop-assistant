@@ -11,6 +11,7 @@ import psutil
 import keyboard
 import pyperclip
 
+from nova import platform
 from nova.actions.registry import tool
 from nova.actions.tools import apps, common, forms
 
@@ -19,27 +20,8 @@ _user32 = ctypes.windll.user32
 
 
 def _windows():
-    found = []
-
-    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    def cb(hwnd, _):
-        if _user32.IsWindowVisible(hwnd):
-            n = _user32.GetWindowTextLengthW(hwnd)
-            if n:
-                buf = ctypes.create_unicode_buffer(n + 1)
-                _user32.GetWindowTextW(hwnd, buf, n + 1)
-                pid = wintypes.DWORD()
-                _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                try:
-                    proc = psutil.Process(pid.value).name()
-                except psutil.Error:
-                    proc = "?"
-                if buf.value not in ("Program Manager", "Settings") or proc != "explorer.exe":
-                    found.append((hwnd, buf.value, proc))
-        return True
-
-    _user32.EnumWindows(cb, 0)
-    return found
+    """Open windows, topmost first: [(hwnd, title, proc), ...] (nova.platform; tests install a FakeDesktop)."""
+    return platform.current().windows()
 
 
 @tool("List open windows and their apps.", friendly="Looked at open windows", core=True, props={}, required=[])
@@ -56,16 +38,8 @@ def _find_window(title_or_app):
 
 
 def _focus(hwnd):
-    """Bring a window to the front without pressing keys (borrow the foreground thread's input)."""
-    if _user32.IsIconic(hwnd):
-        _user32.ShowWindow(hwnd, 9)
-    fg = _user32.GetForegroundWindow()
-    me = ctypes.windll.kernel32.GetCurrentThreadId()
-    other = _user32.GetWindowThreadProcessId(fg, None)
-    _user32.AttachThreadInput(me, other, True)
-    _user32.BringWindowToTop(hwnd)
-    _user32.SetForegroundWindow(hwnd)
-    _user32.AttachThreadInput(me, other, False)
+    """Bring a window to the front without pressing keys (nova.platform)."""
+    platform.current().focus(hwnd)
 
 
 # Doing it like a person, so the user can watch: Nova walks to the window's own title-bar button and the real mouse
@@ -554,7 +528,7 @@ def read_selection():
     marker = f"__nova_selection_{time.time()}__"
     pyperclip.copy(marker)                       # so an empty selection is told apart from old clipboard text
     try:
-        if _user32.GetForegroundWindow() != hwnd:
+        if platform.current().foreground() != hwnd:
             _focus(hwnd)
             time.sleep(0.25)
         keyboard.send("ctrl+c")

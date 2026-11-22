@@ -15,6 +15,8 @@ trying for a few seconds, because a page that was just opened takes a moment to 
 """
 import time
 
+from nova import platform
+
 NAMES = {"window_open", "front_window", "page_has", "page_lacks", "fullscreen", "dark_mode", "process_running",
          "result_has"}
 NEEDS_ARG = NAMES - {"fullscreen"}
@@ -27,7 +29,7 @@ def _tools():
 
 
 def _front_hwnd():
-    return _tools()._user32.GetForegroundWindow()
+    return platform.current().foreground()
 
 
 def _window_for(ctx):

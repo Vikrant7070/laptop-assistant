@@ -53,9 +53,9 @@ def test_sleep_and_cancel_do_not_tidy(monkeypatch):
     tools.power_action("sleep")
 
 
-def test_close_all_windows_spares_nova_and_the_shell(monkeypatch):
-    monkeypatch.setattr(tools.windows, "_windows", lambda: [(1, "Nova", "pythonw.exe"), (2, "Docs - Word", "WINWORD.EXE"),
-                                                    (3, "Downloads", "explorer.exe"), (4, "Shell", "explorer.exe")])
+def test_close_all_windows_spares_nova_and_the_shell(monkeypatch, desktop):
+    desktop.set_windows([(1, "Nova", "pythonw.exe"), (2, "Docs - Word", "WINWORD.EXE"),
+                         (3, "Downloads", "explorer.exe"), (4, "Shell", "explorer.exe")])
     pids = {1: 100, 2: 200, 3: 300, 4: 300}
     classes = {3: "CabinetWClass", 4: "Shell_TrayWnd"}
     monkeypatch.setattr(tools.windows, "_own_pids", lambda: {100})

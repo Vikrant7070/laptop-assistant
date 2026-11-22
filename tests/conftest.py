@@ -23,6 +23,7 @@ os.environ.pop("GOOGLE_API_KEY", None)
 os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("ANTHROPIC_API_KEY", None)
 
+from nova import platform
 from nova.avatar import avatar_client  # noqa: E402
 
 avatar_client.send = lambda *a, **k: None
@@ -104,7 +105,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(tools.windows, "_focused_text", lambda: None)
     monkeypatch.setattr(tools.webbrowser, "open", lambda *a, **k: True)  # never open real browser tabs
     monkeypatch.setattr(tools.apps, "open_windows_summary", lambda limit=6: "")
-    monkeypatch.setattr(tools.windows, "_windows", lambda: [])      # an empty pretend desktop (a test adds its own windows)
+    platform.use(platform.FakeDesktop())       # an empty pretend desktop (a test sets its own scene)
     monkeypatch.setattr(tools.eyes, "_screen_allowed", lambda: False)
     monkeypatch.setattr(app.body, "react_later", lambda *a, **k: None)
     monkeypatch.setattr(app.learning, "review_turn", lambda why: None)
@@ -153,6 +154,13 @@ class FakeBrain:
             on_text(text)
         app.llm.LAST["fallback"] = None
         return stored, text, calls
+
+
+@pytest.fixture
+def desktop():
+    """The pretend desktop this test runs on (installed by `isolated`). Set a scene with
+    desktop.set_windows([(hwnd, title, proc), ...], front=hwnd); desktop.log shows what Nova did ("focus", hwnd)."""
+    return platform.current()
 
 
 @pytest.fixture

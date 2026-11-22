@@ -68,7 +68,6 @@ def test_fill_in_pastes_too(desk, monkeypatch):
         IsPassword = False
     items = [{"name": "Search", "type": "Edit", "x": 1, "y": 1, "offscreen": False, "ctrl": Ctrl()}]
     monkeypatch.setattr(tools.forms, "_scan", lambda window, limit=0: ((1, "Shop", "chrome.exe"), items))
-    monkeypatch.setattr(tools.windows, "_focus", lambda h: None)
     monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
     tools.fill_in("blue shoes", box="Search")
     assert desk["clip"] == ["blue shoes"] and desk["sent"] == ["ctrl+a", "ctrl+v", "enter"]

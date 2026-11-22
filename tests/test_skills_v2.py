@@ -316,8 +316,8 @@ def test_parse_check_and_unknown_names():
     assert skills.parse_check("window_open") is None and skills.parse_check("looks_nice") is None
 
 
-def test_checks_see_windows_and_poll(monkeypatch):
-    monkeypatch.setattr(tools.windows, "_windows", lambda: [(1, "Crunchyroll - Google Chrome", "chrome.exe")])
+def test_checks_see_windows_and_poll(desktop):
+    desktop.set_windows([(1, "Crunchyroll - Google Chrome", "chrome.exe")])
     assert checks.real_evaluate({"check": "window_open", "arg": "crunchyroll"})[0]
     assert not checks.real_evaluate({"check": "window_open", "arg": "netflix"}, timeout=0.2, interval=0.05)[0]
     assert checks.real_evaluate({"check": "result_has", "arg": "Clicked"}, {"result": "Clicked 'Log in'"})[0]

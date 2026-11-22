@@ -54,7 +54,6 @@ def test_fill_form_never_tells_the_brain_the_values(monkeypatch):
     boxes = [{"name": n, "type": "Edit", "password": n == "Password", "filled": False, "offscreen": False,
               "x": 10, "y": 10 * i, "ctrl": Ctrl()} for i, n in enumerate(["Full name", "Email", "Password", "OTP"])]
     monkeypatch.setattr(tools.forms, "_form_boxes", lambda window: ((1, "Sign up - Chrome", "chrome.exe"), boxes))
-    monkeypatch.setattr(tools.windows, "_focus", lambda h: None)
     monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
     monkeypatch.setattr(tools.forms, "_focused_is_password", lambda: False)
     monkeypatch.setattr(tools.keyboard, "write", lambda text, delay=0: typed.append(text))
