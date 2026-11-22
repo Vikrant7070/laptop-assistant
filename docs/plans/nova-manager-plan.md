@@ -1,7 +1,10 @@
+Status: active — 2026-11-22, phases 1–3 and Phase 4 step 0 built (step 0 merged as PR #24); the manager loop design waits for the user's go-ahead.
+
 # Nova as a manager — plan
 
-**Status (2026-11-20): phase 1 (Judge, `nova/actions/judge.py`) and phase 2 (episode log + Learner,
-`nova/actions/learner.py`, `nova/actions/questions.py`) are built. Phases 3–8 are not.** The user's answers are in
+**Status (2026-11-22): phase 1 (Judge, `nova/actions/judge.py`), phase 2 (episode log + Learner,
+`nova/actions/learner.py`, `nova/actions/questions.py`), phase 3 (workers, `nova/actions/workers.py`) and Phase 4
+step 0 (research as a worker, PR #24) are built. The manager loop (rest of Phase 4) and phases 5–8 are not.** The user's answers are in
 section 9. Build the phases in order, one at a time, each on its own branch/commit with tests, and only after the
 user says go.
 
