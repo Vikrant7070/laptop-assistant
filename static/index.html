@@ -339,6 +339,12 @@
           <label class="mood">Pages to read (1-5)<input id="wkRsSources" class="sel" type="number" min="1" max="5"></label>
           <label class="mood" style="display:flex;gap:6px;align-items:center"><input id="wkRsCloud" type="checkbox"> The cloud brain may write the report (off = the brain on this laptop only)</label>
         </div>
+        <h4 style="margin:12px 0 0">🧑‍💼 Manager</h4>
+        <p class="mood" style="margin:4px 0 0">Say <i>"make a website for my project"</i> and Nova asks a few short questions, writes the brief and hands it to a worker. Should she show the brief and wait for your go?</p>
+        <label class="mood">Before a job starts<select id="wkGoAhead" class="sel">
+          <option value="always">Show the brief and wait for my go - every job</option>
+          <option value="paid">Wait for my go only for paid jobs (Claude Code)</option>
+          <option value="never">Start right after the questions</option></select></label>
         <button id="wkSave" class="yes" style="width:auto;padding:8px 14px;margin-top:8px">Save workers</button>
         <a id="wkRecheck" href="#" style="font-size:13px;margin-left:8px">Check again</a>
         <span id="wkNote" class="mood" style="margin-left:8px"></span>

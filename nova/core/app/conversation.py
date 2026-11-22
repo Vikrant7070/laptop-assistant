@@ -736,6 +736,10 @@ def _agent_loop(activity):
         if task is not None:
             task["calls"] = task.get("calls", 0) + len(calls)
         session.state["messages"].extend(judging.execute(calls, True, activity, model))
+        handed = session.state.pop("hand_off", None)
+        if handed:                          # hand_off_job opened a question card: that's the reply, nothing more
+            unsaid.append(handed["reply"])
+            return result(handed["reply"], **{k: handed[k] for k in ("question", "brief") if k in handed})
         pause = session.state.pop("skill_pause", None)
         if pause:                           # a skill asks the user something (confirm / ask steps)
             asked = skillrun.ask_skill_question(pause)

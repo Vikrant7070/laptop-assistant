@@ -125,6 +125,28 @@ OTHER_ANSWER = re.compile(r"^\W*(?:other|something else|none of those|neither)\W
 ALL_OF_THEM = re.compile(r"^\W*(all( of them| of those| three| four)?|every ?(one|thing)|sab|saare)\W*$", re.I)
 
 
+# The manager (nova/actions/manager.py, plan 4a): requests that are a job for a worker, not a laptop task.
+# Building something new ("make me a website", "create a landing page") - a determiner is needed, so "make the app
+# full screen" stays a laptop task.
+BUILD_THING = re.compile(
+    r"\b(build|create|make|scaffold|develop|code)\s+(me\s+|us\s+)?(a|an|new|a new|my own)\b(?:\s+[\w'-]+){0,3}?\s+"
+    r"(web ?site|site|web ?page|landing page|home ?page|web ?app|app|application|dashboard|api|cli tool|game|"
+    r"browser extension|extension|bot|portfolio|blog)\b", re.I)
+# A change in the user's own code: "fix the bug in my project", "update the README".
+PROJECT_CODE = re.compile(
+    r"\b(fix|change|update|refactor|add|remove|rename|clean up|improve)\b.{0,60}?\b(in|of|to|for)\s+(my|the|our|this)\s+"
+    r"(project|repo|repository|codebase|code|web ?app|website)\b|\b(fix|update|edit|rewrite)\b.{0,30}?\breadme\b", re.I)
+# Research first, then build with it: "research the best chart library, then add it to my project".
+RESEARCH_THEN_BUILD = re.compile(
+    r"\b(research|look up|find out|compare)\b.{3,120}?\b(then|and then|after that)\b.{0,40}?"
+    r"\b(add|build|use|put|implement|make|create|code)\b", re.I)
+WEBSITE = re.compile(r"\b(web ?site|site|web ?page|landing page|home ?page|portfolio|blog)\b", re.I)
+BIG_JOB = re.compile(r"\b(new feature|multi-?file|whole|entire|from scratch|full)\b", re.I)
+NEW_OR_EXISTING = re.compile(r"\b(new|from scratch|existing|my (current|existing)|in (my|the) (project|repo))\b", re.I)
+STACK_NAMED = re.compile(r"\b(python|react|vue|angular|svelte|node(\.?js)?|typescript|javascript|html|flask|django|"
+                         r"fastapi|next\.?js|rust|golang|java|c#|c\+\+|php|ruby)\b", re.I)
+
+
 EMAIL = re.compile(r"\b(e-?mails?|mails?|gmail|inbox|unread|otp|verification code)\b", re.I)    # her mail stays local
 
 
@@ -224,7 +246,8 @@ JUST_STOP = just_stop_re(DEFAULT_NAMES)       # voice_io builds its own from the
 KINDS = {
     "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
-    "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "email": EMAIL, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
+    "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "build_thing": BUILD_THING, "project_code": PROJECT_CODE,
+    "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
     "show": SHOW, "help_yes": HELP_YES,
     "answer_yes": ANSWER_YES, "research": RESEARCH, "watch_start": WATCH_START, "watch_done": WATCH_DONE,
     "correction": CORRECTION, "about_me": ABOUT_ME,

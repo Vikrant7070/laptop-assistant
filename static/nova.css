@@ -180,5 +180,6 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 .qcard input:not([type=checkbox]){background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-width:0;width:100%;max-width:360px;margin-top:6px}
 .qcard .qdone{background:var(--accent);color:#fff;font-weight:600}
 .qcard .qnote{margin-left:8px;color:var(--muted);font-size:12.5px}
-.qcard.answered{opacity:.65}.qcard .qnote:empty{display:none}.qcard .qq:last-of-type{margin-bottom:2px}
+.qcard.answered{opacity:.65}
+details.brief summary{cursor:pointer;font-weight:600}details.brief pre{white-space:pre-wrap;font:12.5px/1.45 ui-monospace,Consolas,monospace;margin:8px 0 0;overflow-wrap:anywhere}.qcard .qnote:empty{display:none}.qcard .qq:last-of-type{margin-bottom:2px}
 @media (max-width:600px){.taskstrip summary{padding:7px 10px}.taskstrip .ts-card{padding:0 10px 10px 16px}}

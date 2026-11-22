@@ -216,7 +216,11 @@ def learn_sites(topic, sources, cited, now=None):
 
 
 def describe_fact(f):
-    """'For tea: arena.com and teabox.com were used in the report; junk.com was opened and ignored.'"""
+    """'For tea: arena.com and teabox.com were used in the report; junk.com was opened and ignored.'
+    An answer to a manager question (kind "answer", manager.remember) says what the user told her."""
+    if f.get("kind") == "answer":
+        from nova.actions import manager
+        return manager.describe_answer(f)
     good = sorted(f["good"], key=lambda h: -f["good"][h])
     bad = sorted((h for h in f["ignored"] if f["ignored"][h] > f["good"].get(h, 0)), key=lambda h: -f["ignored"][h])
     parts = []

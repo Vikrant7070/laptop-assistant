@@ -52,8 +52,10 @@ DEFAULTS = {
                  "fallback_models": ["opencode/big-pickle"], "timeout_min": 20},
     "claude": {"exe": "", "model": "", "budget_usd": 1.0, "timeout_min": 30},
     "research": {"max_sources": 3, "cloud_report": True},
+    "manager": {"go_ahead": "always"},       # 4a: show the brief and wait for "go" - always / paid (Claude only) / never
     "daily_budget_usd": 3.0,
 }
+GO_AHEAD = ("always", "paid", "never")
 NAMES = {"opencode": "OpenCode + DeepSeek", "claude": "Claude Code", "research": "Research"}
 CODERS = ("opencode", "claude")
 
@@ -155,7 +157,7 @@ def _model_name(value):
 def save_settings(body):
     """⚙ Workers: change models, budgets, timeouts and program paths. Only known fields; numbers kept in range."""
     conf = config()
-    oc, cc, rs = dict(conf["opencode"]), dict(conf["claude"]), dict(conf["research"])
+    oc, cc, rs, mg = dict(conf["opencode"]), dict(conf["claude"]), dict(conf["research"]), dict(conf["manager"])
     body = body or {}
     if "opencode_model" in body:
         oc["model"] = _model_name(body["opencode_model"]) or DEFAULTS["opencode"]["model"]
@@ -182,9 +184,13 @@ def save_settings(body):
         rs["max_sources"] = int(_num(body["research_max_sources"], "max_sources"))
     if "research_cloud_report" in body:
         rs["cloud_report"] = body["research_cloud_report"] in (True, 1, "1", "true", "on")
+    if "manager_go_ahead" in body:
+        if body["manager_go_ahead"] not in GO_AHEAD:
+            raise ValueError("Manager: ask before every job, only paid ones, or never")
+        mg["go_ahead"] = body["manager_go_ahead"]
     daily = _num(body["daily_budget_usd"], "daily_budget_usd") if "daily_budget_usd" in body \
         else conf["daily_budget_usd"]
-    new = {"opencode": oc, "claude": cc, "research": rs, "daily_budget_usd": daily}
+    new = {"opencode": oc, "claude": cc, "research": rs, "manager": mg, "daily_budget_usd": daily}
     with _lock:
         path = store.current().workers
         path.parent.mkdir(parents=True, exist_ok=True)

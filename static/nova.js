@@ -229,7 +229,17 @@ function render(j) {
   }
   if (j.offer) showOffer(j.offer);
   if (j.pending) showConfirm(j.pending);
+  if (j.brief) showBrief(j.brief, j.question && j.question.id);
   if (j.question) showQuestion(j.question);
+}
+// 📋 The manager's brief for a worker, folded (open it to read every line), just above its Go card (the card can
+// arrive first, over the event stream).
+function showBrief(text, qid) {
+  const d = document.createElement("details"); d.className = "brief msg nova";
+  put(d, html`<summary>📋 The brief for the worker</summary><pre>${text}</pre>`);
+  const card = qid && log.querySelector(`.qcard[data-id="${CSS.escape(qid)}"]`);
+  card ? log.insertBefore(d, card) : log.append(d);
+  log.scrollTop = 1e9;
 }
 // 🙋 A question card (question.js): a tap answers it like a chat message, so her reply lands here as usual.
 const shownQuestions = new Set();
@@ -525,6 +535,7 @@ function showWorkers(w) {
   $("#wkCcBudget").value = cc.budget_usd; $("#wkDaily").value = c.daily_budget_usd; $("#wkCcTimeout").value = cc.timeout_min;
   const rs = c.research || {};
   $("#wkRsSources").value = rs.max_sources || 3; $("#wkRsCloud").checked = rs.cloud_report !== false;
+  $("#wkGoAhead").value = (c.manager || {}).go_ahead || "always";
   const when = t => t ? new Date(t * 1000).toLocaleString([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) + " · " : "";
   put($("#wkRecent"), w.recent.length > 0 && html`<b>Recent jobs</b>${w.recent.map(r => html`<div>${when(r.started)}#${r.job} ${r.worker} · ${
     r.status}${r.files > 0 && ` · ${r.files} file${r.files > 1 ? "s" : ""}`}${r.sources > 0 && ` · ${r.sources} source${r.sources > 1 ? "s" : ""}`}${r.committed && " · committed"}${
@@ -537,7 +548,8 @@ $("#wkSave").onclick = async () => {
     showWorkers(await api("/api/workers", {opencode_model: $("#wkOcModel").value, opencode_fallbacks: $("#wkOcFallbacks").value,
       opencode_timeout_min: $("#wkOcTimeout").value, claude_model: $("#wkCcModel").value, claude_budget_usd: $("#wkCcBudget").value,
       daily_budget_usd: $("#wkDaily").value, claude_timeout_min: $("#wkCcTimeout").value,
-      research_max_sources: $("#wkRsSources").value, research_cloud_report: $("#wkRsCloud").checked}));
+      research_max_sources: $("#wkRsSources").value, research_cloud_report: $("#wkRsCloud").checked,
+      manager_go_ahead: $("#wkGoAhead").value}));
     $("#wkNote").textContent = "Saved ✓";
   } catch (e) { put($("#wkNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 };

@@ -638,6 +638,42 @@ it shows. The question card is needed by 4a, which asks the questions.
     Do it again / Skip that step;
   - a sample pick-several + open-answer card was checked for looks at 375 px.
 
+**4a as built (2026-11-22, branch `feat/manager-4a`, stacked on 4-pre e):** `nova/actions/manager.py` (rules,
+questions, brief, answer facts) and `nova/core/app/managing.py` (the flow).
+- **Understand:** `manager.triage` uses word rules in `nova/intents.py`: `BUILD_THING` ("make a website …", a
+  determiner needed, so "make the app full screen" stays a laptop task), `PROJECT_CODE` ("fix the bug in my
+  project", "update the README") and `RESEARCH_THEN_BUILD`, with golden cases.
+  - A clear request skips the brain: `body.answer` → `managing.route`, after the task starts.
+  - Plain "research X" keeps its own path. A laptop request is untouched.
+  - The brain can hand off too, with the new `hand_off_job(request, kind)` tool (in the coding words' tool set).
+    The card it opens ends its turn (`session.state["hand_off"]`, 4 lines in `conversation.py`).
+- **Ask:** fixed lists, each question with its reason. One card at a time, at most 3 per job.
+  - Coding: folder (past job folders + the last answer; Other…; text when there are none) → website pages →
+    new or existing → stack → website style.
+  - Research: focus.
+  - A question is skipped when the request covers it (a path, "new", "react") or the answer is saved (stack,
+    site style).
+  - Questions past the limit aren't asked: their guesses go in the brief as "(my guess - not asked)".
+  - Answers with a fact key are saved as unconfirmed facts (facts.json kind "answer"; Knowledge page ✓ / ×).
+- **Brief:** the fixed template, filled by code: GOAL (your words), ABOUT THE USER (stack / style answers, work -
+  not your preferences for Nova herself, nothing secret), REQUIREMENTS (answers; skipped = "my guess - the user
+  skipped this"; changes), FOLDER, DONE MEANS, MUST NOT.
+  - Shown folded in the chat above its card. On the phone it is in the message.
+- **Go:** "Go (OpenCode, free)" / "Go (Claude Code, paid, up to $X)" / "Go (Research, free)" · "Change it" (a text
+  card; the change becomes a line, and the brief comes back).
+  - Go starts `workers.start(brief, folder, worker, size)` or `workers.research(request, focus)`. The task ends as
+    "handed to the worker".
+  - Workers: research → research; a new site / app or a big job → Claude Code; else OpenCode.
+  - ⚙ Workers → Manager sets the go-ahead (workers.json `manager.go_ahead`): always (default) / paid / never.
+  - A new request drops the job, and the task is stopped ("you moved on before the job started").
+- **Live check (2026-11-22)** on a separate copy (port 5098, throwaway data, one past job), up to the brief, not
+  Go:
+  - the folder card came back at once (no brain, 0.0 s); then pages (Home + Docs, Done), new project;
+  - then the folded brief above "Go (Claude Code, paid, up to $1.00)" · "Change it", also on the strip;
+  - Change it from the strip → typed a change → a new brief with "Change asked by the user: …" and the Go card again.
+  - It also found three things, fixed: the brief came after its card; the stack question cut by the limit
+    left no stack in the brief; your Nova preferences ("Likes: …") were in the worker's brief.
+
 ## 7. Phase 5 — Judges for workers' results
 
 Quality comes from measurement, not from the user's habits or the worker's own claim:

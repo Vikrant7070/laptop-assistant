@@ -386,6 +386,21 @@ def stop_background_job(which="all"):
     return coworker.stop(which or "all")
 
 
+@tool("Hand a whole JOB to the manager: building something (a website, an app, a page), a change in the user's "
+      "code project, or research and then building with it. Nova then asks the user a few short questions, writes "
+      "the brief and starts a worker when they say go. Use it when the user asks for something bigger than a laptop "
+      "step; don't write the brief yourself.", friendly="Handed the job to the manager",
+      hints="make a website, build an app, create a landing page, a project for me, research then build, "
+            "set up a new project, a job for a worker",
+      props={"request": {"type": "string", "description": "the user's request, in their own words"},
+             "kind": {"type": "string", "enum": ["coding", "research", "research_coding", "laptop"],
+                      "description": "coding = build or change code; research = find out; research_coding = both"}},
+      required=["request"])
+def hand_off_job(request, kind=""):
+    from nova.actions import manager
+    return manager.hand_off(request, kind or "")
+
+
 @tool("Hand a CODING job to a coding agent that works in the BACKGROUND in a project folder "
       "(a git project): fix a bug, change code, edit a README, build a page or app. You don't write the code "
       "yourself. The worker never commits - you tell the user when it's done and they decide. Ask for the folder "

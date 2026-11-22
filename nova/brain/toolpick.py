@@ -104,7 +104,7 @@ def best(query, n, exclude=()):
 CODING = re.compile(r"\b(readme|repo|repository|codebase|source code|code ?base|bugs?|refactor\w*|unit tests?|"
                     r"opencode|open code|deepseek|claude code|coding job|git|commit|"
                     r"(my|the|this|our) (code|project|website project|web ?app)( folder)?)\b", re.I)
-CODING_TOOLS = {"start_coding_job", "commit_coding_job", "show_coding_changes", "retry_coding_job", "background_jobs",
+CODING_TOOLS = {"hand_off_job", "start_coding_job", "commit_coding_job", "show_coding_changes", "retry_coding_job", "background_jobs",
                 "stop_background_job"}
 
 
