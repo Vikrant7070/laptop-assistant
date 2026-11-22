@@ -17,8 +17,7 @@ changes.
 
 | Plan | Status |
 |---|---|
-| [child-brain-plan.md](plans/child-brain-plan.md) | active: the research idea |
-| [child-brain-dev-plan.md](plans/child-brain-dev-plan.md) | active: Phase 0 and WP 1.1 done |
+| child-brain plans | moved to the child brain's own project (`C:\Users\vikra\OneDrive\Desktop\child-brain\docs`) |
 | [device-network-plan.md](plans/device-network-plan.md) | active: phases 1–3 built |
 | [nova-manager-plan.md](plans/nova-manager-plan.md) | active: phases 1–3 and Phase 4 step 0 built; the manager loop waits for the go-ahead |
 | [nova-upgrade-plan.md](plans/nova-upgrade-plan.md) | active: B1 done, Part A not started |

@@ -8,11 +8,12 @@ cooperate through one small file:
 
 While a request to the local Ollama model is in flight, `until` is kept 60 s ahead (refreshed every 20 s by a small
 thread, so a crashed Nova frees the card within a minute). When the last request ends, `until` is set LINGER seconds
-ahead, so training doesn't jump back in between the steps of one task. Training (childbrain/runcard.py,
-`nova_wants_gpu`) pauses while `until` is in the future. Cloud brains never touch the file.
+ahead, so training doesn't jump back in between the steps of one task. Training (the separate child brain project,
+`C:\\Users\\vikra\\OneDrive\\Desktop\\child-brain`, childbrain/runcard.py `nova_wants_gpu`) pauses while `until` is in the
+future. Cloud brains never touch the file.
 
 The path can be moved with the NOVA_GPU_SIGNAL environment variable (tests do). Both sides read it the same way;
-childbrain never imports Nova, so the few lines that read the file live there too.
+the child brain never imports Nova, so the few lines that read the file live there too.
 """
 import json
 import os
@@ -81,7 +82,7 @@ def busy():
 
 
 def wanted(now=None):
-    """Is the card Nova's right now? (The same test childbrain makes.)"""
+    """Is the card Nova's right now? (The same test the child brain makes.)"""
     try:
         return float(json.loads(path().read_text(encoding="utf-8")).get("until", 0)) > (now or time.time())
     except (OSError, ValueError, TypeError, AttributeError):

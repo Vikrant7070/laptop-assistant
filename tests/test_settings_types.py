@@ -35,7 +35,7 @@ def test_the_defaults_are_the_old_ones():
     _write({})
     s = config.settings()
     assert {k: s[k] for k in OLD_DEFAULTS} == OLD_DEFAULTS
-    assert s["schema"] == config.SCHEMA and s["childbrain_home"] == "" and s["phone_banners_hidden"] is False
+    assert s["schema"] == config.SCHEMA and s["phone_banners_hidden"] is False
 
 
 def test_round_trip_keeps_every_value():
@@ -77,10 +77,10 @@ def test_a_file_that_isnt_json_or_an_object_gives_the_defaults(monkeypatch):
 
 def test_save_settings_validates_before_writing(monkeypatch):
     monkeypatch.setattr(config, "log_exception", lambda where, exc=None: None)
-    config.save_settings({"autonomy": "everything", "think": 1, "childbrain_home": "C:/cb", "routing_extra": 5})
+    config.save_settings({"autonomy": "everything", "think": 1, "routing_extra": 5})
     on_disk = _read()
     assert on_disk["autonomy"] == "careful" and on_disk["think"] is False      # never written as given
-    assert on_disk["childbrain_home"] == "C:/cb" and on_disk["routing_extra"] == 5
+    assert on_disk["routing_extra"] == 5
     assert on_disk["voice"] is True and on_disk["schema"] == config.SCHEMA
 
 

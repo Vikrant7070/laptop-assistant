@@ -108,7 +108,8 @@ first.
    0002 `@tool` registry, 0003 packages answer from the home module, 0004 data paths via `store`.
 4. Child brain stays in this repository (decided 2026-11-21), with a separate CI job: `childbrain` tests on
    `requirements-childbrain.txt` (CPU PyTorch in CI), triggered only when `childbrain/**` changes. The product's CI job
-   ignores `childbrain/`.
+   ignores `childbrain/`. **Changed 2026-11-22:** the child brain and its page moved out to their own project
+   (`C:\Users\vikra\OneDrive\Desktop\child-brain`); Nova keeps only the graphics-card signal (`nova/brain/gpu_signal.py`).
 
 **Done when:** `.gitattributes` is on master, a new `.vrm` commit stores a pointer, `docs/plans/` has a status line on
 every plan, and CI runs two jobs.
@@ -353,7 +354,8 @@ Items within a phase that touch different files can run in parallel sessions. R1
 
 1. **LFS: rewrite history too.** R3 step 1b, in a quiet window after Phase 4 merges, with a backup tag and bundle;
    all worktrees recreated afterwards.
-2. **Child brain: stays in this repository**, with its own CI job (R3 step 4).
+2. ~~**Child brain: stays in this repository**, with its own CI job (R3 step 4).~~ Moved out to its own project on
+   2026-11-22 (`C:\Users\vikra\OneDrive\Desktop\child-brain`).
 3. **Shell: never run a changing command without asking**, at any autonomy level, and no setting to turn that off
    (R2 step 3). Read-only commands still run freely.
 4. **Task exam: only when you start it** (`python -m nova.exam --yes`), never on a schedule (R5 step 4).

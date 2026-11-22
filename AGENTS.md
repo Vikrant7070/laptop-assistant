@@ -42,10 +42,11 @@ PR merges.
 ## 5. Never commit
 - `data/` (personal profile, chats, settings, encrypted keys), API keys, tokens, passwords, `.env` files.
 - Large binaries outside Git LFS: `*.vrm` and `*.wav` go through LFS (`.gitattributes`, roadmap R3).
-- Training runs (`childbrain/runs/`) or anything under `.venv*`.
+- Anything under `.venv*`.
 
 ## 6. Safety rules that are product decisions (don't change them without the user)
 - A PowerShell/terminal command that changes anything **always asks**, at every autonomy level, with no setting to turn
   that off. Read-only commands may run freely.
 - The task exam runs only when the user starts it (`--yes`), never on a schedule and never by an agent on its own.
-- The child brain (`childbrain/`) stays in this repository with its own CI job.
+- The child brain is its own project (`C:\Users\vikra\OneDrive\Desktop\child-brain`, since 2026-11-22), not part of Nova.
+  Nova only writes the graphics-card signal it reads (`nova/brain/gpu_signal.py`), so Nova goes first on the card.
