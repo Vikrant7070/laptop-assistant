@@ -14,6 +14,8 @@ import subprocess
 import threading
 import time
 
+from nova import prompts as promptfiles
+
 _HEAD = r"""
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -119,13 +121,7 @@ def is_muted(n, muted):
 
 PHONE_APP = "Phone Link"
 PHONE_KINDS = ("call", "missed_call", "message", "other")
-PHONE_PROMPT = (
-    "A notification just arrived from the user's iPhone. Reply with JSON only, no other text: "
-    '{"kind": "call" | "missed_call" | "message" | "other", "say": "<one short sentence Nova says out loud>"}. '
-    "kind is call while the phone is ringing, missed_call after a call was missed. For a call, say who is calling if "
-    "the notification shows a saved contact's name; if it shows only a phone number, or nothing, say it is an unknown "
-    "number and do not read the number out. Keep it very short: at most 8 words for a call. For a message say the app and who it is from, then a short gist. "
-    "Never say one-time codes, OTPs or passwords.")
+PHONE_PROMPT = promptfiles.load("phone_notification")
 
 
 # Phone Link's pop-up banners can be hidden so Nova is the only one announcing them. Windows keeps one key per source

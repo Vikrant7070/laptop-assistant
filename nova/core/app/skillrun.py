@@ -5,6 +5,7 @@ import json
 import re
 import time
 
+from nova import prompts as promptfiles
 from nova.brain import cloud
 from nova.brain import llm
 from nova.actions import skills
@@ -54,10 +55,7 @@ def skill_brain_step(s, instruction, names, run, model, approved, activity, need
     sch = toolpick.schemas([n for n in names if n not in skills.LOCKED])
     proto = "" if llm.supports_tools(model) or not sch else llm.text_protocol(sch)
     sofar = "; ".join(f"{k}: {v}" for k, v in list(run["results"].items())[-6:]) or "nothing yet"
-    sysmsg = (f"You are Nova, doing ONE step of your skill '{s['name']}'. Do exactly this and nothing more: {instruction}\n"
-              f"What the skill has done so far: {sofar}\nCall the tools you need, one at a time. When the step is done "
-              "answer in ONE short sentence saying what you did or saw. If it can't be done, or there is nothing to "
-              "do, start your answer with STOP: and say why. Never type or ask for a password or a code." + proto)
+    sysmsg = promptfiles.load("skill_step", name=s["name"], instruction=instruction, sofar=sofar) + proto
     msgs = [{"role": "system", "content": sysmsg}, {"role": "user", "content": "Go."}]
     text, called = "", 0
     for _ in range(SKILL_BRAIN_TURNS):
@@ -410,12 +408,7 @@ def skill_hints(goal, steps):
     if not cloud.parse(m) or llm.cloud_resting():
         return {}
     listing = "\n".join(f"{st['id']}. {skills.render_step(st)}" for st in steps)
-    prompt = ("A voice assistant just did this task and will save its steps as a reusable skill.\n"
-              f"Task: {goal[:300]}\nSteps:\n{listing}\n\nReply with ONLY a JSON object: "
-              '{"slots": [{"step": "s2", "arg": "<argument name>", "find": "<the part of the argument that changes each time, e.g. a search word>"}], '
-              '"expect": {"s2": "<check>"}, "not_for": ["<2-4 similar requests that must NOT start this skill>"]}. '
-              'Checks you may use: window_open "text", front_window "text", page_has "text", fullscreen, '
-              "dark_mode on. Use slots only for words the user would change next time. Leave a list empty if unsure.")
+    prompt = promptfiles.load("skill_hints", goal=goal[:300], listing=listing)
     try:
         _, text, _ = conversation.interruptible(llm.chat, m, [{"role": "user", "content": prompt}], [], fallback=None)
         found = re.search(r"\{.*\}", text or "", re.S)
