@@ -1,10 +1,11 @@
-Status: active — 2026-11-22, phases 1–3 and Phase 4 step 0 built (step 0 merged as PR #24); the manager loop design waits for the user's go-ahead.
+Status: active — 2026-11-22, phases 1–3 and Phase 4 step 0 built (step 0 merged as PR #24); step 4-pre (task state) added to the plan; the manager loop design waits for the user's go-ahead.
 
 # Nova as a manager — plan
 
 **Status (2026-11-22): phase 1 (Judge, `nova/actions/judge.py`), phase 2 (episode log + Learner,
 `nova/actions/learner.py`, `nova/actions/questions.py`), phase 3 (workers, `nova/actions/workers.py`) and Phase 4
-step 0 (research as a worker, PR #24) are built. The manager loop (rest of Phase 4) and phases 5–8 are not.** The user's answers are in
+step 0 (research as a worker, PR #24) are built. Step 4-pre (task state, section 6), the manager loop (rest of
+Phase 4) and phases 5–8 are not.** The user's answers are in
 section 9. Build the phases in order, one at a time, each on its own branch/commit with tests, and only after the
 user says go.
 
@@ -333,6 +334,8 @@ in, the same way `toolpick.CODING` does: build/make/create + site/app/page, "res
    - The Learner turns that into worker notes ("OpenCode did small README fixes 3/3"), which step 4 uses.
 
 **Build order (each its own commit and live check):**
+- **4-pre:** the task state (below): one working memory for Nova's own laptop tasks and worker jobs, plus a live
+  task strip and a `/tasks` page to watch them. 4a's brief is built on it.
 - **4a:** triage, questions, brief. For now it shows the brief and the user says "go".
 - **4b:** worker pick from history, plus the research→coding chain.
 - **4c:** checks, one send-back round, report.
@@ -342,6 +345,187 @@ in, the same way `toolpick.CODING` does: build/make/create + site/app/page, "res
 user's "go", cheap OpenCode jobs included. The user will relax this later, once they have seen how the manager
 performs. Build it as a setting (default: ask for every job) so it can be loosened without a code change. Direct
 `start_coding_job` calls keep today's rules: OpenCode doesn't ask, Claude Code asks.
+
+### Step 4-pre — Task state: one working memory for every task (added 2026-11-22, waiting for the go-ahead)
+
+**Why (what happened on 2026-11-21, from `data/task_log.txt`):**
+- 21:33 "Is my laptop clean?" She started her answer. At 21:33:46 barge-in stopped her on her **own echo** (it
+  "heard" *"Not too bad, boss. R.E.M. is a big…"*, her own words).
+- The user said "continue, you were saying something". She answered "I'm here and ready". Asked "do you remember
+  what you were saying?", she said "I remember you said 'Going on'".
+- From 21:35, Nova was quit and restarted about once a minute (24 `QUIT (asked)` lines in the log). Each restart
+  starts her with no memory.
+
+**The gaps this shows:**
+1. **The chat lives only in memory** (`session.state["messages"]`). A restart, a crash or a quit wipes it. A
+   character switch clears it on purpose.
+2. **An unfinished laptop task isn't recorded anywhere.** After a Stop or a restart there's no "I was doing X, I got to
+   step 3". Worker jobs already survive a restart through `jobs.json`; Nova's own tasks don't.
+3. **A cut-off reply isn't marked as cut off.** The whole reply goes into the history as if she said all of it, and
+   "continue" has no code path. It goes to the small brain, which didn't make the connection, even with a learned
+   lesson about "keep going".
+4. **Barge-in can take her own echo for the user** (see the barge-in notes). This is a separate fix on the voice
+   side; listed here because it started the chain.
+
+**What exists today:**
+- `trimmed_history` keeps the request in front of a long task, so the goal never scrolls away.
+- `task["did"]` lists the tool calls that really ran. The brain sees it only in the one "not finished yet" push
+  (`conversation.py`, near the `nudged` check).
+- The deep brain (`router.make_plan`, `deepseek-r1:8b`) writes plans in a good shape
+  (`step - tool - how to tell it worked`, `RISKS`, `DONE WHEN`). It runs only on trigger words, a long request, or
+  `route_task`. It ran **0 times** in the current task log. Its plan is pasted into the instructions as plain text;
+  nothing tracks which step is done.
+
+**The design: a task card, kept by code, shown to the brain on every step.**
+
+```
+TASK: clean my laptop and tell me how much space was freed
+PLAN: 1 check disk ✅  2 clean temp files ✅  3 empty recycle bin ⏳  4 report
+DONE (really): get_system_status → disk 77%; clean_temp_files → 937 MB freed
+NOW: step 3
+```
+
+1. **One record per task** (`task_state`): goal, plan steps, steps done (with a one-line result each), the current
+   step, checks, and status (`running` / `stopped` / `interrupted` / `done` / `failed`).
+   - For a **laptop task** it's the card the small brain sees.
+   - For a **worker job** it's the job record, and 4a's brief is the worker version of the same card. One system,
+     not two.
+2. **Code writes the card, never the brain.** A step is ✅ only when its tool really ran and its check passed (the
+   Phase 1 Judge). The brain's own "done" is never enough.
+3. **Where the plan comes from, in order:** a skill's own steps → a cloud brain, if one is on (seconds) → the deep
+   brain (`deepseek-r1:8b`, about a minute with model swapping on the 6 GB GPU) → no plan (only goal + done + now).
+   The small 4B brain never writes the plan. Code drops any step that names a tool Nova doesn't have.
+4. **When to plan:** not for one-step requests or a skill with fixed steps. Plan when code sees a real multi-step task:
+   several actions joined by "and", no matching skill, or the task has already taken 3 or more steps.
+5. **Re-plan:** if a step fails twice, the planner gets the card ("steps 1–2 done, step 3 failed: X") and fixes the
+   rest of the plan. At most once per task.
+6. **Small:** the card stays under ~250 tokens. Older tool results it summarises can be cut from what the brain sees,
+   which frees room in the 8K window (~5300 tokens already go to instructions and tools).
+7. **Saved to disk** (through `nova/store.py`) when it changes. After a restart, a Stop or an interruption Nova says
+   "Before the restart I was on step 3 of cleaning your laptop. Should I continue?" She never carries on by herself;
+   the user says go.
+8. **Cut-off replies:** when barge-in stops her, the stored reply is cut to what was really spoken, marked as cut off,
+   and the rest is kept on the card. "Continue" / "go on" / "you were saying" are caught by code and finish the
+   unsaid part, with no brain turn.
+9. **Chat after a restart:** the last few turns are saved with the card and loaded back at start-up, so a restart
+   doesn't leave her blank. (This is the "reload" half; the searchable diary is the upgrade plan's A2.)
+
+**How to measure it:** run the task exam (`python -m nova.exam`, the user starts it) before and after, and compare
+the long tasks (3+ steps). Expect the gain there, not on one-step jobs.
+
+**Tests:** card built from real tool results only; brain claims don't tick a step; unknown tools dropped from a plan;
+card saved and reloaded after a restart; "continue" after a cut-off finishes the unsaid part; the card stays under its
+size limit.
+
+**Related:** upgrade plan A2 (saved, searchable chat history) and B3 (steering a running task) are planned and not
+built. The task state is what B3 would steer, so build it first.
+
+#### 4-pre rules — safe resume, one task at a time, and other gaps (review, 2026-11-22; the user kept these)
+
+**Must have (they stop real damage):**
+1. **A half-done step is never redone blindly.** Each step has a third state besides done / not done: *started, not
+   confirmed*. On resume, code first runs that step's Judge check. A step that changes things (delete, move, send,
+   type, install) is **never redone without asking**, even if the check is unclear.
+2. **Check the world before resuming.** After a restart or a long pause, code re-checks what the next step needs (is
+   the app open, does the file or folder still exist). If not, the rest of the plan is re-planned (the one re-plan
+   from point 5 above) instead of carried on blindly.
+3. **One laptop task at a time.** One keyboard and one screen, so only one of Nova's own tasks runs; worker jobs run
+   alongside it. A new request while one is stopped: the old one stays *stopped* (listed, resumable). "Continue"
+   means the newest stopped task; with more than one, she asks with the question card.
+4. **The root causes get owners, not just a mention:**
+   - **Barge-in echo:** the fix that stops her own voice counting as the user's goes on the voice side's list (barge-in
+     notes) as its own item, with a test from the 2026-11-21 log line.
+   - **Live tests must not use the real Nova.** Add a rule to `AGENTS.md`: a live test runs a separate copy with
+     `NOVA_DATA` / `NOVA_SKILLS` pointing at a copy of the data, never the Nova the user is talking to. Quitting
+     the real Nova wipes the user's chat (24 restarts on 2026-11-21).
+
+**Should have:**
+5. **Stuck and time limits.** A task is *stuck* when the same tool runs with the same arguments 3 times, or a step
+   goes past its time limit. Nova stops that step, says what's stuck, and the strip / `/tasks` show "stuck on step 3"
+   instead of a spinner.
+6. **Is the planner worth its minute?** Each task stores where its plan came from (skill / cloud / deep brain / none)
+   and whether it succeeded. The Learner reports success per plan source after a few weeks. Before measuring, check
+   the task exam has enough tasks of 3+ steps; add some if it doesn't.
+7. **Privacy with a cloud planner.** The cloud planner gets the goal and step names only, never raw tool results
+   (file names, screen text), unless the user allows it, the same rule as the phone-notes cloud setting. A re-plan
+   sends one-line step outcomes only.
+8. **Undo on `/tasks`.** A step that changed something (moved files, deleted to the Recycle Bin, changed a skill) shows
+   **Undo** where an undo exists, reusing the existing undo paths (`undo_skill_change`, Recycle Bin restore).
+
+**Nice to have:**
+9. **Numbered choices by voice.** When she reads a question card aloud she numbers the choices ("one: Laptop
+   assistant, two: nova-site"), so "two" by voice picks the right one.
+10. **Version number in saved cards.** Each saved card has a `version`; older ones are upgraded or shown read-only,
+    never a crash after a code update.
+11. **Waiting while the user is away.** If a task waits for an answer and presence (YuNet) says the user has left, it
+    goes to Telegram as "blocked", which fits the "done or blocked only" rule.
+
+**Tests for these:** a half-done changing step asks before redoing; a missing window on resume triggers a re-plan;
+"continue" with two stopped tasks asks which; the same call 3 times marks the task stuck; the cloud plan request
+holds no tool results; an old card version loads.
+
+#### 4-pre UI — see what Nova is doing (the user's request, 2026-11-22)
+
+The user wants to **track what is going on**, so the task state needs a screen. Today what's shown is spread out:
+the thought cloud (`/api/thoughts`, gone after a few seconds), ⚙ Workers → Recent jobs (worker jobs only), and
+`data/task_log.txt` (raw, for developers). Nothing shows Nova's own tasks, their plan, or why one stopped.
+
+**1. A live task strip in the main window** (`static/index.html` / `nova.js`, always visible while a task runs):
+- One line: the goal, `step 3 of 4`, the current step, and how long it has been running.
+- Click to open the card: the plan with ✅ / ⏳ / ❌ / ⏭ (skipped) per step, the one-line result of each done step,
+  and which brain is working (4B / planner / cloud / a worker).
+- Buttons: **Stop**, and when stopped or interrupted, **Continue** and **Drop it**.
+- When a step waits for the user (an approval, a "go" on a brief), the strip says so plainly, in a different colour.
+
+**2. A Tasks page at `/tasks`** (copy the `/childbrain` and `/knowledge` page pattern), one list for **both** kinds:
+Nova's own laptop tasks and worker jobs (coding, research), newest first.
+- Filter: running / waiting for me / stopped / done / failed; laptop tasks / workers.
+- Each row: when, goal, who did it, status, steps done / total, time taken, and the Judge's verdict.
+- Open a row: the full card, the plan and where it came from (skill / cloud / deep brain), every step with its tool,
+  result and check, the brief (for worker jobs), and **why it ended**: done, Stop pressed, barge-in, restart, a check
+  failed, out of steps. This answers "what happened?" without reading the task log.
+- "Interrupted" tasks after a restart are at the top with **Continue** / **Drop it**.
+- Worker jobs link to their existing actions (show changes, commit, retry, report).
+
+**3. Phone:** `/tasks` must work at phone width, for the mobile view. Telegram stays "done or blocked only" (the
+user's answer in section 9); its message gets a short "see it on the Tasks page" line, no new message types.
+
+**4. Answering Nova's questions by tapping** (the user's choice, 2026-11-22). Manager questions come from fixed lists
+written by code (step 2 of the loop above), so code knows the likely answers and shows them as choices. A tap is also
+clearer than a spoken answer that speech recognition may mishear.
+
+| Kind of question | Control | Example |
+|---|---|---|
+| Yes / no, go / stop | Two buttons | "Here's the brief. Start?" → **Go** · **Change it** |
+| Pick one | Buttons, one tap answers | "Which folder?" → **Laptop assistant** · **nova-site** · **Other…** |
+| Pick several | Checkboxes + **Done** | "What should the site have?" → ☐ Home ☐ Docs ☐ Download ☐ Contact |
+| Open answer | Text box | "What should the site be called?" |
+
+- **The user's own words always work.** Every question has **Other…**, and typing or speaking still answers it
+  ("the second one", "yes, go").
+- **At most 2 questions in one card**, each with its one-line reason (the user's rule, section 9); **Done** sends them.
+- **Choices come from what Nova knows:** folders from past projects and facts, the stack from `facts.json`; the last
+  one used is highlighted.
+- **A question can be skipped:** Nova then uses her best guess and says so in the brief.
+- **One question card everywhere:** the chat, the live task strip (shown as "waiting for you"), and `/tasks`. On the
+  phone, Telegram quick-reply buttons carry the same choices.
+- **Built on what exists:** the chat's **Allow** / **No thanks** approval buttons (`static/nova.js`, `showConfirm`,
+  `/api/confirm`). The same pattern gains choices, checkboxes and Done.
+- **Answers are saved as facts** (unconfirmed, as in step 2 of the loop), so the same question isn't asked again.
+- **Tests:** each control kind sends the right answer; Other / typed / spoken answers still work; a skipped question
+  uses the guess and the brief says so; the card works at 375 px wide.
+
+**Data:** the page reads the saved task-state records (point 7 above) through one endpoint, `GET /api/tasks`
+(list) and `GET /api/tasks/<id>` (one card), plus the existing thoughts poll for live updates. No new storage. Old
+records are trimmed after N days (default 30), like other logs. Secrets are never shown: the card holds the same
+cleaned text as the task log (`SECRETY` filter), never form values or codes.
+
+**Tests:** the endpoints return the saved cards; filters work; a restart-interrupted task shows Continue; nothing
+secret in a card; the page loads at 375 px wide.
+
+**Build order inside 4-pre:** (a) task state + card for the brain, (b) save and resume, (c) the live strip, (d) the
+`/tasks` page, (e) the question card (buttons / checkboxes). Each its own commit; the UI can't come before the data
+it shows. The question card is needed by 4a, which asks the questions.
 
 ## 7. Phase 5 — Judges for workers' results
 
