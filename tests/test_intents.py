@@ -14,8 +14,6 @@ APP = Path(app.__file__).parent
 # splits sentences. A new user-intent regex goes in nova/intents.py instead of onto this list.
 NOT_USER_INTENT = {
     ("body", "REACT_RULES"),                           # reactions to both sides of the chat, a table of its own
-    ("childbrain_tab", "NAME_OK"), ("childbrain_tab", "RUN_OK"), ("childbrain_tab", "KEY_OK"),
-    ("childbrain_watch", "GAME_OK"),                   # names checked before they reach a path
     ("conversation", "END"), ("conversation", "CLOSED_STAGE"), ("conversation", "OPEN_STAGE"),
     ("conversation", "DONE_CLAIM_RE"), ("conversation", "PROMISE_RE"), ("conversation", "BODY_CLAIM_RE"),
     ("integrations", "SECRETY"),                       # a phone notification's text, not the user
