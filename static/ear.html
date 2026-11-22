@@ -55,21 +55,46 @@ function submit(text) {
 said.addEventListener("keydown", e => { if (e.key === "Enter" && said.value.trim()) submit(said.value.trim()); });
 $("#sleep").onclick = () => { stop(); fetch("/api/ear_said", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text: "go to sleep"})}); };
 
+function command(c) {
+  if (c.do === "listen") startListening();
+  if (c.do === "stop") { stop(); setState("", "Sleeping"); }
+}
+let thinking = false, talking = false;
+function busyLine() {
+  if (listening) return;
+  if (thinking) setState("thinking", "Nova is thinking…");
+  else if (talking) setState("thinking", "Nova is talking…");
+}
+
+// The fallback when the stream can't be used: ask every 400 ms, as before.
+let polling = false;
 async function poll() {
   try {
     const j = await (await fetch("/api/ear")).json();
-    for (const c of j.cmds) {
-      if (c.do === "listen") startListening();
-      if (c.do === "stop") { stop(); setState("", "Sleeping"); }
-    }
-    if (!listening) {
-      if (j.thinking) setState("thinking", "Nova is thinking…");
-      else if (j.speaking) setState("thinking", "Nova is talking…");
-    }
+    j.cmds.forEach(command);
+    thinking = j.thinking; talking = j.speaking; busyLine();
   } catch {}
   setTimeout(poll, 400);
 }
-poll();
+function startPolling() {
+  if (polling) return; polling = true;
+  fetch("/api/ear").catch(() => {}).finally(poll);   // drop commands the stream already delivered
+}
+
+// Pushed by the server as they happen (/api/stream): commands for the bubble, and whether she's thinking or talking.
+function listen() {
+  if (!window.EventSource) return startPolling();
+  const es = new EventSource("/api/stream?backlog=ear");
+  let opened = false;
+  const on = (kind, fn) => es.addEventListener(kind, e => { try { fn(JSON.parse(e.data)); } catch {} });
+  on("state", j => { opened = true; thinking = j.thinking; talking = j.speaking; busyLine(); });
+  on("ear", command);
+  on("thinking", j => { thinking = j.on; busyLine(); });
+  on("speak_start", () => { talking = true; busyLine(); });
+  on("speak_end", () => { talking = false; busyLine(); });
+  es.onerror = () => { if (!opened || es.readyState === EventSource.CLOSED) { es.close(); startPolling(); } };
+}
+listen();
 </script>
 </body>
 </html>

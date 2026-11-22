@@ -16,10 +16,19 @@ from nova.brain import toolpick
 from nova.audio import voice
 from nova import protocol
 from nova.log import log_exception
-from nova.core.app import config, conversation
+from nova.core.app import config, conversation, eventbus
 
 
 mouth = voice.Mouth()
+mouth.on_lips = lambda on: eventbus.publish("speak_start" if on else "speak_end")    # the chat page's talking face
+
+
+def ears_changed(status, heard):
+    """The ears' status line or what they last heard changed: the chat page's 👂 line (hands-free)."""
+    eventbus.publish("ears", {"status": status, "heard": heard[-1:]})
+
+
+voice.wake.on_change = ears_changed        # its home module: both ears classes inherit _EarsBase from wake.py
 
 
 def use_character_voice_and_name(ch):
@@ -40,6 +49,7 @@ def apply_character(cid):
         listen_state["single"] = False
         ear_close()
     conversation.task_log(f"CHARACTER {ch['name']}: voice {ch['voice']}, wake word \"Hey {ch['name']}\"")
+    eventbus.publish("wake_phrase", {"phrase": prompts.wake_phrase()})
     with session.lock:                # a fresh chat: the small brain copies its old name and tone from the history otherwise
         session.state["messages"].clear()
         session.state["pending"] = None
@@ -58,7 +68,8 @@ events = []  # things that happened by voice, for the chat window to show
 
 def push_event(e):
     events.append(e)
-    del events[:-config.MAX_EVENTS]     # the chat page may be closed for hours: keep only the latest
+    del events[:-config.MAX_EVENTS]     # recent ones, for the tests and the task log; the pages get them from the bus
+    eventbus.publish("event", e)
 
 
 mouth.on_start = lambda words, timing="": conversation.task_log(f"VOICE starts: {words[:60]}  ({timing})")   # "she's slow / out of sync"
@@ -210,6 +221,8 @@ def ear_listen():
     if ear_hooks["show"]:
         ear_hooks["show"]()
     ear_cmds.append({"do": "listen"})
+    del ear_cmds[:-10]
+    eventbus.publish("ear", {"do": "listen"})
 
 
 def ear_listen_after_speech():
@@ -224,6 +237,8 @@ def ear_listen_after_speech():
 
 def ear_close():
     ear_cmds.append({"do": "stop"})
+    del ear_cmds[:-10]
+    eventbus.publish("ear", {"do": "stop"})
     if ear_hooks["hide"]:
         ear_hooks["hide"]()
 
@@ -528,6 +543,7 @@ def heard(text, via="bubble"):
             ear_listen_after_speech() if convo["on"] else ear_close()
         return
     convo["thinking"] = True
+    eventbus.publish("thinking", {"on": True})
     avatar_client.send("anim", name="think", timeout=2)
     try:
         if session.state["pending"] and (YES_RE.search(text) or NO_RE.search(text)):
@@ -536,6 +552,7 @@ def heard(text, via="bubble"):
             out, status = body.answer(f"{protocol.SPOKEN} {text}")
     finally:
         convo["thinking"] = False
+        eventbus.publish("thinking", {"on": False})
     convo["asked"] = time.time() if str(out.get("say") or out.get("reply") or "").rstrip().endswith("?") else 0.0
     if not (out.get("say") or out.get("reply")) and not mouth.busy():
         avatar_client.send("say", text="", timeout=2)       # nothing was said back: take her "heard" bubble down
