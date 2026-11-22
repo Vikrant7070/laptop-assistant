@@ -82,29 +82,36 @@ document.addEventListener("mousemove", e => {
 /* ---------------- voice ----------------
    Nova speaks from the laptop itself (server side, Windows voice), so she talks even when this window is hidden.
    Things said to her with "Hey Nova" show up here too. */
-let speakingNow = false;
-async function pollVoice() {
+let speakingNow = false, earsNow = {ears: "off", heard: []}, eventsAfter = null;
+function voiceEvent(ev) {
+  if (ev.listen) { if (!busy) { window.focus(); setTimeout(winVoice, 300); } return; }  // "Hey Nova" → voice typing
+  if (ev.me) {
+    const said = add("me", "🎙 " + ev.me);
+    if (thoughtBox && said.previousElementSibling === thoughtBox) log.insertBefore(said, thoughtBox);  // what you said, then her thoughts
+  }
+  if (ev.me && Object.keys(ev).length === 1) return;   // just "what you said", sent before she answers
+  ev.error ? (closeThoughts(), add("err", ev.error)) : render(ev);   // also: 🔔 notifications, 💡 tips, ✅ finished jobs
+}
+function speaking(on) { if (on !== speakingNow) { speakingNow = on; if (!busy) face(on ? "talking" : undefined); } }
+function wakePhrase(p) { if (p && p !== WAKE) { WAKE = p; earsLabel(); showEars(); } }
+function showEars(st) {
+  if (st) earsNow = {ears: st.ears ?? st.status, heard: st.heard || []};
+  const e = earsNow.ears;
+  $("#handsBtn").title = handsFree ? `Listening for “${WAKE}” - ${e}. Click to stop listening completely.` : `Not listening at all. Click to listen for “${WAKE}” again.`;
+  const ear = $("#earLine");
+  ear.style.display = handsFree ? "block" : "none";
+  ear.textContent = handsFree ? `👂 ${e === "listening" ? `Listening for “${WAKE}”` : e}` +
+    (earsNow.heard.length ? ` · last: ${earsNow.heard[0].slice(9)}` : "") : "";
+}
+function voiceState(j) { speaking(j.speaking); wakePhrase(j.wake_phrase); showEars(j); }
+async function pollVoice() {      // the fallback when the stream can't be used
   try {
-    const j = await (await fetch("/api/events")).json();
-    for (const ev of j.events) {
-      if (ev.listen) { if (!busy) { window.focus(); setTimeout(winVoice, 300); } continue; }  // "Hey Nova" → voice typing
-      if (ev.me) {
-        const said = add("me", "🎙 " + ev.me);
-        if (thoughtBox && said.previousElementSibling === thoughtBox) log.insertBefore(said, thoughtBox);  // what you said, then her thoughts
-      }
-      if (ev.me && Object.keys(ev).length === 1) continue;   // just "what you said", sent before she answers
-      ev.error ? (closeThoughts(), add("err", ev.error)) : render(ev);   // also: 🔔 notifications, 💡 tips, ✅ finished jobs
-    }
-    if (j.speaking !== speakingNow) { speakingNow = j.speaking; if (!busy) face(speakingNow ? "talking" : undefined); }
-    if (j.wake_phrase && j.wake_phrase !== WAKE) { WAKE = j.wake_phrase; earsLabel(); }
-    $("#handsBtn").title = handsFree ? `Listening for “${WAKE}” - ${j.ears}. Click to stop listening completely.` : `Not listening at all. Click to listen for “${WAKE}” again.`;
-    const ear = $("#earLine");
-    ear.style.display = handsFree ? "block" : "none";
-    ear.textContent = handsFree ? `👂 ${j.ears === "listening" ? `Listening for “${WAKE}”` : j.ears}` +
-      (j.heard.length ? ` · last: ${j.heard[0].slice(9)}` : "") : "";
+    const j = await (await fetch("/api/events" + (eventsAfter == null ? "" : "?after=" + eventsAfter))).json();
+    eventsAfter = j.last;
+    j.events.forEach(voiceEvent);
+    voiceState(j);
   } catch {}
 }
-setInterval(pollVoice, 1000);
 
 /* ---------------- speech in ---------------- */
 // The desktop app's window (WebView2) *claims* to support browser speech recognition, but it has no speech service:
@@ -149,16 +156,18 @@ function typing(on) { $("#typing")?.remove(); if (on) { const d = document.creat
    folds into "💭 Thought for 4.2s · 6 steps" - click it to read it again. Requests by voice get one too. */
 let thoughtAfter = null, thoughtBox = null, cloudTimer = null;
 const MINOR = /^(→|⏱|🧰)/;
-async function pollThoughts() {
+function serverWorking(on) {
+  serverBusy = on; refreshSend();
+  if (!on && thoughtBox?.classList.contains("live") && !busy) closeThoughts();   // e.g. a voice request ended
+}
+async function pollThoughts() {      // the fallback when the stream can't be used
   try {
     const j = await (await fetch("/api/thoughts" + (thoughtAfter == null ? "" : "?after=" + thoughtAfter))).json();
-    serverBusy = j.busy; refreshSend();
-    if (thoughtAfter == null) { thoughtAfter = j.last; return; }   // just opened: start from now
+    if (thoughtAfter == null) { thoughtAfter = j.last; serverWorking(j.busy); return; }   // just opened: start from now
     for (const t of j.thoughts) { thoughtAfter = t.id; addThought(t); }
-    if (!j.busy && thoughtBox?.classList.contains("live") && !busy) closeThoughts();   // e.g. a voice request ended
+    serverWorking(j.busy);
   } catch {}
 }
-setInterval(pollThoughts, 600);
 function addThought(t) {
   if (!thoughtBox || thoughtBox.dataset.turn != t.turn) openThoughts(t);
   const li = document.createElement("li");
@@ -291,7 +300,7 @@ function showConfirm(items) {
 $("#voiceBtn").onclick = async e => { voiceOn = !voiceOn; e.target.classList.toggle("on", voiceOn); await api("/api/setup", {voice: voiceOn}); };
 function earsLabel() { $("#handsBtn").textContent = handsFree ? `👂 ${WAKE}` : "🙉 Ears off"; }
 $("#handsBtn").onclick = async e => {
-  handsFree = !handsFree; e.target.classList.toggle("on", handsFree); await api("/api/setup", {wake: handsFree});
+  handsFree = !handsFree; e.target.classList.toggle("on", handsFree); showEars(); await api("/api/setup", {wake: handsFree});
   earsLabel();
   add("nova", handsFree ? `I'm listening for “${WAKE}” now. Say it, wait for my bubble, then tell me what you need!`
     : `🙉 My ears are off - I'm not listening at all now, not even for “${WAKE}”. Click 👂 to turn them back on (the 🎤 button still works when you want to talk).`);
@@ -561,9 +570,10 @@ function bar(id, v, label, invert) {
   const bad = invert ? v < 20 : v > 85, warn = invert ? v < 40 : v > 65;
   b.className = bad ? "bad" : warn ? "warn" : "";
 }
-async function pulse() {
+async function pulse() { try { showPulse(await (await fetch("/api/pulse")).json()); } catch {} }
+function showPulse(j) {
   try {
-    const j = await (await fetch("/api/pulse")).json(), s = lastStats = j.stats;
+    const s = lastStats = j.stats;
     bar("cpu", s.cpu, s.cpu + "%"); bar("ram", s.ram, s.ram + "%"); bar("disk", s.disk, s.disk + "%");
     if (s.battery == null) bar("bat", 100, "desktop power");
     else bar("bat", s.battery, s.battery + "%" + (s.plugged ? " ⚡" : ""), true);
@@ -576,7 +586,7 @@ async function loadStatus() {
   const s = await (await fetch("/api/status")).json();
   NAME = s.name; $("#nm").textContent = $("#nm2").textContent = NAME; document.title = NAME;
   voiceOn = s.voice; handsFree = s.wake;
-  $("#voiceBtn").classList.toggle("on", voiceOn); $("#handsBtn").classList.toggle("on", handsFree); earsLabel();
+  $("#voiceBtn").classList.toggle("on", voiceOn); $("#handsBtn").classList.toggle("on", handsFree); earsLabel(); showEars();
   if (s.voice_name) $("#voiceBtn").title = "Nova's voice: " + s.voice_name;
   $("#keyBtn").title = "Brain: " + (s.brain || "").replace(/^cloud:/, "") + (s.brain !== s.model ? `  (backup: ${s.model})` : "");
   put($("#mem"), s.memories.length ? s.memories.map(m => html`<li>${m}</li>`) : html`<li>Nothing yet - tell me about yourself!</li>`);
@@ -589,9 +599,38 @@ function greet() {
   add("nova", t); face("happy"); setTimeout(() => face(), 1500);
 }
 
+/* ---------------- one event stream ----------------
+   Everything above that changes on its own (her thoughts, voice events, talking, the ears, the pulse) is pushed by
+   the server over /api/stream as it happens, so an idle page sends no requests at all. If the stream can't be used,
+   the old polling starts instead. */
+let polling = false;
+function startPolling() {
+  if (polling) return; polling = true;
+  pollVoice(); pollThoughts();
+  setInterval(pollVoice, 1000); setInterval(pollThoughts, 600); setInterval(pulse, 15000);
+}
+function listen() {
+  if (!window.EventSource) return startPolling();
+  const es = new EventSource("/api/stream?backlog=event");
+  let opened = false;
+  const on = (kind, fn) => es.addEventListener(kind, e => { try { fn(JSON.parse(e.data)); } catch {} });
+  on("state", j => { opened = true; voiceState(j); serverWorking(j.busy); });
+  on("event", voiceEvent);
+  on("thought", t => { thoughtAfter = t.id; addThought(t); });
+  on("busy", j => serverWorking(j.busy));
+  on("speak_start", () => speaking(true));
+  on("speak_end", () => speaking(false));
+  on("ears", showEars);
+  on("wake_phrase", j => wakePhrase(j.phrase));
+  on("pulse", showPulse);
+  // The browser reconnects by itself (and catches up from Last-Event-ID); only a stream that never worked, or that
+  // the server refused, falls back to polling.
+  es.onerror = () => { if (!opened || es.readyState === EventSource.CLOSED) { es.close(); startPolling(); } };
+}
+
 (async () => {
   const s = await loadStatus(); window.__ready = s.ready;
-  pulse(); setInterval(pulse, 15000);
+  pulse(); listen();
   if (!s.ready) openSetup(s); else greet();
   input.focus();
 })();

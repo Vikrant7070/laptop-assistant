@@ -66,6 +66,7 @@ from nova import store  # noqa: E402
 from nova.actions import tools  # noqa: E402
 from nova.brain import router  # noqa: E402
 from nova.core import app  # noqa: E402
+from nova.core.app import eventbus  # noqa: E402
 from nova.actions import skills  # noqa: E402
 from nova.actions import checks  # noqa: E402
 from nova.actions import recorder  # noqa: E402
@@ -97,6 +98,7 @@ def isolated(tmp_path, monkeypatch):
     app.state.clear()
     app.state.update({"messages": [], "pending": None})
     app.events.clear()
+    eventbus.bus = eventbus.Bus()      # a fresh event stream: no backlog from other tests
     monkeypatch.setattr(tools.keyboard, "send", lambda *a, **k: None)     # never press real keys
     monkeypatch.setattr(tools.keyboard, "write", lambda *a, **k: None)
     # typing goes in by pasting: a pretend clipboard, so tests never touch the real one

@@ -1,20 +1,23 @@
 """What runs on its own: suggestions, idle / presence / help watchers, quitting, and the live pulse."""
 
 
+import json
 import os
+import queue
 import re
 import threading
 import time
 import ctypes
 
-from flask import jsonify, request, send_from_directory
+from flask import Response, jsonify, request, send_from_directory
 
 from nova.avatar import avatar_client
 from nova.actions import coworker
 from nova.brain import llm
 from nova.actions import mcp
 from nova.actions import tools
-from nova.core.app import api
+from nova.log import log_exception
+from nova.core.app import api, eventbus
 
 
 SUGGEST_EVERY = 600            # at most one suggestion every 10 minutes
@@ -138,6 +141,7 @@ def start_background():
     if config.settings()["notifications"]:
         integrations.notif_watcher.start()
     threading.Thread(target=integrations.sync_phone_banners, daemon=True).start()
+    threading.Thread(target=pulse_watch, daemon=True).start()
 
 
 @api.app.get("/ear")
@@ -228,10 +232,64 @@ def confirm():
 
 @api.app.get("/api/events")
 def get_events():
-    out = voice_io.events[:]
-    voice_io.events.clear()
-    return jsonify(events=out, speaking=voice_io.mouth.lips, ears=voice_io.ears.status, heard=voice_io.ears.heard[-1:] if config.settings()["wake"] else [],
-                   wake_phrase=prompts.wake_phrase())
+    """The polling fallback for chat events (when /api/stream can't be used). after: the last event id this page has;
+    without it, the events no page has seen yet. Nothing is cleared, so two open pages each get every event."""
+    after = request.args.get("after", type=int)
+    if after is not None and after > eventbus.bus.last_id:
+        after = None                                  # Nova restarted: her event ids began again
+    evs = eventbus.bus.unseen("event") if after is None else eventbus.bus.since(after, {"event"})
+    for ev in evs:
+        ev["seen"] = True
+    return jsonify(events=[ev["data"] for ev in evs], last=eventbus.bus.last_id, **voice_state())
+
+
+def voice_state():
+    """What a page needs to draw her right now; sent first on every stream, then kept up to date by events."""
+    return dict(speaking=voice_io.mouth.lips, ears=voice_io.ears.status,
+                heard=voice_io.ears.heard[-1:] if config.settings()["wake"] else [], wake_phrase=prompts.wake_phrase(),
+                busy=session.lock.locked(), thinking=voice_io.convo["thinking"])
+
+
+def _sse(kind, data, ev_id=None):
+    return (f"id: {ev_id}\n" if ev_id is not None else "") + f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+
+def stream_events(q, first, backlog=()):
+    """The body of one /api/stream response: the state now, then each event as it is published, and a comment line
+    every HEARTBEAT seconds so a closed page is noticed (the write fails) and its queue let go."""
+    try:
+        yield "retry: 3000\n\n" + _sse("state", first)
+        while True:
+            try:
+                ev = q.get(timeout=eventbus.HEARTBEAT)
+            except queue.Empty:
+                if q.dropped:
+                    return
+                yield ": ping\n\n"
+                continue
+            if ev["kind"] in backlog:
+                ev["seen"] = True            # a page that opens later doesn't get it again
+            yield _sse(ev["kind"], ev["data"], ev["id"])
+            if q.dropped and q.empty():
+                return                      # too slow: the browser reconnects with Last-Event-ID and catches up
+    finally:
+        eventbus.bus.unsubscribe(q)
+
+
+@api.app.get("/api/stream")
+def stream():
+    """Server-Sent Events: everything the pages show, pushed as it happens (roadmap R9). The browser's own reconnect
+    sends Last-Event-ID, and the events after it are replayed. backlog=event,ear: events of those kinds that no page
+    asking for them has seen yet (the chat's events and the ear bubble's commands used to wait in a queue)."""
+    after = request.headers.get("Last-Event-ID", type=int)
+    if after is None:
+        after = request.args.get("after", type=int)
+    if after is not None and after > eventbus.bus.last_id:
+        after = None                                  # Nova restarted: her event ids began again
+    backlog = tuple(k for k in request.args.get("backlog", "").split(",") if k)
+    q = eventbus.bus.subscribe(after, backlog=backlog)
+    return Response(stream_events(q, voice_state(), backlog), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 quit_hook = None          # set by desktop.py: closes the windows, tray, 3D Nova and the server
@@ -295,9 +353,28 @@ def reset():
 _alerts = {"battery": False, "cpu_since": None}
 
 
+PULSE_EVERY = 15
+
+
+def pulse_watch():
+    """The pulse, pushed to the pages every PULSE_EVERY seconds (they used to ask for it), so reminders and the
+    battery / CPU warnings come on time even with no page open."""
+    while True:
+        time.sleep(PULSE_EVERY)
+        try:
+            eventbus.publish("pulse", pulse_now())
+        except Exception:
+            log_exception("pulse")
+
+
 @api.app.get("/api/pulse")
 def pulse():
-    """Live stats + things Nova should say on its own."""
+    """Live stats + things Nova should say on its own (the page asks once when it opens; then the stream)."""
+    return jsonify(pulse_now())
+
+
+def pulse_now():
+    """Live stats + things Nova should say on its own; the lines are said here, and shown by the pages."""
     s = tools.stats()
     say = [f"Hey! Reminder: {r}" for r in tools.due_reminders()]
     if s["battery"] is not None and s["battery"] <= 20 and not s["plugged"]:
@@ -316,7 +393,7 @@ def pulse():
     for line in say:
         voice_io.announce(line)
         integrations.tell_away(line)
-    return jsonify(stats=s, say=say)
+    return {"stats": s, "say": say}
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.

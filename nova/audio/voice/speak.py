@@ -6,6 +6,7 @@ import threading
 import time
 from pathlib import Path
 from nova.avatar import avatar_client
+from nova.log import log_exception
 from nova.audio.voice import wording
 
 
@@ -185,6 +186,7 @@ class Mouth:
         self.neural = NeuralVoice() if NeuralVoice.available() else None
         self.on_start = None       # on_start(words, timing): she starts saying a reply (the app logs it)
         self.on_gap = None         # on_gap(secs, "brain"|"voice", words): a pause mid-reply, and whose fault (logged)
+        self.on_lips = None        # on_lips(on): her talking animation starts (True) or stops (the app publishes it)
         self.ready_secs = 0.0      # speech made but not started yet
         self.play_until = 0.0      # when the sentence playing now ends
         self.bubbles = True        # show each sentence in 3D Nova's speech bubble while it is spoken
@@ -251,6 +253,11 @@ class Mouth:
         if on != self.lips:
             self.lips = on
             self._tell(gen, "anim", name="talk" if on else "idle")
+            if getattr(self, "on_lips", None):
+                try:
+                    self.on_lips(on)
+                except Exception:
+                    log_exception("mouth on_lips")
 
     def _bubble(self, words, secs, gen):
         """Show the sentence being spoken, for as long as it is spoken (+ a moment to finish reading)."""

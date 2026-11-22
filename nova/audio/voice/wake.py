@@ -2,6 +2,9 @@
 import threading
 import time
 from nova.avatar import avatar_client
+from nova.log import log_exception
+
+on_change = None   # set by the app: on_change(status, heard) when the ears' status line or what they heard changes
 
 
 class _EarsBase:
@@ -9,6 +12,15 @@ class _EarsBase:
     status = "off"
     on_wake = None             # set by the app: listen for the request (conversation=True for "wake up")
     on_sleep = None            # set by the app: end conversation mode
+
+    def __setattr__(self, name, value):
+        changed = name in ("status", "heard") and getattr(self, name, None) != value
+        super().__setattr__(name, value)
+        if changed and on_change and hasattr(self, "heard"):
+            try:
+                on_change(self.status, list(self.heard))
+            except Exception:
+                log_exception("ears on_change")
 
     def _note(self, what):
         self.heard = (self.heard + [f"{time.strftime('%H:%M:%S')} {what}"])[-10:]

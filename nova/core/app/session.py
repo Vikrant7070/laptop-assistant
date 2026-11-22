@@ -15,12 +15,13 @@ from nova.actions import recorder
 from nova.actions import workers
 from nova.actions import tools
 from nova.actions import shell_policy
+from nova.core.app import eventbus
 
 
 state = {"messages": [], "pending": None}
 
 
-lock = threading.Lock()
+lock = eventbus.BusyLock()    # held while she handles a request; taking and letting go are published as "busy"
 
 
 recorder.busy = lock.locked     # 👀 while she handles a request, the windows she opens aren't the user's steps
@@ -183,9 +184,10 @@ def think(text, cloud_too=True):
         return
     text = text if len(text) <= 300 else text[:297] + "…"
     with _thought_lock:
-        thoughts["list"].append({"id": thoughts["next"], "turn": thoughts["turn"], "t": round(time.time(), 2),
-                                 "text": text})
+        t = {"id": thoughts["next"], "turn": thoughts["turn"], "t": round(time.time(), 2), "text": text}
+        thoughts["list"].append(t)
         thoughts["next"] += 1
+        eventbus.publish("thought", t)          # inside the lock, so the pages get them in order
         del thoughts["list"][:-MAX_THOUGHTS]
     conversation.task_log(f"THINK: {text}")
     if cloud_too:

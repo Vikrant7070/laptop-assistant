@@ -8,5 +8,5 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 |---|---|---|---|
 | Manager Phase 4: step 0 merged (PR #24); the manager loop (`nova/actions/manager.py`) isn't started, it waits for the user's go-ahead | — | — | 2026-11-22 |
 | Child brain: `childbrain/`, `docs/plans/child-brain-*.md`; the Child brain page (`nova/core/app/childbrain_tab.py`, `static/childbrain.html`) | Claude sessions (child brain WP 1.2, training switch) | `claude/child-brain-wp1.2`, `feat/training-switch` | 2026-11-22 |
-| Improvement roadmap Phase 1: `docs/` tidy-up, `nova/actions/skills/` split (`scripts/splits/skills.toml`, `nova/skill_eval.py`, `tests/test_packages.py`), R7 typed settings (`nova/core/app/config.py`) | Claude session (roadmap Phase 1) | `docs/tidy-plans`, `refactor/skills-package`, `feat/r7-typed-settings` | 2026-11-22 |
+| Improvement roadmap Phase 1: R9 event stream (`nova/core/app/eventbus.py`, `background.py`, `voice_io.py`, `session.py`, `static/nova.js`, `static/ear.html`); R7, the skills split and the docs tidy-up are merged | Claude session (roadmap Phase 1) | `feat/r9-event-stream` | 2026-11-22 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |
