@@ -35,7 +35,6 @@ def fake_window(monkeypatch):
     state = {"closed": False, "clicks": [], "messages": []}
     monkeypatch.setattr(avatar_client, "running", lambda: True)
     monkeypatch.setattr(tools.windows, "_find_window", lambda q: (42, "Notes - Notepad", "notepad.exe"))
-    monkeypatch.setattr(tools.windows, "_focus", lambda h: None)
     monkeypatch.setattr(tools.windows, "_caption_button", lambda h, which: (900, 10))
     monkeypatch.setattr(tools._user32, "IsIconic", lambda h: False)
     monkeypatch.setattr(tools._user32, "PostMessageW", lambda h, m, w, l: state["messages"].append(m))

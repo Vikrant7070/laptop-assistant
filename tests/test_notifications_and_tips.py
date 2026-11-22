@@ -148,12 +148,11 @@ def test_no_suggestions_without_screen_permission(monkeypatch):
     assert app.suggest_now(force=True) is None
 
 
-def test_never_about_novas_own_window(screen, monkeypatch):
+def test_never_about_novas_own_window(screen, monkeypatch, desktop):
     monkeypatch.undo()                     # the real _front_title, with a made-up window list
-    monkeypatch.setattr(tools.windows, "_windows", lambda: [(1, "Nova 3D", "pythonw.exe"), (2, "Nova", "pythonw.exe"),
-                                                    (3, "budget.xlsx - Excel", "EXCEL.EXE")])
+    desktop.set_windows([(1, "Nova 3D", "pythonw.exe"), (2, "Nova", "pythonw.exe"), (3, "budget.xlsx - Excel", "EXCEL.EXE")])
     assert app._front_title() == "budget.xlsx - Excel"
-    monkeypatch.setattr(tools.windows, "_windows", lambda: [(1, "Nova 3D", "pythonw.exe")])
+    desktop.set_windows([(1, "Nova 3D", "pythonw.exe")])
     monkeypatch.setattr(tools.eyes, "_screen_allowed", lambda: True)
     monkeypatch.setattr(app.llm, "see", lambda *a, **k: pytest.fail("looked at Nova herself"))
     assert app.suggest_now() is None

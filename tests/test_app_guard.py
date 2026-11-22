@@ -22,12 +22,10 @@ def trusted():
 
 
 @pytest.fixture
-def desk(monkeypatch):
-    """A pretend desktop: `desk["windows"]` front first."""
-    d = {"windows": [VSCODE, CLAUDE]}
-    monkeypatch.setattr(tools.windows, "_windows", lambda: list(d["windows"]))
+def desk(desktop, monkeypatch):
+    """The pretend desktop (nova.platform.FakeDesktop), front window first."""
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
-    return d
+    return desktop.set_windows([VSCODE, CLAUDE])
 
 
 @pytest.mark.parametrize("request_text, name", [
@@ -74,14 +72,14 @@ def test_typing_into_another_app_is_refused(desk):
 
 
 def test_notepad_open_but_behind_says_how_to_reach_it(desk):
-    desk["windows"] = [VSCODE, NOTEPAD]
+    desk.set_windows([VSCODE, NOTEPAD])
     out = tools.app_guard("type_text", {"text": "hi", "into_window": "Visual Studio Code"}, "notepad")
     assert "into_window='notepad'" in out and "open_app" not in out
     assert tools.app_guard("press_keys", {"keys": "ctrl+n"}, "notepad").startswith("Not done")
 
 
 def test_the_right_app_is_let_through(desk):
-    desk["windows"] = [NOTEPAD, VSCODE]
+    desk.set_windows([NOTEPAD, VSCODE])
     assert tools.app_guard("type_text", {"text": "hi", "into_window": "notepad"}, "notepad") is None
     assert tools.app_guard("type_text", {"text": "hi"}, "notepad") is None
     assert tools.app_guard("press_keys", {"keys": "ctrl+n"}, "notepad") is None      # a new tab inside Notepad
@@ -101,7 +99,7 @@ def test_waits_a_moment_for_a_window_that_open_app_just_started(desk, monkeypatc
     def tick(s):
         clock["t"] += s
         if clock["t"] >= 1.0:
-            desk["windows"] = [NOTEPAD, VSCODE]
+            desk.set_windows([NOTEPAD, VSCODE])
     monkeypatch.setattr(tools.time, "sleep", tick)
     assert tools._app_window("notepad", wait=3.0) == NOTEPAD
 
@@ -121,7 +119,7 @@ def test_the_whole_request_opens_notepad_first_and_types_nowhere_else(brain, des
     def run_tool(name, args):
         ran.append((name, args))
         if name == "open_app":
-            desk["windows"] = [NOTEPAD, VSCODE, CLAUDE]
+            desk.set_windows([NOTEPAD, VSCODE, CLAUDE])
         return "ok"
     monkeypatch.setattr(app.tools, "run_tool", run_tool)
     out, status = app.answer("type hello judge in notepad")
