@@ -69,8 +69,10 @@ class Phone:
     """The Telegram link. on_message(text) -> Nova's answer dict; on_confirm(approved) -> answer dict;
     on_stop() -> bool; status_text() -> str. All set by app.py."""
 
-    def __init__(self, on_message=None, on_confirm=None, on_stop=None, status_text=None):
+    def __init__(self, on_message=None, on_confirm=None, on_stop=None, status_text=None, on_answer=None):
         self.on_message, self.on_confirm = on_message, on_confirm
+        self.on_answer = on_answer           # on_answer(card id, {key: value}): a tap on a question card's button
+        self.asked_card = None               # (message id, card id, key, values) of the last question card sent
         self.on_stop, self.status_text = on_stop, status_text
         self.note = ""                       # last problem, shown in ⚙ settings
         self.pair_code, self.pair_until = "", 0.0
@@ -168,8 +170,8 @@ class Phone:
             raise PhoneError(f"Telegram error: {body.get('description', '?')[:150]}")
         return body.get("result")
 
-    def send(self, text, buttons=None):
-        """Send text to the paired account. Returns the message id (or 0)."""
+    def send(self, text, buttons=None, rows=None):
+        """Send text to the paired account. Returns the message id (or 0). buttons: one row; rows: several."""
         chat = _load().get("chat_id")
         if not chat or not text:
             return 0
@@ -178,8 +180,8 @@ class Phone:
         while text:
             part, text = text[:MAX_TEXT], text[MAX_TEXT:]
             params = {"chat_id": chat, "text": part, "disable_web_page_preview": True}
-            if buttons and not text:
-                params["reply_markup"] = {"inline_keyboard": [buttons]}
+            if (buttons or rows) and not text:
+                params["reply_markup"] = {"inline_keyboard": rows or [buttons]}
             try:
                 mid = (self._call("sendMessage", **params) or {}).get("message_id", 0)
             except PhoneError as e:
@@ -312,6 +314,15 @@ class Phone:
             self.asked = self.send(q, buttons=[{"text": "✅ Yes", "callback_data": "yes"},
                                                {"text": "❌ No", "callback_data": "no"}]) or -1
             return
+        card = out.get("question")
+        qs = (card or {}).get("questions") or []
+        if len(qs) == 1 and qs[0]["kind"] in ("yesno", "one"):
+            # A question card: a button per choice (one per row, labels can be long). Several / open answers are typed.
+            q = qs[0]
+            mid = self.send(reply or q["text"], rows=[[{"text": c["label"][:60], "callback_data": f"q:{i}"}]
+                                                      for i, c in enumerate(q["choices"])])
+            self.asked_card = (mid or -1, card["id"], q["key"], [c["value"] for c in q["choices"]])
+            return
         if out.get("activity") and not reply:
             reply = "Done: " + ", ".join(out["activity"][:5])
         self.send(reply or "👍")
@@ -326,6 +337,9 @@ class Phone:
             pass
         if not d.get("chat_id") or sender.get("id") != d.get("user_id"):
             return "ignored: stranger"
+        data = str(q.get("data") or "")
+        if data.startswith("q:"):
+            return self._card_button(msg, data)
         if msg.get("message_id") != self.asked:
             self.send("That question has expired - ask me again if you still want it.")
             return "expired"
@@ -333,3 +347,19 @@ class Phone:
         approved = q.get("data") == "yes"
         self._work.put(lambda: (self._typing(), self.reply(self.on_confirm(approved) if self.on_confirm else {})))
         return "yes" if approved else "no"
+
+    def _card_button(self, msg, data):
+        """A tap on a question card's button: only the newest card's buttons count."""
+        asked = self.asked_card
+        try:
+            i = int(data[2:])
+        except ValueError:
+            return "ignored: bad button"
+        if not asked or msg.get("message_id") != asked[0] or not 0 <= i < len(asked[3]):
+            self.send("That question has expired - ask me again if you still want it.")
+            return "expired"
+        self.asked_card = None
+        mid, card_id, key, values = asked
+        self._work.put(lambda: (self._typing(), self.reply(self.on_answer(card_id, {key: values[i]})
+                                                          if self.on_answer else {})))
+        return f"answered {values[i]}"

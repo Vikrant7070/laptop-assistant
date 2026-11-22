@@ -113,6 +113,18 @@ def choice(text):
     return _ORDINALS[m.group(1).lower()] if m else None
 
 
+def choices(text):
+    """Every choice the words name ("one and three" -> [0, 2]), in order, no repeats."""
+    return list(dict.fromkeys(_ORDINALS[m.group(1).lower()] for m in CHOICE.finditer(text or "")))
+
+
+# Answers to a question card (app.asking): "skip" = use your best guess; "other: ..." = my own answer; "all of them".
+SKIP = re.compile(r"^\W*(please\s+)?(skip( it| that| this( one)?)?|you (choose|decide|pick)|your (call|choice|guess)|"
+                  r"(use )?your (best )?guess|whatever you think|(it )?doesn'?t matter|tum (decide|chuno) karo)\W*$", re.I)
+OTHER_ANSWER = re.compile(r"^\W*(?:other|something else|none of those|neither)\W*[:,-]\s*(.{2,})$", re.I)
+ALL_OF_THEM = re.compile(r"^\W*(all( of them| of those| three| four)?|every ?(one|thing)|sab|saare)\W*$", re.I)
+
+
 EMAIL = re.compile(r"\b(e-?mails?|mails?|gmail|inbox|unread|otp|verification code)\b", re.I)    # her mail stays local
 
 
@@ -212,7 +224,7 @@ JUST_STOP = just_stop_re(DEFAULT_NAMES)       # voice_io builds its own from the
 KINDS = {
     "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
-    "continue": CONTINUE, "resume": RESUME, "email": EMAIL, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
+    "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "email": EMAIL, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
     "show": SHOW, "help_yes": HELP_YES,
     "answer_yes": ANSWER_YES, "research": RESEARCH, "watch_start": WATCH_START, "watch_done": WATCH_DONE,
     "correction": CORRECTION, "about_me": ABOUT_ME,

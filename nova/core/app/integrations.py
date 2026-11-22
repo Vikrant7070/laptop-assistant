@@ -343,6 +343,14 @@ def phone_message(text):
     return out
 
 
+def card_answer(qid, answers, where):
+    """A tap on a question card from the phone (Telegram or the iPhone app): answered like a message from there."""
+    tag = PHONE_TAG if where == "phone" else MOBILE_TAG
+    out, _ = asking.tap(qid, answers, prefix=tag + " ", quiet=True, remote=True)
+    voice_io.push_event({"me": "📱 " + ", ".join(str(v) for v in answers.values()), **{k: v for k, v in out.items() if k != "images"}})
+    return out
+
+
 def phone_confirm(approved):
     out, _ = voice_io.confirm_pending(approved, quiet=True, remote=True)
     if not (out.get("reply") or out.get("pending") or out.get("activity") or out.get("error")):
@@ -361,7 +369,7 @@ def phone_status():
             + ("\n🔒 Screen is locked." if presence.screen_locked() else ""))
 
 
-phone = phone_link.Phone(on_message=phone_message, on_confirm=phone_confirm, on_stop=lambda: conversation.stop_now(),
+phone = phone_link.Phone(on_message=phone_message, on_confirm=phone_confirm, on_answer=lambda qid, a: card_answer(qid, a, "phone"), on_stop=lambda: conversation.stop_now(),
                          status_text=phone_status)
 
 
@@ -395,7 +403,7 @@ def _task_rows():
 
 mobile = mobile_mod.Mobile(on_message=mobile_message, on_confirm=mobile_confirm, on_stop=lambda: conversation.stop_now(),
                            status_text=phone_status, state=lambda: {"asleep": bool(voice_io.nap["asleep"]), "busy": session.lock.locked()},
-                           tasks=_task_rows)
+                           tasks=_task_rows, on_answer=lambda qid, a: card_answer(qid, a, "mobile"))
 
 
 def tailscale_url():
@@ -742,4 +750,4 @@ def mcp_set():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import background, body, config, conversation, session, voice_io  # noqa: E402
+from nova.core.app import asking, background, body, config, conversation, session, voice_io  # noqa: E402

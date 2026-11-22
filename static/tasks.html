@@ -37,6 +37,13 @@
   .body pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0f1222;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12.5px;max-height:50vh;overflow:auto}
   .k{color:var(--muted)}
   .empty{color:var(--muted);padding:10px 14px}
+  .qcard{padding:12px 14px}.qcard .qtext{font-weight:600}.qcard .qwhy{display:block;color:var(--muted)}
+  .qcard .qopts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.qcard button.on{border-color:var(--accent);background:#221d45}
+  .qcard .qopt.last,.qcard .qchk.last{border-color:var(--accent2)}.qcard .qskip,.qcard .qother{color:var(--muted)}
+  .qcard .qchk{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 12px}
+  .qcard input:not([type=checkbox]){background:#0f1222;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:6px 10px;width:100%;max-width:360px;margin-top:6px}
+  .qcard .qdone{margin-top:6px}.qcard .qnote{margin-left:8px;color:var(--muted)}.qcard.answered{opacity:.65}.qcard .qnote:empty{display:none}
+  .qreply{margin-top:8px;color:var(--accent2)}
   #msg{color:var(--accent2);min-height:1.4em;margin-top:6px}
   @media (max-width:640px){
     details.row>summary{grid-template-columns:1fr auto}
@@ -53,6 +60,11 @@
   </header>
   <p class="lead">Everything Nova did or handed to a worker, newest first: her own laptop tasks and the coding and research jobs. Open one to see every step that really ran and why it ended.</p>
   <div id="msg" role="status" aria-live="polite"></div>
+
+  <section id="asking" hidden>
+    <h2>🙋 Waiting for your answer</h2>
+    <div class="card" id="question"></div>
+  </section>
 
   <section id="carry" hidden>
     <h2>Waiting to be carried on</h2>
@@ -71,6 +83,7 @@
   <div class="card" id="rows"></div>
 </div>
 <script src="/static/markup.js"></script>
+<script src="/static/question.js"></script>
 <script src="/static/tasks.js"></script>
 </body>
 </html>

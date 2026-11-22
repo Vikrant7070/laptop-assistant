@@ -147,7 +147,7 @@ def test_continue_with_two_stopped_tasks_asks_which(brain):
     fake, _ = brain([])
     out, _ = app.answer("carry on")
     assert out["reply"] == ("I stopped more than one task. Which one should I carry on with? "
-                            "one: sort my downloads, two: clean my laptop.")
+                            "one: sort my downloads, two: clean my laptop, three: Not now.")
     assert fake.seen == []
     fake, _ = brain([("Cleaning now.", [])])
     app.answer("the second one")
