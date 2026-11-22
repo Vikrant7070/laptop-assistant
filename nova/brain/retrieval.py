@@ -13,6 +13,8 @@ import re
 import threading
 from pathlib import Path
 
+from nova import runtime
+
 REPO = "Xenova/bge-small-en-v1.5"
 FILES = ("onnx/model_quantized.onnx", "tokenizer.json")
 CACHE = Path(os.environ.get("NOVA_EMBED_DIR", Path.home() / ".cache" / "nova-embed"))
@@ -67,7 +69,7 @@ def load():
 
 
 def load_in_background():
-    threading.Thread(target=load, daemon=True).start()
+    runtime.spawn("retrieval.load", load)
 
 
 def ready():

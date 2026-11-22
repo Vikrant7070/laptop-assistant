@@ -1,6 +1,7 @@
 """The wake-word ears built on Whisper (WhisperEars) and set_wake, which renames the wake word."""
 import threading
 import time
+from nova import runtime
 from nova.avatar import avatar_client
 from nova.log import log_exception
 
@@ -31,12 +32,12 @@ class _EarsBase:
             self.on_name()
         avatar_client.send("wave", quiet=True, timeout=2)
         if self.on_wake:
-            threading.Thread(target=self.on_wake, kwargs={"conversation": True}, daemon=True).start()
+            runtime.spawn("wake.on_wake", self.on_wake, kwargs={"conversation": True})
 
     def _asked_to_sleep(self):
         self._note(f"heard '{whisper.WAKE_NAME}, go to sleep'")
         if self.on_sleep:
-            threading.Thread(target=self.on_sleep, daemon=True).start()
+            runtime.spawn("wake.on_sleep", self.on_sleep)
 
 
 class WhisperEars(_EarsBase):
@@ -109,7 +110,7 @@ class WhisperEars(_EarsBase):
         windows_ears.kill_strays("listen.ps1")   # the old Windows listener must not answer "Hey Nova" as well
         self.running = True
         self.status = "starting"
-        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread = runtime.spawn("wake.loop", self._loop, start=False)
         self.thread.start()
 
     def stop(self):
@@ -182,7 +183,7 @@ class WhisperEars(_EarsBase):
             self._asked_to_sleep()
         elif getattr(self, "is_stop", None) and self.on_stop and self.is_stop(text):   # "Hey Nova, stop"
             self._note(f"heard 'Hey {whisper.WAKE_NAME}, stop' (mic level {self.w.level:.2f})")
-            threading.Thread(target=self.on_stop, args=(text,), daemon=True).start()
+            runtime.spawn("wake.on_stop", self.on_stop, args=(text,))
         elif whisper.EARS_WAKEUP_RE.search(low):
             self._woke_for_conversation()
         elif len(rest.split()) >= 2:                       # "Hey Nova, what's the time?" in one breath
@@ -192,14 +193,14 @@ class WhisperEars(_EarsBase):
             avatar_client.send("say", text=f"“{rest}”", secs=30, timeout=2)   # (her first spoken sentence replaces it)
             if self.log:
                 self.log(f"HEARD {rest[:60]!r} ({self.w.timing_note()})")
-            threading.Thread(target=self.on_text, args=(rest,), daemon=True).start()
+            runtime.spawn("wake.on_text", self.on_text, args=(rest,))
         else:
             self._note(f"heard 'Hey {whisper.WAKE_NAME}' (mic level {self.w.level:.2f})")
             if not early:     # (if early, the same bubble is up already and the app's listener keeps it up)
                 avatar_client.send("wave", quiet=True, timeout=2)
                 avatar_client.send("listen", on=True, secs=6, timeout=2)
             if self.on_wake:
-                threading.Thread(target=self.on_wake, daemon=True).start()
+                runtime.spawn("wake.on_wake", self.on_wake)
 
 
 def set_wake(names, hint, name="Nova"):

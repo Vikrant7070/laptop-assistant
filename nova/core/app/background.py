@@ -5,10 +5,10 @@ import json
 import os
 import queue
 import re
-import threading
 import time
 import ctypes
 
+from nova import runtime
 from flask import Response, jsonify, request, send_from_directory
 
 from nova import prompts as promptfiles
@@ -125,19 +125,19 @@ def start_background():
     if _background["started"]:
         return
     _background["started"] = True
-    threading.Thread(target=voice_io.idle_watch, daemon=True).start()
-    threading.Thread(target=suggest_watch, daemon=True).start()
+    runtime.spawn("background.idle_watch", voice_io.idle_watch)
+    runtime.spawn("background.suggest_watch", suggest_watch)
     integrations.phone.start()                               # only if a bot token is saved
     if config.settings().get("mobile"):
         integrations.mobile.start()                          # the iPhone web app's server (127.0.0.1 only)
     mcp.start()                                 # 🔌 connectors in data/mcp.json, each on its own thread
-    threading.Thread(target=integrations.presence_watch, daemon=True).start()
-    threading.Thread(target=work_watch, daemon=True).start()
-    threading.Thread(target=integrations.help_watch, daemon=True).start()
+    runtime.spawn("background.presence_watch", integrations.presence_watch)
+    runtime.spawn("background.work_watch", work_watch)
+    runtime.spawn("background.help_watch", integrations.help_watch)
     if config.settings()["notifications"]:
         integrations.notif_watcher.start()
-    threading.Thread(target=integrations.sync_phone_banners, daemon=True).start()
-    threading.Thread(target=pulse_watch, daemon=True).start()
+    runtime.spawn("background.sync_phone_banners", integrations.sync_phone_banners)
+    runtime.spawn("background.pulse_watch", pulse_watch)
 
 
 @api.app.get("/ear")
@@ -156,7 +156,7 @@ def ear_poll():
 def ear_said():
     text = api._text(api._body(), "text")[:2000]
     if text:
-        threading.Thread(target=voice_io.heard, args=(text,), daemon=True).start()
+        runtime.spawn("background.heard", voice_io.heard, args=(text,))
     return jsonify(ok=True)
 
 
@@ -305,13 +305,22 @@ def quit_nova():
             quit_hook()
         except Exception:
             pass    # intentional: window/tray teardown is best effort
-    threading.Timer(3, lambda: os._exit(0)).start()   # whatever is still running (phone, connectors) stops with us
+    runtime.spawn("background.exit_soon", lambda: os._exit(0), delay=3, daemon=False)   # whatever is still running (phone, connectors) stops with us
+    left = runtime.stop_all(wait=1.0)                  # loops started with every= / restart= end here
+    if left:
+        conversation.task_log(f"QUIT: still running after 1 s: {', '.join(left[:12])}")
+
+
+@api.app.get("/api/threads")
+def threads_api():
+    """Debug: Nova's background threads (name, age in s, runs, last error), oldest first."""
+    return jsonify(threads=runtime.threads())
 
 
 @api.app.post("/api/quit")
 def quit_api():
     """The chat's ⏻ Quit button."""
-    threading.Timer(0.5, quit_nova).start()            # answer the page first
+    runtime.spawn("background.quit_nova", quit_nova, delay=0.5, daemon=False)            # answer the page first
     return jsonify(ok=True)
 
 

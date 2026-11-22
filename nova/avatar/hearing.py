@@ -9,11 +9,12 @@ Her reactions to laptop sound are silent: she never talks or plays effects over 
 """
 import math
 import os
-import threading
 import time
 from collections import deque
 
 import numpy as np
+
+from nova import runtime
 
 RATE = 25                  # meter readings per second
 WINDOW = 8                 # seconds of loudness kept for finding the beat
@@ -97,16 +98,21 @@ class Beat:
         return float(((now - m["last_beat"]) / m["period"]) % 2.0)    # 0..2: two beats, so she can sway L-R
 
 
-class LaptopEars(threading.Thread):
-    """Reads every app's volume meter except Nova's own (this process and the app that started it)."""
+class LaptopEars:
+    """Reads every app's volume meter except Nova's own (this process and the app that started it).
+    start() runs it in a background thread (runtime.spawn)."""
 
     def __init__(self, on_event=None, enabled=lambda: True):
-        super().__init__(daemon=True)
+        self.thread = None
         self.beat = Beat()
         self.on_event = on_event
         self.enabled = enabled
         self.skip = {os.getpid(), os.getppid(), 0}
         self.error = None
+
+    def start(self):
+        self.thread = runtime.spawn("hearing.laptop_ears", self.run)
+        return self.thread
 
     def run(self):
         try:

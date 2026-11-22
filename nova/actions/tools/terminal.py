@@ -10,6 +10,7 @@ from pathlib import Path
 import ctypes
 from ctypes import wintypes
 
+from nova import runtime
 from nova import store
 from nova.actions.registry import tool
 from nova.shared import work_area
@@ -184,8 +185,8 @@ def drag_window(window="", to="center"):
         avatar_client.send("go_point", x=r.left + ww / 2, y=r.top + 16, timeout=15)     # walk to the title bar, take hold
         start = _avatar_pos() or start
         done = threading.Event()
-        threading.Thread(target=lambda: (avatar_client.send("carry_to", x=start[0] + nx - ox, y=start[1] + ny - oy, timeout=20),
-                                         done.set()), daemon=True).start()
+        runtime.spawn("terminal.drag_window", lambda: (avatar_client.send("carry_to", x=start[0] + nx - ox, y=start[1] + ny - oy, timeout=20),
+                                                                  done.set()))
         end_x, end_y = start[0] + nx - ox, start[1] + ny - oy
         total = max(1.0, ((end_x - start[0]) ** 2 + (end_y - start[1]) ** 2) ** 0.5)
         t0, moved = time.time(), 0.0

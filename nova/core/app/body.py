@@ -4,9 +4,9 @@
 import json
 import random
 import re
-import threading
 import time
 
+from nova import runtime
 from nova.avatar import avatar_client
 from nova.brain import llm
 from nova.audio import sfx
@@ -352,7 +352,7 @@ def react_later(reaction, wait_for_speech=True, repeat=None):
             if out and out.get("played"):
                 voice_io.mouth.hold(sfx.length(reaction) + 0.3)     # its sound effect: keep the mic from hearing it
             conversation.task_log(f"REACTION: {reaction}")
-    threading.Thread(target=run, daemon=True).start()
+    runtime.spawn("body.run", run)
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.

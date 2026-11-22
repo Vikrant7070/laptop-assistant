@@ -4,6 +4,7 @@
 import threading
 import time
 
+from nova import runtime
 from nova.avatar import avatar_client
 from nova.avatar import body as body_module
 from nova.core import characters
@@ -166,7 +167,7 @@ def ear_listen_after_speech():
         while mouth.busy():
             time.sleep(0.2)
         ear_listen()
-    threading.Thread(target=run, daemon=True).start()
+    runtime.spawn("voice_io.run", run)
 
 
 def ear_close():
@@ -225,7 +226,7 @@ listen_state = {"loop": False, "rt_broken": False, "single": False}
 
 
 if whisper:
-    threading.Thread(target=lambda: whisper.load(), daemon=True).start()   # warm up so the first request is quick
+    runtime.spawn("voice_io.whisper_load", lambda: whisper.load())   # warm up so the first request is quick
 
 
 def set_ears(on):
@@ -285,7 +286,7 @@ def ears_on():
                 last, next_keepalive = hearing, time.time() + 1.0
             done.wait(0.15)
         avatar_client.send("listen", on=False, timeout=1)
-    threading.Thread(target=beat, daemon=True).start()
+    runtime.spawn("voice_io.beat", beat)
     return done.set
 
 
@@ -358,7 +359,7 @@ def on_wake(conversation=False):
         if convo["on"] and listen_state["loop"]:
             return                        # already listening
         _start_conversation(greet=conversation)
-        threading.Thread(target=silent_loop, daemon=True).start()
+        runtime.spawn("voice_io.silent_loop", silent_loop)
         return
     if ear_hooks["show"] is None:      # no desktop app (plain browser): fall back to the chat page
         if host.show_window_hook:
@@ -517,7 +518,7 @@ def on_request(text):
     _start_conversation(greet=False)
     heard(text, via="silent")
     if _still_listening():            # she asked "yes or no?", or we're in a conversation
-        threading.Thread(target=silent_loop, daemon=True).start()
+        runtime.spawn("voice_io.silent_loop", silent_loop)
 
 
 # With Whisper installed, it does all the listening (wake word and request). Otherwise Windows' recognizer does.
@@ -616,7 +617,7 @@ def sleep_body(after_words=False):
             time.sleep(3)                 # (her bubble shows the line instead)
         if nap["asleep"] and nap.get("gen") == gen:     # not woken again in the meantime
             avatar_client.send("sleep", on=True, timeout=3)
-    threading.Thread(target=later, daemon=True).start()
+    runtime.spawn("voice_io.later", later)
 
 
 def deep_sleep_due(now=None):

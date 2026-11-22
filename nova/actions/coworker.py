@@ -23,6 +23,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
+from nova import runtime
 from nova import prompts as promptfiles
 from nova import store
 from nova.actions import tools
@@ -113,7 +114,7 @@ def _write(prompt, max_tokens, local=False):
             box["e"] = e
         finally:
             done.set()
-    threading.Thread(target=call, daemon=True).start()
+    runtime.spawn("coworker.call", call)
     while not done.wait(0.15):
         checkpoint()
     checkpoint()
@@ -220,7 +221,7 @@ def start(kind, title, work):
                 _hooks["on_done"](job)
             except Exception as e:
                 _note(f"couldn't report job #{job['id']}: {e}")
-    threading.Thread(target=run, daemon=True).start()
+    runtime.spawn("coworker.run", run)
     return job
 
 
@@ -313,7 +314,7 @@ def _track(hwnd, mode):
     _born.setdefault(hwnd, time.time())
     _mode.setdefault(hwnd, mode)
     if WATCH and not _watch["thread"]:
-        _watch["thread"] = threading.Thread(target=_watcher, daemon=True)
+        _watch["thread"] = runtime.spawn("coworker.watcher", _watcher, start=False)
         _watch["thread"].start()
 
 

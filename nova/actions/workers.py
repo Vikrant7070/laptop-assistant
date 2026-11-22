@@ -36,6 +36,7 @@ import threading
 import time
 from pathlib import Path
 
+from nova import runtime
 from nova import store
 from nova.log import log_exception
 
@@ -454,7 +455,7 @@ def run_once(worker, brief, folder, model, conf, job=None, checkpoint=None, log=
                     step = ""
                 if step:
                     job["step"] = step
-    reader = threading.Thread(target=read, daemon=True)
+    reader = runtime.spawn("workers.read", read, start=False)
     reader.start()
     try:
         while proc.poll() is None:

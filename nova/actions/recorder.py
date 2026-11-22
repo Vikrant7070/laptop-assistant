@@ -28,6 +28,8 @@ import threading
 import time
 from ctypes import wintypes
 
+from nova import runtime
+
 MAX_EVENTS = 300
 MAX_SECS = 600
 ENABLED = True                 # tests switch the real hooks off (conftest)
@@ -382,14 +384,14 @@ class Capture:
             self.q = queue.SimpleQueue()
             self._running = True                   # set before the worker starts, so a quick stop() can't be missed
             ready = {"ev": threading.Event(), "ok": False}
-            hook = threading.Thread(target=self._hook_loop, args=(ready,), daemon=True, name="nova-recorder-hooks")
+            hook = runtime.spawn("nova-recorder-hooks", self._hook_loop, args=(ready,), start=False)
             hook.start()
             ready["ev"].wait(3)
             if not ready["ok"]:
                 self.mode = None
                 self._stop_threads()
                 return "Windows didn't let me watch the mouse and keyboard just now."
-            work = threading.Thread(target=self._work, daemon=True, name="nova-recorder-worker")
+            work = runtime.spawn("nova-recorder-worker", self._work, start=False)
             work.start()
             self._threads = [hook, work]
             return ""

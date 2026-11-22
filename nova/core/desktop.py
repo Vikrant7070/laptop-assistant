@@ -7,7 +7,6 @@ import ctypes
 import os
 import subprocess
 import sys
-import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -18,6 +17,7 @@ import webview
 from PIL import Image, ImageDraw
 from werkzeug.serving import make_server
 
+from nova import runtime
 from nova.core import app as server
 from nova.shared import ROOT, work_area
 
@@ -58,7 +58,7 @@ def main():
         return
     os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", WEBVIEW2_ARGS)
     srv = make_server("127.0.0.1", PORT, server.app, threaded=True)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    runtime.spawn("desktop.serve_forever", srv.serve_forever)
 
     # Only 3D Nova shows on screen; the chat page waits in the tray (Ctrl+Alt+N / tray icon). --show opens it.
     hidden = "--show" not in sys.argv
@@ -154,7 +154,7 @@ def main():
                 f()
             except Exception:
                 pass  # intentional: quit continues past a part that is already stopped
-        threading.Timer(2, lambda: os._exit(0)).start()
+        runtime.spawn("desktop.quit_app", lambda: os._exit(0), delay=2, daemon=False)
 
     def toggle_hearing(icon, _):
         s = server.settings()
@@ -168,15 +168,14 @@ def main():
     server.host.show_window_hook = show
     server.background.quit_hook = quit_app
     server.ears.set_mode("typing")   # after the wake word, the app listens (silent recognizer, or the bubble)
-    threading.Thread(target=server.warm_brain, daemon=True).start()   # so the first answer isn't the slow one
+    runtime.spawn("desktop.warm_brain", server.warm_brain)   # so the first answer isn't the slow one
     if server.settings()["wake"]:
         server.ears.start()
     server.start_background()       # nap clock, suggestions about the screen, notifications
     keyboard.add_hotkey(HOTKEY, show)
 
     def toggle_watching():          # Ctrl+Alt+W: same as saying "watch me" / "done" (recorder.py)
-        threading.Thread(target=server.answer, args=("done" if server.recorder.recording() else "watch me",),
-                         daemon=True).start()
+        runtime.spawn("desktop.answer", server.answer, args=("done" if server.recorder.recording() else "watch me",))
     keyboard.add_hotkey(WATCH_HOTKEY, toggle_watching)
 
     tray = pystray.Icon("Nova", icon_image(), "Nova - Ctrl+Alt+N", menu=pystray.Menu(

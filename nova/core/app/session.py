@@ -6,6 +6,7 @@ import re
 import threading
 import time
 
+from nova import runtime
 from nova import intents
 from nova.avatar import avatar_client
 from nova.actions import knowledge
@@ -216,7 +217,7 @@ def _cloud_worker():
             time.sleep(1.5)
 
 
-threading.Thread(target=_cloud_worker, daemon=True).start()
+runtime.spawn("session.cloud_worker", _cloud_worker)
 
 
 class ThoughtStream:

@@ -4,6 +4,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from nova import runtime
 from nova import store
 from nova.avatar import avatar_client
 from nova.audio.voice import wake
@@ -38,7 +39,7 @@ class Transcriber:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.lines = queue.Queue()
-        threading.Thread(target=self._pump, args=(self.proc, self.lines), daemon=True).start()
+        runtime.spawn("windows_ears.pump", self._pump, args=(self.proc, self.lines))
         try:
             first = self.lines.get(timeout=30)
         except queue.Empty:
@@ -184,7 +185,7 @@ class Ears(wake._EarsBase):
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.status = "starting"
-        threading.Thread(target=self._read, args=(self.proc,), daemon=True).start()
+        runtime.spawn("windows_ears.read", self._read, args=(self.proc,))
 
     def stop(self):
         if self.proc and self.proc.poll() is None:
@@ -229,7 +230,7 @@ class Ears(wake._EarsBase):
                 if self.mode == "typing" and self.on_wake:
                     self.quiet_until = time.time() + 20
                     avatar_client.send("listen", on=True, secs=6, timeout=2)
-                    threading.Thread(target=self.on_wake, daemon=True).start()
+                    runtime.spawn("windows_ears.on_wake", self.on_wake)
                 else:
                     avatar_client.send("listen", on=True, secs=6, timeout=2)
             elif self.skip_next and (line.startswith("TEXT:") or line == "NOTHING"):
@@ -248,7 +249,7 @@ class Ears(wake._EarsBase):
                     continue
                 if text and not self.mouth.busy():
                     avatar_client.send("say", text=f"“{text}”", secs=4, timeout=2)
-                    threading.Thread(target=self.on_text, args=(text,), daemon=True).start()
+                    runtime.spawn("windows_ears.on_text", self.on_text, args=(text,))
             elif line == "NOTHING":
                 self._note("woke up but heard nothing after")
                 avatar_client.send("say", text="Hmm, I didn't catch that.", secs=3, timeout=2)
