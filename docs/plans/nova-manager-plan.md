@@ -587,6 +587,32 @@ it shows. The question card is needed by 4a, which asks the questions.
   and the restart offer showed. Continue led to the redo question with no brain call, and the strip turned amber.
   The strip had no sideways scroll at 375 px, and there were no console errors.
 
+**4-pre (d) as built (2026-11-22, branch `feat/manager-tasks-page`, stacked on (c)):** `nova/core/app/tasks_page.py`,
+`static/tasks.html` + `tasks.js`.
+- `/tasks` (📋 Tasks in the header) lists the saved task cards and the worker job records together, newest first.
+  - Filters: running / waiting for me / stopped / done / failed, and laptop tasks / workers.
+  - Each row: when, goal, kind, who (brain or worker + model), status, steps, files / sources, cost, time taken,
+    the Judge's verdict, and why it ended.
+  - Tasks that can be carried on are listed again at the top, with Continue / Drop it.
+- Open a row (`GET /api/tasks/<id>`, ids `t:<card>` / `j:<job key>`):
+  - a laptop task: the plan and its source, every step with result, the Judge's checks, and why it ended;
+  - a worker job: brief, folder, files or sources, result, why it ended.
+  - Read-only actions run on the page: What changed? (`workers.changes(rec=…)`) and Report (`workers.report(rec=…)`).
+  - Commit… / Try again… / Continue open the chat with the words filled in (`/?draft=…`). They are **never sent
+    by themselves**: a link from anywhere must not be able to talk to her, so you press Send and her Allow / No
+    still asks first.
+- Why it ended: `resume.save` writes the brain, the Judge's verdict and checks, and the failed check (`fail_plain`)
+  onto the card. A barge-in Stop is recorded as "you talked over her".
+- Phone: `/tasks` stacks at 375 px. The iPhone app has a 📋 Tasks button (`GET /m/tasks`, needs the phone's key,
+  read-only, newest 30). Telegram job messages end with "See it on the Tasks page".
+- Also: "What changed?" for a project folder that no longer exists says so (it crashed before, in the tool too).
+  The card's secret filter also hides "the code is 123456".
+- Live check (2026-11-22) on a separate copy (port 5098, throwaway data):
+  - the list, the filters, and opening a laptop task and a coding job worked;
+  - "What changed?" showed the folder-gone message;
+  - Commit… filled the chat box without sending; Drop it worked;
+  - no sideways scroll at 375 px; no console errors after a reload.
+
 ## 7. Phase 5 — Judges for workers' results
 
 Quality comes from measurement, not from the user's habits or the worker's own claim:

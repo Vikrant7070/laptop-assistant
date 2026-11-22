@@ -629,6 +629,11 @@ function listen() {
   es.onerror = () => { if (!opened || es.readyState === EventSource.CLOSED) { es.close(); startPolling(); } };
 }
 
+// /?draft=... (the Tasks page's Continue / Commit… / Try again…): the words are put in the box, never sent by
+// themselves - a link from anywhere must not be able to talk to her. You press Send.
+const draft = new URLSearchParams(location.search).get("draft");
+if (draft) { input.value = draft.slice(0, 500); history.replaceState(null, "", "/"); }
+
 (async () => {
   const s = await loadStatus(); window.__ready = s.ready;
   pulse(); listen();

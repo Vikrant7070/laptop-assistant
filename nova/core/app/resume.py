@@ -43,10 +43,19 @@ CUT_MARK = "[cut off here: the user talked over you, the rest was never said]"
 
 def save(task=None):
     """Save the (current) task's card. Never raises: saving must not stop her answering."""
-    card = task_state.of(task if task is not None else session.state.get("task"))
+    task = task if task is not None else session.state.get("task")
+    card = task_state.of(task)
     if card is None or not card.get("id"):
         return
     try:
+        if task.get("goal"):                      # a real task dict (not just {"card": ...}): the Tasks page's columns
+            card["brain"] = brain_label(task)
+            v = task.get("verdict") or {}
+            if v:
+                card["verdict"], card["verdict_source"] = v.get("verdict"), v.get("source", "")
+                card["checks"] = [task_state.clean(c, 80) for c in v.get("checks", [])][:6]
+            if card["status"] == "failed" and not card["why"]:
+                card["why"] = task_state.clean(task.get("fail_plain") or "a check said it isn't done", 120)
         db.save_task(card)
     except Exception:
         log_exception("resume: saving the task card")
@@ -253,6 +262,7 @@ def direct(text):
     have a task to carry on with)."""
     clean = protocol.unspoken(text).strip()
     session.state.pop("last_reply", None)          # a new request: a barge-in from now on isn't about the old reply
+    session.state.pop("stop_why", None)
     ask = session.state.pop("resume_ask", None)
     if ask and time.time() - ask["ts"] < ASK_SECS:
         got = _answer(ask, clean)

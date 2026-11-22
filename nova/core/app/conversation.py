@@ -503,7 +503,7 @@ def agent_loop(activity):
         activity.append("Stopped")
         if session.state.get("task") is not None:
             session.state["task"]["stopped"] = True      # the episode log: a stopped task never counts as one that worked
-            task_state.mark(task_state.of(session.state["task"]), "stopped", "Stop pressed")
+            task_state.mark(task_state.of(session.state["task"]), "stopped", session.state.pop("stop_why", "Stop pressed"))
         out = {"reply": STOPPED_REPLY, "activity": activity, "say": STOPPED_REPLY, "stopped": True}
     resume.save()                                     # the card as the task ended (done / failed / stopped / waiting)
     voice_io.nap["last_task"] = time.time()          # the 5-minute nap clock counts from when she finished, not from the ask

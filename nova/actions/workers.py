@@ -689,12 +689,14 @@ LOOKUP_FILLER = ("today", "yesterday", "research", "job", "the", "from", "last",
                  "about", "coding", "did", "you", "with", "on", "for")
 
 
-def changes(which="latest", max_chars=1500):
+def changes(which="latest", max_chars=1500, rec=None):
     """What a finished job changed, short enough for a text message: the files, then the diff."""
-    rec = last_record(which)
-    if not rec:
+    rec = rec or last_record(which)
+    if not rec or not rec.get("files"):
         return "There's no finished coding job with changes."
     root = rec["folder"]
+    if not root or not Path(root).is_dir():
+        return f"The project folder isn't there any more ({root or 'no folder'})."
     files = [f for f in rec["files"] if f in _changed(root)]
     if not files:
         return "Those changes aren't there any more (already committed or undone)."
@@ -781,9 +783,9 @@ def research(topic, focus="", kind="general", max_sources=None, start_job=None):
     return coworker.research(topic=topic, focus=focus, kind=kind, max_sources=n, local=local, start_job=starter)[1]
 
 
-def report(which="latest", max_chars=1500):
+def report(which="latest", max_chars=1500, rec=None):
     """A finished research job's report, short enough for a text message."""
-    rec = last_record(which, need_files=False, kinds=("research",))
+    rec = rec or last_record(which, need_files=False, kinds=("research",))
     if not rec:
         return "There's no research job yet."
     if rec.get("status") != "done":
