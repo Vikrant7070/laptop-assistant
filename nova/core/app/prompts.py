@@ -1,8 +1,7 @@
 """Who Nova is and what the brain is told: persona, system prompt, the tools offered, activity labels."""
 
 
-import re
-
+from nova import intents
 from nova.brain import cloud
 from nova.core import characters
 from nova.actions import knowledge
@@ -160,12 +159,6 @@ def wake_phrase():
 REASONING_CHOICES = ("auto", *cloud.LEVELS)
 
 
-HARD_ASK = re.compile(
-    r"\b(why|explain|compare|plan|analy[sz]e|reason|step[- ]by[- ]step|think (it|this) through|figure out|calculate|"
-    r"solve|debug|code|script|program|research|draft|essay|summari[sz]e|pros and cons|best way|strategy|"
-    r"difference between|optimi[sz]e|troubleshoot|math|proof|puzzle)\b|\bhow (do|does|can|should|would|to)\b", re.I)
-
-
 def reasoning_level(s, task=None):
     pick = s.get("reasoning", "auto")
     if pick in cloud.LEVELS:
@@ -173,9 +166,9 @@ def reasoning_level(s, task=None):
     goal = (task or {}).get("goal", "")
     if task and (task.get("steps", 0) >= 3 or task.get("calls", 0) >= 4 or task.get("done") is False):   # a long task, or a check said "not done"
         return "high"
-    # HARD_ASK holds the built-in words; the router's deep_triggers (config/model_routing.json, user-editable) count
+    # intents.HARD holds the built-in words; the router's deep_triggers (config/model_routing.json, user-editable) count
     # too, so a word added there for local planning also makes a cloud brain think harder - one list to edit.
-    return "high" if len(goal) > 160 or HARD_ASK.search(goal) or router.deep_wanted(goal) else "low"
+    return "high" if len(goal) > 160 or intents.HARD.search(goal) or router.deep_wanted(goal) else "low"
 
 
 def active_tools(model):

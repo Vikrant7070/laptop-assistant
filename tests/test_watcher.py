@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from nova import intents
 from nova.actions import watcher
 from nova.core import app
 
@@ -81,7 +82,7 @@ def test_offer_lines():
     assert "isn't responding" in watcher.offer_line({**e, "kind": "hung"})[0]
     assert "Excel" in watcher.help_request(e) and "x" * 200 in watcher.help_request(e)
     # live test: "appeared on my screen" made her take an 80 s screenshot first - the text is enough
-    assert not app.SCREEN_ASK.search(watcher.help_request({**e, "text": "Access is denied."}))
+    assert not intents.SCREEN.search(watcher.help_request({**e, "text": "Access is denied."}))
 
 
 # ------------------------------------------------------------------ in Nova

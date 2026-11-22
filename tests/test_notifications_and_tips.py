@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from nova import intents
 from nova import store
 from nova.core import app
 from nova.actions import notifications
@@ -166,8 +167,8 @@ def test_suggest_button(client, screen, monkeypatch):
 
 def test_asking_for_suggestions_looks_at_the_screen():
     for t in ("any suggestions for what I'm working on?", "give me some tips on this", "what should I do next"):
-        assert app.SCREEN_ASK.search(t), t
-    assert not app.SCREEN_ASK.search("suggest a good movie")
+        assert intents.SCREEN.search(t), t
+    assert not intents.SCREEN.search("suggest a good movie")
 
 
 # ---------------------------------------------------------------- muting one app ("don't read Claude's notifications")

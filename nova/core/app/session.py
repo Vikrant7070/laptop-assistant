@@ -6,6 +6,7 @@ import re
 import threading
 import time
 
+from nova import intents
 from nova.avatar import avatar_client
 from nova.actions import knowledge
 from nova.actions import mcp
@@ -105,7 +106,7 @@ def skill_needs_ok(args):
 def skill_fix_note(text):
     """Right after a skill ran, a correction ("no, also unmute") is about that skill: tell the brain how to fix it."""
     last = state.get("last_skill")
-    if not last or time.time() - last["ts"] > 180 or not learning.CORRECTION_RE.search(text or ""):
+    if not last or time.time() - last["ts"] > 180 or not intents.CORRECTION.search(text or ""):
         return ""
     s = skills.get(last["name"])
     if not s or s["kind"] != "routine":
@@ -263,4 +264,4 @@ def _short_args(args):
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import config, conversation, learning, skillrun  # noqa: E402
+from nova.core.app import config, conversation, skillrun  # noqa: E402

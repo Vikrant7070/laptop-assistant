@@ -48,3 +48,202 @@
 {"kind": "route", "query": "what time is it", "code": false, "deep": false, "question": false, "note": "everyday brain"}
 {"kind": "route", "query": "explain recursion", "code": false, "deep": false, "question": true, "note": "question trigger without a code trigger"}
 {"kind": "tool", "query": "what Windows version am I on", "must": ["run_powershell"], "note": "R2: run_powershell is no longer core; its hints must still bring it"}
+{"kind": "intent", "intent": "sleep", "query": "go to sleep", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "sleep", "query": "nova so jao", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "sleep", "query": "good night nova", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "sleep", "query": "you can sleep now", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "sleep", "query": "noah got to sleep", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "sleep", "query": "I can't sleep", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "sleep", "query": "sleepy music please", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "sleep", "query": "tell me about sleep cycles", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "stop", "query": "nova stop", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "stop", "query": "ruko", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "stop", "query": "bas karo", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "stop", "query": "be quiet please", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "stop", "query": "chup", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "stop", "query": "stop the music", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "stop", "query": "don't stop", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "stop", "query": "stop talking about cats", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "yes", "query": "yes please", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "yes", "query": "haan kar do", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "yes", "query": "theek hai", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "yes", "query": "go ahead", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "yes", "query": "bilkul", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "yes", "query": "no thanks", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "yes", "query": "nahi", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "yes", "query": "yesterday was fun", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "no", "query": "no thanks", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "no", "query": "nahi", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "no", "query": "cancel it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "no", "query": "never mind", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "no", "query": "rehne do", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "no", "query": "yes please", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "no", "query": "know what", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "no", "query": "nobody cares", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "continue", "query": "keep going", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "continue", "query": "ok carry on", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "continue", "query": "please continue", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "continue", "query": "jaari rakho", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "continue", "query": "finish the task", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "continue", "query": "don't continue", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "continue", "query": "how do I continue a loop in python", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "continue", "query": "keep it going later", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "show", "query": "yes show me", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "show", "query": "open it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "show", "query": "let me see", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "show", "query": "haan", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "show", "query": "sure", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "show", "query": "no", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "show", "query": "later", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "show", "query": "what was it about", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "help_yes", "query": "help me", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "help_yes", "query": "close it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "help_yes", "query": "fix it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "help_yes", "query": "please", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "help_yes", "query": "help", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "help_yes", "query": "no thanks", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "help_yes", "query": "what happened", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "help_yes", "query": "ignore it", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "answer_yes", "query": "yes", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "answer_yes", "query": "save it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "answer_yes", "query": "of course", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "answer_yes", "query": "ji", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "answer_yes", "query": "do it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "answer_yes", "query": "no", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "answer_yes", "query": "not now", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "answer_yes", "query": "what question", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_start", "query": "watch me", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_start", "query": "nova watch how I do this", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_start", "query": "let me show you", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_start", "query": "learn this", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_start", "query": "record what I do", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_start", "query": "did you watch the match", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_start", "query": "I'll watch a movie", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_start", "query": "show me", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_done", "query": "done", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_done", "query": "ok I'm done", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_done", "query": "that's it nova", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_done", "query": "stop watching", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_done", "query": "finished", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_done", "query": "I'm done with lunch", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_done", "query": "done yet?", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_done", "query": "that's interesting", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "correction", "query": "that's wrong", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "correction", "query": "not what I asked", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "correction", "query": "you forgot the subject", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "correction", "query": "wrong window", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "correction", "query": "galat hai", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "correction", "query": "that's right", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "correction", "query": "thanks", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "correction", "query": "you are great", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "about_me", "query": "my name is Vikrant", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "about_me", "query": "I like dark mode", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "about_me", "query": "remember that I work at night", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "about_me", "query": "my boss is Ravi", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "about_me", "query": "from now on reply in Hindi", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "about_me", "query": "what is my name", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "about_me", "query": "do you like music", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "about_me", "query": "open my documents", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "job_status", "query": "how's the coding job going", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "job_status", "query": "is the research done", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "job_status", "query": "status of the job", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "job_status", "query": "jobs finished?", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "job_status", "query": "is the worker done", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "job_status", "query": "find me a job", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "job_status", "query": "how is the weather", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "job_status", "query": "start a coding job", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_search", "query": "show me on my screen", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_search", "query": "open chrome and search", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_search", "query": "search in the browser", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_search", "query": "let me watch", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_search", "query": "browse for flights", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "watch_search", "query": "research flights quietly", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_search", "query": "what's the news", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "watch_search", "query": "find the cheapest laptop", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "email", "query": "check my email", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "email", "query": "any unread mails", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "email", "query": "read my gmail", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "email", "query": "what's the otp", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "email", "query": "open inbox", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "email", "query": "send a message to Ravi", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "email", "query": "remind me at five", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "email", "query": "check the weather", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "research", "query": "research the best laptops", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "research", "query": "look it up", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "research", "query": "compare these phones", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "research", "query": "latest news on AI", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "research", "query": "find out about Rust", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "research", "query": "explain recursion", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "research", "query": "open notepad", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "research", "query": "what is two plus two", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "hard", "query": "why is the sky blue", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "hard", "query": "explain recursion", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "hard", "query": "compare python and rust", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "hard", "query": "how do I fix this error", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "hard", "query": "write a script to rename files", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "hard", "query": "open notepad", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "hard", "query": "what time is it", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "hard", "query": "hello", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "camera", "query": "look at me", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "camera", "query": "how do I look", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "camera", "query": "what am I holding", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "camera", "query": "open the webcam", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "camera", "query": "can you see", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "camera", "query": "look at my screen", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "camera", "query": "take a photo of the sky", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "camera", "query": "what time is it", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "screen", "query": "what's on my screen", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "screen", "query": "read this error", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "screen", "query": "look at this page", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "screen", "query": "any suggestions for what I'm working on", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "screen", "query": "what should I do next", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "screen", "query": "look at me", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "screen", "query": "screen time settings", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "screen", "query": "open notepad", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "selection", "query": "read the selected text", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "selection", "query": "what does the highlighted part say", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "selection", "query": "padho jo select kiya", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "selection", "query": "summarise the selection", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "selection", "query": "select all", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "selection", "query": "read my email", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "selection", "query": "open the file", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "selection", "query": "copy this", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "read_more", "query": "summarise it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "read_more", "query": "translate this", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "read_more", "query": "explain the selected text", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "read_more", "query": "fix the grammar", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "read_more", "query": "matlab kya hai", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "read_more", "query": "read it out", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "read_more", "query": "read it", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "read_more", "query": "just read", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "body_ask", "query": "dance", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_ask", "query": "nova, do a little dance for me", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_ask", "query": "clap twice", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_ask", "query": "can you spin", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_ask", "query": "show me your moves", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_ask", "query": "dance with me tonight at the party please now ok", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "body_ask", "query": "what can you do to help me with my homework today", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "body_not_done", "query": "you're not dancing", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_not_done", "query": "you didn't clap", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_not_done", "query": "I can't see you dancing", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_not_done", "query": "you never waving", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "body_not_done", "query": "you did dance", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "body_not_done", "query": "dancing is fun", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "body_not_done", "query": "you're doing great", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "body_not_done", "query": "i see you", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "video", "query": "make the video full screen", "match": "fullscreen", "note": "first match wins"}
+{"kind": "intent", "intent": "video", "query": "exit full screen", "match": "exit_fullscreen", "note": "first match wins"}
+{"kind": "intent", "intent": "video", "query": "turn on subtitles", "match": "captions", "note": "first match wins"}
+{"kind": "intent", "intent": "video", "query": "theater mode", "match": "theater", "note": "first match wins"}
+{"kind": "intent", "intent": "video", "query": "skip this video", "match": "next", "note": "first match wins"}
+{"kind": "intent", "intent": "video", "query": "make the window bigger", "match": null, "note": "near-miss"}
+{"kind": "intent", "intent": "video", "query": "play a song", "match": null, "note": "near-miss"}
+{"kind": "intent", "intent": "video", "query": "open youtube", "match": null, "note": "near-miss"}
+{"kind": "intent", "intent": "fact", "query": "what time is it", "match": "get_datetime", "note": "first match wins"}
+{"kind": "intent", "intent": "fact", "query": "abhi kitne baje hain", "match": "get_datetime", "note": "first match wins"}
+{"kind": "intent", "intent": "fact", "query": "how much battery do I have", "match": "get_system_status", "note": "first match wins"}
+{"kind": "intent", "intent": "fact", "query": "is my internet working", "match": "network_info", "note": "first match wins"}
+{"kind": "intent", "intent": "fact", "query": "what's the date", "match": "get_datetime", "note": "first match wins"}
+{"kind": "intent", "intent": "fact", "query": "what is the capital of France", "match": null, "note": "near-miss"}
+{"kind": "intent", "intent": "fact", "query": "open notepad", "match": null, "note": "near-miss"}
+{"kind": "intent", "intent": "fact", "query": "who are you", "match": null, "note": "near-miss"}

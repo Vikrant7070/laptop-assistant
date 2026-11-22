@@ -10,6 +10,7 @@ import time
 
 import pytest
 
+from nova import intents
 from nova import store
 from nova.core import app
 from nova.actions import coworker
@@ -277,9 +278,9 @@ def test_coding_requests_always_get_the_coding_tools():
 def test_job_status_questions_keep_the_main_brain():
     for q in ["how's the coding job going?", "is the coding job done", "status of the coding job",
               "is the research done?", "is my job finished"]:
-        assert app.JOB_STATUS_RE.search(q), q
+        assert intents.JOB_STATUS.search(q), q
     for q in ["fix the bug in my python code", "write a function to sort a list", "I lost my job yesterday"]:
-        assert not app.JOB_STATUS_RE.search(q), q
+        assert not intents.JOB_STATUS.search(q), q
 
 
 def test_pick_worker():
