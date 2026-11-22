@@ -133,6 +133,7 @@ def start_background():
         integrations.notif_watcher.start()
     runtime.spawn("background.sync_phone_banners", integrations.sync_phone_banners)
     runtime.spawn("background.pulse_watch", pulse_watch)
+    runtime.spawn("background.resume_offer", resume.offer_after_start)    # chat back + "should I continue?"
 
 
 @api.app.get("/ear")
@@ -359,6 +360,7 @@ def reset():
     with session.lock:
         session.state["messages"].clear()
         session.state["pending"] = None
+    resume.clear_chat()
     return jsonify(ok=True)
 
 
@@ -409,4 +411,4 @@ def pulse_now():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, config, conversation, integrations, learning, prompts, session, voice_io  # noqa: E402
+from nova.core.app import body, config, conversation, integrations, learning, prompts, resume, session, voice_io  # noqa: E402

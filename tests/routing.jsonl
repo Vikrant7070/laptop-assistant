@@ -247,3 +247,12 @@
 {"kind": "intent", "intent": "fact", "query": "what is the capital of France", "match": null, "note": "near-miss"}
 {"kind": "intent", "intent": "fact", "query": "open notepad", "match": null, "note": "near-miss"}
 {"kind": "intent", "intent": "fact", "query": "who are you", "match": null, "note": "near-miss"}
+{"kind": "intent", "intent": "resume", "query": "continue", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "resume", "query": "ok carry on", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "resume", "query": "continue, you were saying something", "match": true, "note": "the 2026-11-21 log"}
+{"kind": "intent", "intent": "resume", "query": "go on from where you stopped", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "resume", "query": "what were you saying", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "resume", "query": "jaari rakho", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "resume", "query": "continue playing the video", "match": false, "note": "a new request"}
+{"kind": "intent", "intent": "resume", "query": "don't continue", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "resume", "query": "how do I continue a loop in python", "match": false, "note": "near-miss"}

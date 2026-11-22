@@ -91,6 +91,28 @@ CONTINUE = re.compile(r"^\W*(please\s+)?(ok(ay)?\W+)?(keep going|carry on|contin
                       r"finish (it|that|the task)|jaari rakho|chalu rakho|aage badho|karte raho)\b", re.I)
 
 
+# The whole message is "carry on" (app.resume picks the stopped task or finishes a cut-off reply in code). Stricter
+# than CONTINUE: "continue playing the video" is a new request, not a resume.
+_RESUME_PHRASE = (r"(keep going|carry on|continue|go on|resume|proceed|finish (it|that|the task)|"
+                  r"you were saying( something)?|what were you saying|where were we|"
+                  r"jaari rakho|chalu rakho|aage badho|karte raho|bolte raho)")
+RESUME = re.compile(r"^\W*((please|ok(ay)?|yes|yeah|haan|nova|so)\W+)*" + _RESUME_PHRASE
+                    + r"(\W+(" + _RESUME_PHRASE + r"|it|that|please|then|now|nova|with (it|that|the task)|"
+                    r"from where you (left off|stopped)|where you (left off|stopped)))*\W*$", re.I)
+
+
+# "two" / "the second one" / "2" as the answer to a numbered question (resume: which task?). No "do": "do it" is a yes.
+_ORDINALS = {"1": 0, "one": 0, "first": 0, "ek": 0, "pehla": 0, "2": 1, "two": 1, "second": 1, "doosra": 1,
+             "3": 2, "three": 2, "third": 2, "teen": 2, "teesra": 2}
+CHOICE = re.compile(r"\b(" + "|".join(_ORDINALS) + r")\b", re.I)
+
+
+def choice(text):
+    """The 0-based choice the words name ("the second one" -> 1), or None."""
+    m = CHOICE.search(text or "")
+    return _ORDINALS[m.group(1).lower()] if m else None
+
+
 EMAIL = re.compile(r"\b(e-?mails?|mails?|gmail|inbox|unread|otp|verification code)\b", re.I)    # her mail stays local
 
 
@@ -190,7 +212,7 @@ JUST_STOP = just_stop_re(DEFAULT_NAMES)       # voice_io builds its own from the
 KINDS = {
     "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
-    "continue": CONTINUE, "email": EMAIL, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
+    "continue": CONTINUE, "resume": RESUME, "email": EMAIL, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
     "show": SHOW, "help_yes": HELP_YES,
     "answer_yes": ANSWER_YES, "research": RESEARCH, "watch_start": WATCH_START, "watch_done": WATCH_DONE,
     "correction": CORRECTION, "about_me": ABOUT_ME,
