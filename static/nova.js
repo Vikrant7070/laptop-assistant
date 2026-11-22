@@ -607,7 +607,7 @@ let polling = false;
 function startPolling() {
   if (polling) return; polling = true;
   pollVoice(); pollThoughts();
-  setInterval(pollVoice, 1000); setInterval(pollThoughts, 600); setInterval(pulse, 15000);
+  setInterval(pollVoice, 1000); setInterval(pollThoughts, 600); setInterval(pulse, 15000); setInterval(loadTask, 2000);
 }
 function listen() {
   if (!window.EventSource) return startPolling();
@@ -623,6 +623,7 @@ function listen() {
   on("ears", showEars);
   on("wake_phrase", j => wakePhrase(j.phrase));
   on("pulse", showPulse);
+  on("task", showTask);                  // the live task strip (taskstrip.js)
   // The browser reconnects by itself (and catches up from Last-Event-ID); only a stream that never worked, or that
   // the server refused, falls back to polling.
   es.onerror = () => { if (!opened || es.readyState === EventSource.CLOSED) { es.close(); startPolling(); } };
