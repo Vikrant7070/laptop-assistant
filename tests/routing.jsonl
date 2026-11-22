@@ -267,3 +267,22 @@
 {"kind": "intent", "intent": "all_of_them", "query": "all", "match": true, "note": "says it"}
 {"kind": "intent", "intent": "all_of_them", "query": "everything", "match": true, "note": "says it"}
 {"kind": "intent", "intent": "all_of_them", "query": "all three", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "build_thing", "query": "make a website for my Nova project", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "build_thing", "query": "create a landing page for my app", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "build_thing", "query": "build me a simple todo app in python", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "build_thing", "query": "make a new portfolio site", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "build_thing", "query": "make the app full screen", "match": false, "note": "a laptop task / near-miss"}
+{"kind": "intent", "intent": "build_thing", "query": "open the website", "match": false, "note": "a laptop task / near-miss"}
+{"kind": "intent", "intent": "build_thing", "query": "create a new folder on my desktop", "match": false, "note": "a laptop task / near-miss"}
+{"kind": "intent", "intent": "project_code", "query": "fix the bug in my project", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "project_code", "query": "add a dark mode to my website", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "project_code", "query": "update the README", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "project_code", "query": "refactor the parser in the repo", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "project_code", "query": "add a song to my playlist", "match": false, "note": "a laptop task / near-miss"}
+{"kind": "intent", "intent": "project_code", "query": "change the wallpaper", "match": false, "note": "a laptop task / near-miss"}
+{"kind": "intent", "intent": "research_then_build", "query": "research the best chart library, then add it to my project", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "research_then_build", "query": "look up a good login library and then use it in my app", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "research_then_build", "query": "find out which icon set is free, then put it in the site", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "research_then_build", "query": "compare react and vue and then build the page", "match": true, "note": "a job for a worker"}
+{"kind": "intent", "intent": "research_then_build", "query": "research green tea", "match": false, "note": "a laptop task / near-miss"}
+{"kind": "intent", "intent": "research_then_build", "query": "research tea and then tell me", "match": false, "note": "a laptop task / near-miss"}
