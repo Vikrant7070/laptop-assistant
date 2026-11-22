@@ -30,7 +30,6 @@ Control API (used by nova/actions/tools/ and app.py):  POST http://127.0.0.1:505
   show / hide
 Run alone (from the project folder):  pythonw -m nova.avatar.avatar
 """
-import ctypes
 import json
 import math
 import os
@@ -45,13 +44,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from PIL import Image, ImageDraw, ImageFont
 
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # real pixel coordinates
-except Exception:
-    pass  # intentional: the 3D window must keep running without it
+from nova import platform  # noqa: E402
+platform.current().dpi_aware()          # real pixel coordinates (never raises: False if Windows says no)
 
 from nova import runtime
-from nova.avatar import body, commands, hearing, win32  # noqa: E402
+from nova.avatar import body, commands, hearing  # noqa: E402
+from nova.platform import avatar_window as win32  # noqa: E402
 from nova import store  # noqa: E402
 from nova.shared import REACTIONS, host_allowed, stand_area  # noqa: E402
 
@@ -100,7 +98,7 @@ class Nova:
         self.root.overrideredirect(True)
         self.root.geometry(f"{self.sp.w}x{self.sp.h}+0+0")
         self.root.update_idletasks()
-        self.hwnd = win32.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+        self.hwnd = win32.top_level_of(self.root.winfo_id())
         self.base_style = win32.make_layered(self.hwnd)
         self.root.attributes("-topmost", True)
 

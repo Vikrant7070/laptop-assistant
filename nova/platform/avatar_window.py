@@ -1,7 +1,9 @@
 """3D Nova's window plumbing: a layered (see-through, always-on-top) Win32 window and drawing into it.
 
 The ctypes structs and function signatures, the window styles, and the blit that puts a premultiplied BGRA image on
-screen with UpdateLayeredWindow. Moved out of avatar.py (roadmap R6 step 3); the code is unchanged.
+screen with UpdateLayeredWindow. Moved out of avatar.py (roadmap R6 step 3), then from nova/avatar/win32.py into
+nova/platform (R12 step 5b, so every Win32 call lives in one package); the code is unchanged. It runs in the avatar's
+own process (nova/avatar/avatar.py), not through platform.current().
 """
 import ctypes
 
@@ -100,3 +102,8 @@ def blit(hwnd, dibs, data, w, h, x, y):
     gdi32.SelectObject(mem, old)
     gdi32.DeleteDC(mem)
     user32.ReleaseDC(None, screen)
+
+
+def top_level_of(child):
+    """The real top-level window behind a Tk widget id (Tk wraps its window in a frame)."""
+    return user32.GetParent(child) or child

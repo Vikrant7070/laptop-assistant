@@ -11,7 +11,8 @@ def test_react_tool_is_saved_for_after_the_answer(monkeypatch):
     activity = []
     out = app._execute_one({"name": "react", "args": {"reaction": "laughing"}}, True, activity, "m")
     assert "after you finish speaking" in out
-    assert sent == []                                     # nothing acted out yet
+    # nothing acted out yet (the thought-cloud worker may still clear an earlier test's cloud: not a reaction)
+    assert [a for a in sent if a[0][0] != "thought"] == []
     assert app.state["react_after"] == {"name": "laugh", "repeat": None}
     app.after_turn("tell me a joke", {"reply": "Why did the... ha!", "activity": activity})
     assert played == [("laugh", None)]                    # played once, after the answer
