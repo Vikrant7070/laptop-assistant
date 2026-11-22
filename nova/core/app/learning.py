@@ -3,9 +3,9 @@
 
 import json
 import re
-import threading
 import time
 
+from nova import runtime
 from flask import jsonify, send_from_directory
 
 from nova import prompts as promptfiles
@@ -346,7 +346,7 @@ def review_turn(why):
                 avatar_client.send("react", name="nod", timeout=2)
         except Exception as e:
             conversation.task_log(f"LEARNING failed: {e}")
-    threading.Thread(target=run, daemon=True).start()
+    runtime.spawn("learning.run", run)
 
 
 def after_turn(user_text, out):

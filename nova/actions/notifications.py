@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 
+from nova import runtime
 from nova import prompts as promptfiles
 
 _HEAD = r"""
@@ -287,7 +288,7 @@ class Watcher:
             if self.running:
                 return
             self.running = True
-        threading.Thread(target=self._run, daemon=True).start()
+        runtime.spawn("notifications.run", self._run)
 
     def stop(self):
         with self.lock:
@@ -335,7 +336,7 @@ class Watcher:
             if self.timer_on:
                 return
             self.timer_on = True
-        threading.Timer(0.15, self._flush).start()
+        runtime.spawn("notifications.flush", self._flush, delay=0.15, daemon=False)
 
     def _flush(self):
         with self.lock:

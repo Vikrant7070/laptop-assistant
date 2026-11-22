@@ -28,6 +28,7 @@ import urllib.parse
 from collections import deque
 from functools import wraps
 
+from nova import runtime
 from flask import Flask, jsonify, request, send_from_directory
 
 from nova import store
@@ -301,10 +302,10 @@ class Mobile:
             if self.server:
                 return
             self.server = make_server(HOST, PORT, self.app, threaded=True)
-            self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+            self.thread = runtime.spawn("mobile.serve_forever", self.server.serve_forever, start=False)
             self.thread.start()
             if not self.worker or not self.worker.is_alive():
-                self.worker = threading.Thread(target=self._run, daemon=True)
+                self.worker = runtime.spawn("mobile.run", self._run, start=False)
                 self.worker.start()
 
     def stop(self):

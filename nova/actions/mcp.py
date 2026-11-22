@@ -25,6 +25,7 @@ import time
 import urllib.error
 import urllib.request
 
+from nova import runtime
 from nova import store
 
 PROTOCOL = "2025-06-18"
@@ -178,8 +179,8 @@ class _Stdio:
                                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except OSError as e:
             raise MCPError(f"Couldn't start '{exe}': {e}") from e
-        threading.Thread(target=self._read, daemon=True).start()
-        threading.Thread(target=self._read_err, daemon=True).start()
+        runtime.spawn("mcp.read", self._read)
+        runtime.spawn("mcp.read_err", self._read_err)
 
     def _read(self):
         for raw in self.proc.stdout:
@@ -431,7 +432,7 @@ def start(wait=False):
             if not isinstance(c, dict) or c.get("disabled") or check_config({"mcpServers": {name: c}}):
                 continue
             srv = _servers[name] = Server(name, c)
-            th = threading.Thread(target=_connect, args=(srv,), daemon=True, name=f"mcp-{name}")
+            th = runtime.spawn(f"mcp-{name}", _connect, args=(srv,), start=False)
             th.start()
             threads.append(th)
     state["loaded_at"] = time.time()

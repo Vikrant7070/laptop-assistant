@@ -3,9 +3,9 @@
 
 import json
 import re
-import threading
 import time
 
+from nova import runtime
 from flask import jsonify, request
 
 from nova.brain import cloud
@@ -74,7 +74,7 @@ def job_done(job):
     body.react_later("happy")
     if config.settings()["wake"] and not voice_io.convo["on"] and voice_io.silent_ok():     # listen for the "yes"
         voice_io.listen_state["single"] = True
-        threading.Thread(target=voice_io.silent_loop, daemon=True).start()
+        runtime.spawn("integrations.silent_loop", voice_io.silent_loop)
 
 
 def _phone_hint(job, failed=False):
@@ -218,7 +218,7 @@ def phone_note(n):
             conversation.task_log(f"PHONE NOTE: brain failed ({type(e).__name__}: {e})")
 
     t0 = time.time()
-    th = threading.Thread(target=work, daemon=True)
+    th = runtime.spawn("integrations.work", work, start=False)
     th.start()
     th.join(PHONE_NOTE_SECS)
     conversation.task_log(f"PHONE NOTE: arrived {max(0, t0 - (n.get('time') or t0)):.1f}s before the brain started, brain took {time.time() - t0:.1f}s")
@@ -240,8 +240,7 @@ def on_notifications(items):
             not voice_io.nap["asleep"] or s.get("notif_sleep", False) or voice_io.nap.get("reason") != "asked"):
         ring_cue()          # the moment it arrives: a sound now, her words follow once the brain and the voice are ready
     if any(notifications.is_phone(n) for n in items) and s.get("phone_quiet", True) and s.get("phone_banners_hidden"):
-        threading.Thread(target=notifications.phone_banners, args=(False,),   # a new iPhone app gets a new Windows key
-                         daemon=True).start()
+        runtime.spawn("integrations.phone_banners", notifications.phone_banners, args=(False,))   # a new iPhone app gets a new Windows key
     for k in [k for k, t in phone_seen.items() if now - t > 60]:
         phone_seen.pop(k, None)
     lines, calls, phone_lines, missed, brained = [], [], [], [], 0
@@ -463,7 +462,7 @@ def gmail_set():
                 except gmail.GmailError as e:
                     gmail.connecting["error"] = str(e)
                     conversation.task_log(f"GMAIL connect: {e}")
-            threading.Thread(target=go, daemon=True).start()
+            runtime.spawn("integrations.go", go)
         if body.get("disconnect") is True:
             gmail.disconnect()
     except gmail.GmailError as e:
@@ -607,7 +606,7 @@ def offer_help(item):
     voice_io.announce("🆘 " + line, spoken=spoken)
     if config.settings()["wake"] and not voice_io.convo["on"] and voice_io.silent_ok():     # listen for the "yes"
         voice_io.listen_state["single"] = True
-        threading.Thread(target=voice_io.silent_loop, daemon=True).start()
+        runtime.spawn("integrations.silent_loop", voice_io.silent_loop)
 
 
 def take_help(text, force=None, offer_id=None):

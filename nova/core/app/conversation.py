@@ -6,6 +6,7 @@ import re
 import threading
 import time
 
+from nova import runtime
 from nova import prompts as promptfiles
 from nova import store
 from nova.avatar import avatar_client
@@ -89,7 +90,7 @@ def interruptible(fn, *args, **kwargs):
             box["e"] = e
         finally:
             done.set()
-    threading.Thread(target=run, daemon=True).start()
+    runtime.spawn("conversation.run", run)
     while not done.wait(0.15):
         check_stop()
     check_stop()

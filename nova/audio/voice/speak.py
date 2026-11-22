@@ -5,6 +5,7 @@ import re
 import threading
 import time
 from pathlib import Path
+from nova import runtime
 from nova.avatar import avatar_client
 from nova.log import log_exception
 from nova.audio.voice import wording
@@ -91,7 +92,7 @@ class BrainBalance:
     def voice_needs_cpu(self, urgent):
         if time.time() - self.found_at > 20:      # (listing processes takes ~50-100 ms: never in front of a sentence)
             self.found_at = time.time()
-            threading.Thread(target=self._refresh, daemon=True).start()
+            runtime.spawn("speak.refresh", self._refresh)
         with self.lock:
             if self.low == urgent or not self.procs:
                 return
@@ -199,9 +200,9 @@ class Mouth:
         self._out_end = 0.0               # when the last sample written to the speaker will have been played
         self.grace = 0.8                  # busy() stays True this long after her last word (the room's echo)
         self.duck_until, self._gain = 0.0, 1.0   # duck(): softer for a moment
-        threading.Thread(target=self._worker, daemon=True).start()
-        threading.Thread(target=self._player, daemon=True).start()
-        threading.Thread(target=self._teller, daemon=True).start()
+        runtime.spawn("speak.worker", self._worker)
+        runtime.spawn("speak.player", self._player)
+        runtime.spawn("speak.teller", self._teller)
 
     def say(self, text, show=True):
         """Queue text to be said. show=False: out loud only, with no bubble (iPhone notifications)."""

@@ -22,6 +22,7 @@ import time
 import urllib.error
 import urllib.request
 
+from nova import runtime
 from nova import store
 
 API = os.environ.get("NOVA_TELEGRAM_API", "https://api.telegram.org")   # tests point this at a fake server
@@ -201,10 +202,10 @@ class Phone:
         if self.running() or not self.token():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._poll, daemon=True, name="nova-phone")
+        self._thread = runtime.spawn("nova-phone", self._poll, start=False)
         self._thread.start()
         if not (self._worker and self._worker.is_alive()):
-            self._worker = threading.Thread(target=self._work_loop, daemon=True, name="nova-phone-work")
+            self._worker = runtime.spawn("nova-phone-work", self._work_loop, start=False)
             self._worker.start()
 
     def stop(self):

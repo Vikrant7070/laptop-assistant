@@ -1,8 +1,8 @@
 """`python -m nova.core.app`: the server on its own, without the desktop window."""
 import os
-import threading
 import webbrowser
 
+from nova import runtime
 from nova.brain import llm
 from nova.actions import tools
 from nova.core.app import api, background, config, voice_io
@@ -13,7 +13,7 @@ def main():
     port = config.PORT
     url = f"http://127.0.0.1:{port}"
     if os.environ.get("NOVA_NO_BROWSER") != "1":
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+        runtime.spawn("app.open_browser", lambda: webbrowser.open(url), delay=1.2, daemon=False)
     if config.settings()["wake"]:
         voice_io.ears.start()
     background.start_background()

@@ -6,6 +6,7 @@ import types
 import numpy as np
 import pytest
 
+from nova import runtime
 from nova.audio import voice
 
 W = voice.WhisperTranscriber
@@ -91,8 +92,7 @@ def make_ears(sure, monkeypatch, tmp_path):
     got = []
     ears = voice.WhisperEars(types.SimpleNamespace(busy=lambda: False), got.append, w)
     ears.on_wake = lambda **k: got.append("WAKE")
-    monkeypatch.setattr(voice.threading, "Thread", lambda target, args=(), kwargs=None, daemon=None:
-                        types.SimpleNamespace(start=lambda: target(*args, **(kwargs or {}))))
+    monkeypatch.setattr(runtime, "spawn", lambda name, fn, args=(), kwargs=None, **_: fn(*args, **(kwargs or {})))
     return ears, w, got
 
 

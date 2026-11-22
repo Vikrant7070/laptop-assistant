@@ -50,6 +50,7 @@ try:
 except Exception:
     pass  # intentional: the 3D window must keep running without it
 
+from nova import runtime
 from nova.avatar import body, commands, hearing, win32  # noqa: E402
 from nova import store  # noqa: E402
 from nova.shared import REACTIONS, host_allowed, stand_area  # noqa: E402
@@ -150,13 +151,13 @@ class Nova:
         self.root.bind("<B1-Motion>", self.on_drag)
         self.root.bind("<ButtonRelease-1>", self.on_release)
         self.root.bind("<Button-3>", lambda e: self.react(random.choice(self.style["touch"]["right_click"])))
-        threading.Thread(target=self.serve, daemon=True).start()
-        threading.Thread(target=self.watch_battery, daemon=True).start()
-        threading.Thread(target=watch_parent, daemon=True).start()
+        runtime.spawn("avatar.serve", self.serve)
+        runtime.spawn("avatar.watch_battery", self.watch_battery)
+        runtime.spawn("avatar.watch_parent", watch_parent)
         self.ears = hearing.LaptopEars(on_event=lambda e: self.q.put(({"do": "_heard", "what": e}, None, None)),
                                        enabled=sound_setting)
         self.ears.start()
-        threading.Thread(target=sfx.build, daemon=True).start()     # makes data/sfx/*.wav the first time
+        runtime.spawn("avatar.build", sfx.build)     # makes data/sfx/*.wav the first time
         self.react("wave", sound=False)       # her own hello (Lucy's big wave, Makima's small one)
         self.say(self.style["touch"]["greeting"], 5)
         self.tick()
@@ -310,7 +311,7 @@ class Nova:
         self.base = "idle"               # walk over first, then lie down
         self.next_wander = self.next_fidget = time.time() + 10 ** 9
         ev = self.walk_to(*self.corner())
-        threading.Thread(target=lambda: (ev.wait(20), self.q.put(({"do": "_doze"}, None, None))), daemon=True).start()
+        runtime.spawn("avatar.nap", lambda: (ev.wait(20), self.q.put(({"do": "_doze"}, None, None))))
 
     def wake_up(self, clicked=False):
         if not self.asleep:
@@ -501,7 +502,7 @@ class Nova:
         if self.drag and not self.drag[4] and self.asleep:
             # Clicked while asleep: wake up (with the wake-up move) and tell the app, which turns her mic back on.
             self.wake_up(clicked=True)
-            threading.Thread(target=self.tell_app_awake, daemon=True).start()
+            runtime.spawn("avatar.tell_app_awake", self.tell_app_awake)
         elif self.drag and not self.drag[4]:
             self.touched(time.time())
             try:

@@ -8,9 +8,9 @@ returns True. Then handle() doesn't add her position or set `done` itself. Other
 (This was one 130-line if/elif in Nova.handle; roadmap R6 step 3. Every branch body is unchanged.)
 """
 import os
-import threading
 import time
 
+from nova import runtime
 from nova.avatar import body, win32
 
 
@@ -58,7 +58,7 @@ def cmd_thought(nova, cmd, done, result):
 
 def cmd_walk_to(nova, cmd, done, result):
     ev = nova.walk_to(float(cmd["x"]), float(cmd["y"]))
-    threading.Thread(target=lambda: (ev.wait(15), done.set()), daemon=True).start()
+    runtime.spawn("commands.cmd_walk_to", lambda: (ev.wait(15), done.set()))
     return True
 
 
@@ -70,14 +70,14 @@ def cmd_go_point(nova, cmd, done, result):
     def then():
         ev.wait(15)
         nova.q.put(({"do": "_point", "flip": flip}, done, result))
-    threading.Thread(target=then, daemon=True).start()
+    runtime.spawn("commands.then", then)
     return True
 
 
 def cmd__point(nova, cmd, done, result):
     nova.facing_left = cmd["flip"]
     ev = nova.start_oneshot("point", hold_at=nova.sp.tap)
-    threading.Thread(target=lambda: (ev.wait(5), done.set()), daemon=True).start()
+    runtime.spawn("commands.cmd__point", lambda: (ev.wait(5), done.set()))
     return True
 
 
@@ -101,7 +101,7 @@ def cmd_react(nova, cmd, done, result):
     result["played"] = bool(ev)
     result["sound"] = bool(ev) and getattr(nova, "last_sound", False)
     if ev and cmd.get("wait"):
-        threading.Thread(target=lambda: (ev.wait(20), done.set()), daemon=True).start()
+        runtime.spawn("commands.cmd_react", lambda: (ev.wait(20), done.set()))
         return True
 
 
@@ -114,7 +114,7 @@ def cmd_carry_to(nova, cmd, done, result):
         ev.wait(20)
         nova.carrying = False
         done.set()
-    threading.Thread(target=arrived, daemon=True).start()
+    runtime.spawn("commands.arrived", arrived)
     return True
 
 
@@ -143,7 +143,7 @@ def cmd_unduck(nova, cmd, done, result):
 
 def cmd_quit(nova, cmd, done, result):          # the chat's ⏻ Quit button / tray "Quit Nova": close her for good
     done.set()
-    threading.Timer(0.3, lambda: os._exit(0)).start()
+    runtime.spawn("commands.cmd_quit", lambda: os._exit(0), delay=0.3, daemon=False)
     return True
 
 
@@ -162,7 +162,7 @@ def cmd_move(nova, cmd, done, result):
     ev = nova.react(move["name"], cmd.get("repeat"))
     result["played"] = bool(ev)
     if ev and cmd.get("wait"):
-        threading.Thread(target=lambda: (ev.wait(30), done.set()), daemon=True).start()
+        runtime.spawn("commands.cmd_move", lambda: (ev.wait(30), done.set()))
         return True
 
 

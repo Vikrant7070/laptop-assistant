@@ -1,8 +1,8 @@
 """Talking over her: BargeIn hears the user while she speaks and stops her."""
 import collections
 import re
-import threading
 import time
+from nova import runtime
 from nova.audio.voice import whisper
 
 
@@ -83,7 +83,7 @@ class BargeIn:
 
     def start(self):
         if not (self.thread and self.thread.is_alive()):
-            self.thread = threading.Thread(target=self._loop, daemon=True)
+            self.thread = runtime.spawn("barge_in.loop", self._loop, start=False)
             self.thread.start()
 
     def _active(self):
@@ -157,7 +157,7 @@ class BargeIn:
                     check_at, self.checking = None, True
                     secs = max(self.LOOK, now - dip_from + 0.6)     # the whole dip, and a moment before it
                     audio = np.concatenate(list(blocks)[-int(secs / self.BLOCK):])
-                    threading.Thread(target=self._check, args=(audio, t, self.mouth.gen, secs), daemon=True).start()
+                    runtime.spawn("barge_in.check", self._check, args=(audio, t, self.mouth.gen, secs))
 
     def _check(self, audio, t, gen, secs=None):
         try:

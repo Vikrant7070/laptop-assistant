@@ -14,6 +14,8 @@ import os
 import threading
 from pathlib import Path
 
+from nova import runtime
+
 IDLE_HERE = 20          # input this recent = here, no camera needed
 IDLE_CHECK = 60         # no input this long -> look with the camera
 CHECK_EVERY = 30        # seconds between camera checks while unsure / away
@@ -143,7 +145,7 @@ def detector(download=False):
                     download_model()
                 finally:
                     _det["loading"] = False
-            threading.Thread(target=fetch, daemon=True, name="nova-face-download").start()
+            runtime.spawn("nova-face-download", fetch)
     haar = _haar()
     return ("haar", haar) if haar else (None, None)
 

@@ -4,6 +4,8 @@ import threading
 import time
 from pathlib import Path
 
+from nova import runtime
+
 
 # Best first: large-v3-turbo on the graphics card (~0.4 s per sentence, ~0.9 GB of its 6 GB - measured to fit beside
 # Nova's Ollama model without slowing it). If the card can't take it, small.en on the processor (~1.6 s per sentence).
@@ -368,7 +370,7 @@ class WhisperTranscriber:
                 spoken += self.BLOCK
                 if peek and peeks and spoken >= peeks[0]:
                     peeks.pop(0)
-                    threading.Thread(target=peek, args=(np.concatenate(chunks),), daemon=True).start()
+                    runtime.spawn("whisper.peek", peek, args=(np.concatenate(chunks),))
                     if peek_every and not peeks:         # keep looking every so often while the sentence goes on
                         peeks.append(spoken + peek_every)
                 n_voice = round(voiced / self.BLOCK)

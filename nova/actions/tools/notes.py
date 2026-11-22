@@ -3,9 +3,9 @@
 
 import datetime as dt
 import re
-import threading
 import time
 
+from nova import runtime
 from nova import store
 from nova.actions.registry import tool
 from nova.actions.tools import common, eyes, system
@@ -208,7 +208,7 @@ def connect_gmail():
         except gmail.GmailError as e:
             gmail.connecting["error"] = str(e)
 
-    threading.Thread(target=go, daemon=True).start()
+    runtime.spawn("notes.go", go)
     return ("Google's sign-in page is opening in the browser. Tell the user to click Advanced -> Go to Nova (unsafe) "
             "if Google warns the app is unverified, then allow 'View your email messages and settings'. "
             "Do NOT draft an email for this.")
