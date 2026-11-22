@@ -234,12 +234,9 @@ def test_nothing_selected_goes_to_the_brain(brain):
     assert fake.seen and "Highlight" in out["reply"]
 
 
-def test_read_selection_restores_the_clipboard(monkeypatch):
-    clip = {"v": "my old clipboard"}
-    monkeypatch.setattr(app.tools.pyperclip, "paste", lambda: clip["v"])
-    monkeypatch.setattr(app.tools.pyperclip, "copy", lambda t: clip.update(v=t))
+def test_read_selection_restores_the_clipboard(monkeypatch, desktop):
+    desktop.set_windows([(1, "Notepad", "notepad.exe")]).clipboard = "my old clipboard"
     monkeypatch.setattr(app.tools.forms, "_target_window", lambda w: (1, "Notepad", "notepad.exe"))
-    monkeypatch.setattr(app.tools._user32, "GetForegroundWindow", lambda: 1)
-    monkeypatch.setattr(app.tools.keyboard, "send", lambda k: clip.update(v="the selected words"))
+    monkeypatch.setattr(desktop, "press", lambda k: setattr(desktop, "clipboard", "the selected words"))   # ctrl+c
     assert app.tools.read_selection() == "the selected words"
-    assert clip["v"] == "my old clipboard"
+    assert desktop.clipboard == "my old clipboard"

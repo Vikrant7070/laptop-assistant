@@ -8,10 +8,17 @@ class FakeDesktop:
     private helpers.
     """
 
-    def __init__(self, windows=(), front=None):
+    def __init__(self, windows=(), front=None, clipboard="", focused_text=None):
         self.scene = []
         self.log = []
+        self.clipboard = clipboard          # plain text, or [(format, bytes)] for a "rich" clipboard
+        self.clip_seq = 0
+        self.text_in_focus = focused_text   # what the focused box holds; None = can't be read
         self.set_windows(windows, front)
+
+    def logged(self, kind):
+        """What was logged of one kind, e.g. logged("press") -> ["ctrl+v", "enter"]."""
+        return [entry[1] if len(entry) == 2 else entry[1:] for entry in self.log if entry[0] == kind]
 
     # -- setting the scene
     def set_windows(self, windows, front=None):
@@ -47,3 +54,38 @@ class FakeDesktop:
             self.scene.remove(w)
             self.scene.insert(0, w)
             self.front = hwnd
+
+    # keys and typing: only recorded
+    def press(self, keys):
+        self.log.append(("press", keys))
+
+    def write(self, text, delay=0):
+        self.log.append(("write", text))
+
+    # the clipboard
+    def clipboard_text(self):
+        return self.clipboard if isinstance(self.clipboard, str) else ""
+
+    def set_clipboard_text(self, text):
+        self.log.append(("copy", text))
+        self.clipboard = text
+        self.clip_seq += 1
+
+    def clipboard_save(self):
+        if isinstance(self.clipboard, list):
+            return list(self.clipboard)
+        return [(13, (self.clipboard + "\0").encode("utf-16-le"))] if self.clipboard else []
+
+    def clipboard_set_text(self, text):
+        self.log.append(("clip", text))
+        self.clipboard = text
+        self.clip_seq += 1
+        return self.clip_seq
+
+    def clipboard_restore(self, saved, our_seq):
+        self.log.append(("restore", saved, our_seq))
+        if saved is not None and our_seq == self.clip_seq:
+            self.clipboard = list(saved) if saved else ""
+
+    def focused_text(self):
+        return self.text_in_focus

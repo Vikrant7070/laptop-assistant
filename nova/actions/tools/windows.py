@@ -8,8 +8,6 @@ import ctypes
 from ctypes import wintypes
 
 import psutil
-import keyboard
-import pyperclip
 
 from nova import platform
 from nova.actions.registry import tool
@@ -183,7 +181,7 @@ def close_all_windows():
 
 @tool("Show the desktop.", friendly="Showed the desktop", props={}, required=[])
 def minimize_all_windows():
-    keyboard.send("windows+d")
+    platform.current().press("windows+d")
     return "Showing the desktop."
 
 
@@ -213,139 +211,24 @@ def _stop_pointing():
     avatar_client.send("finish_point")
 
 
-_CF_UNICODETEXT = 13
-
-
-_GMEM_MOVEABLE = 0x0002
-
-
-# clipboard formats whose data is a GDI handle, not memory - they can't be copied byte by byte. (A bitmap
-# also lives on the clipboard as CF_DIB, which is copied, so a copied picture still comes back.)
-_CLIP_HANDLE_FORMATS = {2, 3, 9, 14, 0x80, 0x82, 0x83, 0x8E}
-
-
-_CLIP_SAVE_MAX = 64 * 1024 * 1024      # don't hold more than this much of the user's clipboard in memory
-
-
-_clip_api = None
-
-
-def _clip():
-    """user32/kernel32 with the argument types set (handles are 64-bit pointers)."""
-    global _clip_api
-    if _clip_api is None:
-        import ctypes
-        from ctypes import wintypes as w
-        u, k = ctypes.WinDLL("user32", use_last_error=True), ctypes.WinDLL("kernel32", use_last_error=True)
-        for f, args, res in (
-                (u.OpenClipboard, [w.HWND], w.BOOL), (u.CloseClipboard, [], w.BOOL),
-                (u.EmptyClipboard, [], w.BOOL), (u.EnumClipboardFormats, [w.UINT], w.UINT),
-                (u.GetClipboardData, [w.UINT], w.HANDLE), (u.SetClipboardData, [w.UINT, w.HANDLE], w.HANDLE),
-                (u.RegisterClipboardFormatW, [w.LPCWSTR], w.UINT), (u.GetClipboardSequenceNumber, [], w.DWORD),
-                (k.GlobalAlloc, [w.UINT, ctypes.c_size_t], w.HGLOBAL), (k.GlobalFree, [w.HGLOBAL], w.HGLOBAL),
-                (k.GlobalLock, [w.HGLOBAL], w.LPVOID), (k.GlobalUnlock, [w.HGLOBAL], w.BOOL),
-                (k.GlobalSize, [w.HGLOBAL], ctypes.c_size_t)):
-            f.argtypes, f.restype = args, res
-        _clip_api = (ctypes, u, k)
-    return _clip_api
-
-
-def _clip_open():
-    _, u, _ = _clip()
-    for _ in range(20):                 # another app may be holding the clipboard for a moment
-        if u.OpenClipboard(None):
-            return True
-        time.sleep(0.025)
-    return False
-
-
-def _clip_put(items):
-    """Replace the clipboard with [(format, bytes)]; a format may be a registered name. Call with it open."""
-    ctypes, u, k = _clip()
-    u.EmptyClipboard()
-    for fmt, data in items:
-        if isinstance(fmt, str):
-            fmt = u.RegisterClipboardFormatW(fmt)
-        h = k.GlobalAlloc(_GMEM_MOVEABLE, max(len(data), 1))
-        if not h:
-            continue
-        p = k.GlobalLock(h)
-        if not p:
-            k.GlobalFree(h)
-            continue
-        ctypes.memmove(p, data, len(data))
-        k.GlobalUnlock(h)
-        if not u.SetClipboardData(fmt, h):
-            k.GlobalFree(h)            # (on success the clipboard owns it)
-
-
-_KEEP_OUT_OF_HISTORY = [("ExcludeClipboardContentFromMonitorProcessing", b"\0\0\0\0"),
-                        ("CanIncludeInClipboardHistory", b"\0\0\0\0"), ("CanUploadToCloudClipboard", b"\0\0\0\0")]
-
-
 def _clip_save():
-    """A copy of everything on the clipboard: [(format, bytes)], [] when empty, None when it couldn't be read."""
-    ctypes, u, k = _clip()
-    if not _clip_open():
-        return None
-    try:
-        items, total, fmt = [], 0, u.EnumClipboardFormats(0)
-        while fmt:
-            if fmt not in _CLIP_HANDLE_FORMATS and not 0x200 <= fmt <= 0x3FF:   # (private / GDI-object ranges)
-                h = u.GetClipboardData(fmt)
-                size = k.GlobalSize(h) if h else 0
-                if size:
-                    total += size
-                    if total > _CLIP_SAVE_MAX:
-                        return None
-                    p = k.GlobalLock(h)
-                    if p:
-                        items.append((fmt, ctypes.string_at(p, size)))
-                        k.GlobalUnlock(h)
-            fmt = u.EnumClipboardFormats(fmt)
-        return items
-    finally:
-        u.CloseClipboard()
+    """A copy of everything on the clipboard (nova.platform): [(format, bytes)], [] when empty, None if unreadable."""
+    return platform.current().clipboard_save()
 
 
 def _clip_set_text(text):
-    """Put text on the clipboard (kept out of clipboard history). Returns the clipboard's sequence number, or
-    0 when the clipboard couldn't be opened."""
-    _, u, _ = _clip()
-    if not _clip_open():
-        return 0
-    try:
-        _clip_put([(_CF_UNICODETEXT, (text + "\0").encode("utf-16-le"))] + _KEEP_OUT_OF_HISTORY)
-    finally:
-        u.CloseClipboard()
-    return u.GetClipboardSequenceNumber() or 1
+    """Put text on the clipboard, out of clipboard history (nova.platform). -> its sequence number, 0 if busy."""
+    return platform.current().clipboard_set_text(text)
 
 
 def _clip_restore(saved, our_seq):
-    """Put the user's clipboard back - unless something else was copied since we pasted (then that stays)."""
-    _, u, _ = _clip()
-    if saved is None or u.GetClipboardSequenceNumber() != our_seq or not _clip_open():
-        return
-    try:
-        if saved:
-            _clip_put(list(saved) + _KEEP_OUT_OF_HISTORY)   # (it is in Win+V history already - no second copy)
-        else:
-            u.EmptyClipboard()
-    finally:
-        u.CloseClipboard()
+    """Put the user's clipboard back unless something else was copied since (nova.platform)."""
+    platform.current().clipboard_restore(saved, our_seq)
 
 
 def _focused_text():
-    """What the focused box holds (to see a paste land), or None when it can't be read."""
-    try:
-        import uiautomation as auto
-        c = auto.GetFocusedControl()
-        try:
-            return c.GetValuePattern().Value
-        except Exception:
-            return c.GetTextPattern().DocumentRange.GetText(200000)
-    except Exception:
-        return None
+    """What the focused box holds (to see a paste land), or None when it can't be read (nova.platform)."""
+    return platform.current().focused_text()
 
 
 def _wait_for_paste(before, timeout=2.0):
@@ -373,11 +256,11 @@ def _type_into_focus(text):
     seq = _clip_set_text(text) if saved is not None else 0
     if not seq:
         for ch in text:                 # clipboard busy: one letter at a time, slow enough to keep up
-            keyboard.write(ch)
+            platform.current().write(ch)
             time.sleep(0.03)
         return "keys"
     try:
-        keyboard.send("ctrl+v")
+        platform.current().press("ctrl+v")
         _wait_for_paste(before)
     finally:
         _clip_restore(saved, seq)
@@ -409,7 +292,7 @@ def type_text(text, into_window=None):
       "use it to open or switch apps (alt+tab, ctrl+n): use open_app or window_action focus.",
       friendly="Pressed keys", risky="Press keys", core=True, props={"keys": common.S}, required=["keys"])
 def press_keys(keys):
-    keyboard.send(keys)
+    platform.current().press(keys)
     return f"Pressed {keys}."
 
 
@@ -506,7 +389,7 @@ def app_guard(tool, args, app, wait=0.0):
 
 @tool("Read the clipboard text.", friendly="Read the clipboard", props={}, required=[])
 def get_clipboard():
-    return pyperclip.paste()[:4000] or "(clipboard is empty)"
+    return platform.current().clipboard_text()[:4000] or "(clipboard is empty)"
 
 
 SELECTION_MAX = 6000    # about a page and a half - longer is better copied into a file
@@ -520,24 +403,24 @@ SELECTION_MAX = 6000    # about a page and a half - longer is better copied into
 def read_selection():
     """The text highlighted in the user's app: copy it (Ctrl+C in that window), then put their clipboard back.
     If Nova's own chat window is in front, the app behind it is brought forward first - it keeps its selection."""
-    old = pyperclip.paste()
+    old = platform.current().clipboard_text()
     w = forms._target_window(None)
     if not w:
         return "Error in read_selection: no app window is open to read from."
     hwnd, title, _ = w
     marker = f"__nova_selection_{time.time()}__"
-    pyperclip.copy(marker)                       # so an empty selection is told apart from old clipboard text
+    platform.current().set_clipboard_text(marker)                       # so an empty selection is told apart from old clipboard text
     try:
         if platform.current().foreground() != hwnd:
             _focus(hwnd)
             time.sleep(0.25)
-        keyboard.send("ctrl+c")
+        platform.current().press("ctrl+c")
         text, end = marker, time.time() + 1.5
         while text == marker and time.time() < end:   # some apps take a moment to fill the clipboard
             time.sleep(0.05)
-            text = pyperclip.paste()
+            text = platform.current().clipboard_text()
     finally:
-        pyperclip.copy(old)
+        platform.current().set_clipboard_text(old)
     if text == marker or not text.strip():
         return f"Nothing is selected in '{title[:60]}'. Highlight some text first, then ask again."
     text = text.strip()
@@ -547,7 +430,7 @@ def read_selection():
 
 @tool("Put text on the clipboard.", friendly="Copied to clipboard", props={"text": common.S}, required=["text"])
 def set_clipboard(text):
-    pyperclip.copy(text)
+    platform.current().set_clipboard_text(text)
     return "Copied to the clipboard."
 
 
