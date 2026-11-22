@@ -42,9 +42,9 @@ def lexical(monkeypatch):
 def repo_skills():
     """conftest redirects store.current().skills_dir to a temp folder; these cases describe the skills shipped in the repo."""
     store.current().skills_dir = ROOT / "skills"
-    skills._cache.update(key=None, skills=[])
+    skills.library._cache.update(key=None, skills=[])
     yield
-    skills._cache.update(key=None, skills=[])
+    skills.library._cache.update(key=None, skills=[])
 
 
 def _tools_cases():

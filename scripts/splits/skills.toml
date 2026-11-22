@@ -1,0 +1,32 @@
+# Section map for scripts/split_module.py: nova/actions/skills.py -> nova/actions/skills/ (docs/file-split-plan.md, step 3).
+package = "nova.actions.skills"
+
+[ranges]                       # statements starting at/after this line of the old skills.py -> module
+"1" = "format"                 # limits, regexes, slug, parsing (format 1 and 2), _front, compute_risk, parse
+"393" = "library"              # the folder: _cache, load, get
+"426" = "matching"                # _norm, fillers, pick, match, guess_input, direct_args, prompt_block
+"625" = "stats"                # side files: stats_*, add_not_for, record_run
+"700" = "library"              # history, _write, set_status, undo
+"775" = "format"               # rendering skills back to text
+"876" = "library"              # save, delete, small edits
+"1093" = "drafts"              # describe, fill
+"1121" = "matching"               # similar
+"1137" = "stats"               # least_used
+"1145" = "drafts"              # skills from what Nova really did
+
+[names]                        # matching settings and state, defined near the top of the old file
+FUZZY_FLOOR = "matching"
+FUZZY_FLOOR_WORDS = "matching"
+FUZZY_MARGIN = "matching"
+_NAMES = "matching"
+FILLERS = "matching"
+TRAILING = "matching"
+STOPWORDS = "matching"
+last_decision = "matching"
+
+[docs]
+format = "Skill files as text: limits, parsing (format 1 and 2), the front matter, risk, and rendering back to text."
+matching = "Matching a request to a skill: fillers, the fuzzy floor, pick/match, guessing {input}, the prompt block, similar."
+library = "The skills folder: load/get (cached), save, delete, small edits, history and undo, status."
+stats = "Side files written only by code: run stats, not_for phrases, record_run, least_used."
+drafts = "Making skills from what Nova did: steps_from_trace, draft_from_steps; describe and fill."

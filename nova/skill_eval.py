@@ -55,15 +55,15 @@ def main():
     for text, name in missed:
         print(f"  MISSED {text!r} should start {name}   [{skills.last_decision}]")
     print("\nfuzzy floor sweep (false / missed):")
-    keep = skills.FUZZY_FLOOR, skills.FUZZY_FLOOR_WORDS
+    keep = skills.matching.FUZZY_FLOOR, skills.matching.FUZZY_FLOOR_WORDS
     best = None
     for f in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]:
-        skills.FUZZY_FLOOR = skills.FUZZY_FLOOR_WORDS = f
+        skills.matching.FUZZY_FLOOR = skills.matching.FUZZY_FLOOR_WORDS = f
         w, m = rates(skills, lines)
         print(f"  {f:.2f}: {len(w)} / {len(m)}")
         if not w and best is None:
             best = f
-    skills.FUZZY_FLOOR, skills.FUZZY_FLOOR_WORDS = keep
+    skills.matching.FUZZY_FLOOR, skills.matching.FUZZY_FLOOR_WORDS = keep
     print(f"\nlowest floor with no false trigger: {best if best is not None else 'none in range'}")
     log = store.current().task_log
     if log.exists():

@@ -71,7 +71,12 @@ tests into one `tests/test_packages.py` that covers every package (`tools`, `app
 - `Nova` keeps behaviour and state, about 600 lines. No package and no `__getattr__`: nothing outside patches it.
 - **Check:** the full suite plus a live run (3D body: idle, talk, react, walk, nap, look change).
 
-## 3. `skills.py` → `nova/actions/skills/` (after Phase 4 merges)
+## 3. `skills.py` → `nova/actions/skills/` (done 2026-11-22)
+
+Done with `scripts/splits/skills.toml`. The match module is `matching.py`: `match` is also a function
+(`skills.match`), and `split_module.py` refuses a module name that shadows a top-level name.
+`FUZZY_FLOOR` is assigned on `skills.matching`, `_cache` used through `skills.library`, `MAX_ACTIVE` patched on
+`skills.format`.
 
 | Module | Holds | ~Lines |
 |---|---|---|
