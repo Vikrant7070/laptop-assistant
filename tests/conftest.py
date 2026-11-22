@@ -91,10 +91,6 @@ def _point_data_at(folder):
 def isolated(tmp_path, monkeypatch):
     """Fresh data folder and conversation for every test; never touch real windows."""
     _point_data_at(tmp_path / "data")
-    monkeypatch.setenv("NOVA_GPU_SIGNAL", str(tmp_path / "gpu_wanted"))   # never pause real training from a test
-    from nova.core.app import childbrain_tab
-    monkeypatch.setattr(childbrain_tab, "_set_awake", lambda on: None)     # never hold the real laptop awake
-    childbrain_tab._awake.update(thread=None, on=False)
     app.state.clear()
     app.state.update({"messages": [], "pending": None})
     app.events.clear()

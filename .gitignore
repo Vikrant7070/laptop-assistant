@@ -11,9 +11,6 @@ __pycache__/
 # Skills Nova deleted (kept so they can be restored)
 skills/.trash/
 
-# Child brain research project: its own Python setup and saved runs
-.venv-childbrain/
-childbrain/runs/
 
 # pip install -e . leaves this behind
 *.egg-info/
