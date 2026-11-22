@@ -44,7 +44,7 @@ function showTask(t) {
           s.result ? html`<small>→ ${s.result}</small>` : ""}</li>`)}</ol>`
         : html`<p class="mood">No written plan - she works it out step by step.</p>`}
       <p class="mood">Plan from: ${t.source === "none" ? "no plan" : t.source}${t.brain ? html` · Brain: ${t.brain}` : ""}${
-          t.read_only ? " · saved by a newer Nova (read-only)" : ""}</p>
+          t.read_only ? " · saved by a newer Nova (read-only)" : ""} · <a href="/tasks#t:${t.id}">See it on the Tasks page</a></p>
       ${t.runs.length ? html`<p class="mood">Steps that really ran:</p><ul>${t.runs.map(r =>
           html`<li class="${r.state}">${TASK_ICON[r.state] || "·"} ${r.tool}${r.hint ? " " + r.hint : ""}${
             r.result ? html`<small>→ ${r.result}</small>` : ""}</li>`)}</ul>` : ""}

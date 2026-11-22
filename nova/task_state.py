@@ -40,7 +40,8 @@ _SKIPPED_RE = re.compile(r"^\W*(not (?:run|done)\b|the user declined|the user pr
 _TOOLISH_RE = re.compile(r"\b[a-z]+(?:_[a-z0-9]+)+\b")
 _NUMBERED_RE = re.compile(r"^\s*(\d+)[.)]\s+(.+)$")
 # Never on the card: anything that looks like a code, password or key (same words as the task log's filter).
-_SECRET_RE = re.compile(r"\b(otp|one[- ]time|passcode|password|pin|cvv|verification|security code|login code|api[ _-]?key|token)\b", re.I)
+_SECRET_RE = re.compile(r"\b(otp|one[- ]time|passcode|password|pin|cvv|verification|security code|login code|api[ _-]?key|token)\b"
+                        r"|\bcode\b\W{0,3}(is\W{1,3})?\d{4,8}\b", re.I)     # "the code is 123456" (plain "code" is a coding word)
 _HIDDEN = "(hidden)"
 
 

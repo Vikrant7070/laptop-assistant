@@ -49,6 +49,11 @@
   #pair input { font-size: 28px; letter-spacing: 6px; text-align: center; padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
   #pair button { font-size: 18px; padding: 14px; border: 0; border-radius: 14px; background: var(--accent); color: #fff; }
   #pairErr { color: var(--bad); min-height: 20px; }
+  #tasks { flex: 1; overflow-y: auto; padding: 8px 16px 16px; display: none; flex-direction: column; gap: 8px; }
+  #tasks .t { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+  #tasks .g { font-weight: 600; word-break: break-word; } #tasks .m { font-size: 13px; color: var(--soft); word-break: break-word; }
+  #tasks .s { float: right; font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; margin-left: 8px; }
+  #tasks .s.waiting { color: #e0a800; } #tasks .s.failed, #tasks .s.stuck { color: var(--bad); } #tasks .s.done { color: var(--good); }
   .hint { font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
 </style>
 </head>
@@ -56,6 +61,7 @@
 <header>
   <span id="dot" class="dot"></span>
   <h1>Nova</h1>
+  <button id="tasksBtn" type="button" style="display:none" aria-pressed="false">📋 Tasks</button>
   <button id="forget" type="button" style="display:none">Unpair</button>
 </header>
 <div id="sub"></div>
@@ -70,6 +76,7 @@
 </section>
 
 <main id="log" aria-live="polite" style="display:none"></main>
+<section id="tasks" aria-label="Nova's tasks"></section>
 <form id="send" style="display:none" autocomplete="off">
   <input id="text" placeholder="Message Nova…" enterkeyhint="send" autocomplete="off" autocapitalize="sentences">
   <button id="stop" type="button">Stop</button>
@@ -93,6 +100,8 @@ function show(paired) {
   $("#log").style.display = paired ? "flex" : "none";
   $("#send").style.display = paired ? "flex" : "none";
   $("#forget").style.display = paired ? "" : "none";
+  $("#tasksBtn").style.display = paired ? "" : "none";
+  if (!paired) showTasks(false);
   const standalone = window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
   $("#installHint").style.display = paired || standalone ? "none" : "";
 }
@@ -183,6 +192,40 @@ $("#send").onsubmit = async ev => {
   catch (err) { bubble("Couldn't reach Nova: " + err.message, "err"); }
 };
 $("#stop").onclick = () => call("/m/stop", {}).catch(() => {});
+
+/* ---- 📋 the Tasks list (read-only; to carry a task on, type "continue") ---- */
+const T_WORD = {running: "running", waiting: "waiting for you", stopped: "stopped", interrupted: "interrupted", stuck: "stuck",
+                done: "done", failed: "didn't finish", dropped: "dropped"};
+const T_KIND = {laptop: "💻", coding: "🧑‍💻", research: "🔎"};
+let tasksOn = false;
+function line(cls, text) { const d = document.createElement("div"); d.className = cls; d.textContent = text; return d; }
+async function loadTasks() {
+  const box = $("#tasks");
+  try {
+    const j = await call("/m/tasks");
+    box.replaceChildren();
+    if (!j.rows.length) box.append(line("m", "No tasks yet."));
+    for (const r of j.rows) {
+      const t = document.createElement("div"); t.className = "t";
+      const s = line("s " + r.status, T_WORD[r.status] || r.status);
+      const g = line("g", (T_KIND[r.kind] || "") + " " + (r.goal || ""));
+      const when = new Date(r.when * 1000).toLocaleString([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"});
+      const steps = r.steps_total ? `${r.steps_done} of ${r.steps_total} steps` : r.steps_done ? `${r.steps_done} steps` : "";
+      t.append(s, g, line("m", [when, r.who, steps, r.why && r.status !== "running" ? "why: " + r.why : ""].filter(Boolean).join(" · ")));
+      box.append(t);
+    }
+    box.append(line("m", "To carry a stopped task on, type “continue”. Open the laptop's 📋 Tasks page for every step."));
+  } catch (err) { box.replaceChildren(line("m", "Couldn't load the tasks: " + err.message)); }
+}
+function showTasks(on) {
+  tasksOn = on;
+  $("#tasks").style.display = on ? "flex" : "none";
+  $("#log").style.display = on || !key ? "none" : "flex";
+  $("#tasksBtn").setAttribute("aria-pressed", String(on));
+  $("#tasksBtn").textContent = on ? "💬 Chat" : "📋 Tasks";
+  if (on) loadTasks();
+}
+$("#tasksBtn").onclick = () => showTasks(!tasksOn);
 
 /* ---- pairing ---- */
 $("#pairGo").onclick = async () => {

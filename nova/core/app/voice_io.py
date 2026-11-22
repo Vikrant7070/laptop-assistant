@@ -603,6 +603,7 @@ def on_barge(kind, text):
     (her name, "wait", "hold on") and "talk" (a sentence of their own) only stop her talking. Then she listens
     for what comes next."""
     if kind == "stop" and session.lock.locked():
+        session.state["stop_why"] = "you talked over her"         # the Tasks page's "why it ended"
         conversation.stop_now()
     t_stop = time.time()
     mouth.stop(quick=True)

@@ -61,7 +61,7 @@ def job_done(job):
         line = f"Sorry, the {job['kind'].replace('_', ' ')} didn't work: {job['error']}"
         voice_io.push_event({"reply": line, "kind": "job"})
         voice_io.announce(line)
-        tell_away(line + _phone_hint(job, failed=True))
+        tell_away(line + _phone_hint(job, failed=True) + TASKS_LINE)
         return
     voice_io.wake_body()
     if offer["job"] and offer["job"] is not job and time.time() < offer["until"]:
@@ -70,11 +70,14 @@ def job_done(job):
     line = job["result"] + " Want to see it?"
     voice_io.push_event({"reply": "✅ " + line, "kind": "job", "offer": {"id": job["id"], "label": "Show it"}})
     voice_io.announce("✅ " + line, spoken=line)
-    tell_away("✅ " + job["result"] + (_phone_hint(job) or " It's on the laptop for when you're back."))
+    tell_away("✅ " + job["result"] + (_phone_hint(job) or " It's on the laptop for when you're back.") + TASKS_LINE)
     body.react_later("happy")
     if config.settings()["wake"] and not voice_io.convo["on"] and voice_io.silent_ok():     # listen for the "yes"
         voice_io.listen_state["single"] = True
         runtime.spawn("integrations.silent_loop", voice_io.silent_loop)
+
+
+TASKS_LINE = "\nSee it on the Tasks page (📋 in Nova's window or the iPhone app)."
 
 
 def _phone_hint(job, failed=False):
@@ -384,8 +387,15 @@ def mobile_confirm(approved):
     return out
 
 
+def _task_rows():
+    """📋 the iPhone app's read-only Tasks list (the Tasks page's newest 30 rows)."""
+    from nova.core.app import tasks_page
+    return tasks_page.rows(limit=30)
+
+
 mobile = mobile_mod.Mobile(on_message=mobile_message, on_confirm=mobile_confirm, on_stop=lambda: conversation.stop_now(),
-                           status_text=phone_status, state=lambda: {"asleep": bool(voice_io.nap["asleep"]), "busy": session.lock.locked()})
+                           status_text=phone_status, state=lambda: {"asleep": bool(voice_io.nap["asleep"]), "busy": session.lock.locked()},
+                           tasks=_task_rows)
 
 
 def tailscale_url():

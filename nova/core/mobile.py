@@ -71,9 +71,10 @@ class Mobile:
     """on_message(text) -> Nova's answer dict (reply / pending / activity / error); on_confirm(approved) -> answer dict;
     on_stop() -> bool; status_text() -> str. All set by app.py, like phone.Phone."""
 
-    def __init__(self, on_message=None, on_confirm=None, on_stop=None, status_text=None, state=None):
+    def __init__(self, on_message=None, on_confirm=None, on_stop=None, status_text=None, state=None, tasks=None):
         self.on_message, self.on_confirm, self.on_stop, self.status_text = on_message, on_confirm, on_stop, status_text
         self.state = state or (lambda: {})
+        self.tasks = tasks or (lambda: [])      # the Tasks page's rows, read-only
         self.pair_code, self.pair_until = "", 0.0
         self.wrong, self.locked_until = 0, 0.0
         self.events, self.next_id = deque(maxlen=50), 1
@@ -284,6 +285,11 @@ class Mobile:
         @authed
         def status():
             return jsonify(text=me.status_text() if me.status_text else "", **me.state())
+
+        @app.get("/m/tasks")
+        @authed
+        def tasks():
+            return jsonify(rows=me.tasks())
 
         @app.post("/m/unpair")
         @authed
