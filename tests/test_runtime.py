@@ -13,9 +13,6 @@ ROOT = Path(__file__).resolve().parent.parent
 # Files that still make their own threads. Shrink this list; never grow it.
 BARE_THREADS_ALLOWED = {
     "nova/runtime.py",                      # the one place that should
-    "nova/brain/gpu_signal.py",             # being changed by the child-brain split-out branch (2026-11-22)
-    "nova/core/app/childbrain_tab.py",      # same
-    "nova/core/app/childbrain_watch.py",    # same
 }
 
 

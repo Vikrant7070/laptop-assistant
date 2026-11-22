@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-LOCKS = ["requirements.txt", "requirements-test.txt", "requirements-dev.txt"]   # childbrain has its own setup
+LOCKS = ["requirements.txt", "requirements-test.txt", "requirements-dev.txt"]
 
 
 def _name(req):

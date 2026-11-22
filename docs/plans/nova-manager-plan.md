@@ -171,7 +171,7 @@ are the existing `background_jobs` / `stop_background_job` - a coding job is a `
 - **Reports:** the usual job_done path - spoken + chat "✅ … changed N files … Nothing is committed - say 'commit it'
   … Want to see it?" ("yes" opens the folder), Telegram when away; `background_jobs` shows the live step ("editing
   README.md") and, when done, the changed files. History in `data/jobs.json`, raw output in `data/jobs/<key>.log`.
-- **Live check (2026-11-21), real Nova (local qwen3-vl:4b, GPU shared with child-brain training):** "Fix the spelling
+- **Live check (2026-11-21), real Nova (local qwen3-vl:4b):** "Fix the spelling
   mistakes in the README.md of my project at …" → start_coding_job → DeepSeek free limit → big-pickle, done in 23 s,
   spoken "finished … changed 1 file"; "how's the coding job going?" → background_jobs → correct; "commit it" →
   Allow/No → Allow → only the job's file committed, nothing pushed. Two fixes came out of it:
@@ -244,8 +244,6 @@ What the user sees when they say "research X" stays the same.
   - Google → DuckDuckGo fallback; 3 pages read, 2 usable; report written; "done, from 2 sources" spoken after 64 s.
   - `data/jobs.json` got a `research` record (done, report path, 2 sources). ⚙ Workers → Recent jobs showed
     "#1 Research · done · 2 sources".
-  - Gotcha: while a child-brain training run held the GPU at 100%, the local brain never answered. Two tries ended
-    with "can't reach Ollama" after 20 min. The run was paused for the test (process suspended), then resumed.
 - **Live re-check after merging master's packages (2026-11-21):**
   - On the merged branch, with the GPU free, "research …" worked 2 out of 2 times: done in 83 s and 118 s, recorded,
     and shown in Recent jobs.
@@ -477,7 +475,7 @@ the thought cloud (`/api/thoughts`, gone after a few seconds), ⚙ Workers → R
 - Buttons: **Stop**, and when stopped or interrupted, **Continue** and **Drop it**.
 - When a step waits for the user (an approval, a "go" on a brief), the strip says so plainly, in a different colour.
 
-**2. A Tasks page at `/tasks`** (copy the `/childbrain` and `/knowledge` page pattern), one list for **both** kinds:
+**2. A Tasks page at `/tasks`** (copy the `/knowledge` page pattern), one list for **both** kinds:
 Nova's own laptop tasks and worker jobs (coding, research), newest first.
 - Filter: running / waiting for me / stopped / done / failed; laptop tasks / workers.
 - Each row: when, goal, who did it, status, steps done / total, time taken, and the Judge's verdict.
@@ -579,14 +577,6 @@ recording only when the user is the one at the laptop (YuNet presence can help),
    Phases 7–8 (live activity log, recorder) wait for a later go-ahead.
 6. **Away reports: Telegram — done + blocked only.** A message when a job finishes or is blocked and needs the user;
    no progress updates.
-
-## 9b. Separate track — the "child brain" (not part of this plan)
-
-The first discussion: a new brain structure built for transistors (not copying the human brain) that learns from
-its own experience, AlphaZero-style. This plan only borrows the practical part (slow reasoning → fast saved skills,
-cheaper with experience). A real experiment (e.g. evolving small network structures scored on accuracy **and** GPU
-speed, or a self-play agent from zero) is its own research project — now written up in
-[child-brain-plan.md](child-brain-plan.md).
 
 ## 10. Never
 
