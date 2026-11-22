@@ -420,6 +420,50 @@ size limit.
 **Related:** upgrade plan A2 (saved, searchable chat history) and B3 (steering a running task) are planned and not
 built. The task state is what B3 would steer, so build it first.
 
+#### 4-pre rules — safe resume, one task at a time, and other gaps (review, 2026-11-22; the user kept these)
+
+**Must have (they stop real damage):**
+1. **A half-done step is never redone blindly.** Each step has a third state besides done / not done: *started, not
+   confirmed*. On resume, code first runs that step's Judge check. A step that changes things (delete, move, send,
+   type, install) is **never redone without asking**, even if the check is unclear.
+2. **Check the world before resuming.** After a restart or a long pause, code re-checks what the next step needs (is
+   the app open, does the file or folder still exist). If not, the rest of the plan is re-planned (the one re-plan
+   from point 5 above) instead of carried on blindly.
+3. **One laptop task at a time.** One keyboard and one screen, so only one of Nova's own tasks runs; worker jobs run
+   alongside it. A new request while one is stopped: the old one stays *stopped* (listed, resumable). "Continue"
+   means the newest stopped task; with more than one, she asks with the question card.
+4. **The root causes get owners, not just a mention:**
+   - **Barge-in echo:** the fix that stops her own voice counting as the user's goes on the voice side's list (barge-in
+     notes) as its own item, with a test from the 2026-11-21 log line.
+   - **Live tests must not use the real Nova.** Add a rule to `AGENTS.md`: a live test runs a separate copy with
+     `NOVA_DATA` / `NOVA_SKILLS` pointing at a copy of the data, never the Nova the user is talking to. Quitting
+     the real Nova wipes the user's chat (24 restarts on 2026-11-21).
+
+**Should have:**
+5. **Stuck and time limits.** A task is *stuck* when the same tool runs with the same arguments 3 times, or a step
+   goes past its time limit. Nova stops that step, says what's stuck, and the strip / `/tasks` show "stuck on step 3"
+   instead of a spinner.
+6. **Is the planner worth its minute?** Each task stores where its plan came from (skill / cloud / deep brain / none)
+   and whether it succeeded. The Learner reports success per plan source after a few weeks. Before measuring, check
+   the task exam has enough tasks of 3+ steps; add some if it doesn't.
+7. **Privacy with a cloud planner.** The cloud planner gets the goal and step names only, never raw tool results
+   (file names, screen text), unless the user allows it, the same rule as the phone-notes cloud setting. A re-plan
+   sends one-line step outcomes only.
+8. **Undo on `/tasks`.** A step that changed something (moved files, deleted to the Recycle Bin, changed a skill) shows
+   **Undo** where an undo exists, reusing the existing undo paths (`undo_skill_change`, Recycle Bin restore).
+
+**Nice to have:**
+9. **Numbered choices by voice.** When she reads a question card aloud she numbers the choices ("one: Laptop
+   assistant, two: nova-site"), so "two" by voice picks the right one.
+10. **Version number in saved cards.** Each saved card has a `version`; older ones are upgraded or shown read-only,
+    never a crash after a code update.
+11. **Waiting while the user is away.** If a task waits for an answer and presence (YuNet) says the user has left, it
+    goes to Telegram as "blocked", which fits the "done or blocked only" rule.
+
+**Tests for these:** a half-done changing step asks before redoing; a missing window on resume triggers a re-plan;
+"continue" with two stopped tasks asks which; the same call 3 times marks the task stuck; the cloud plan request
+holds no tool results; an old card version loads.
+
 #### 4-pre UI — see what Nova is doing (the user's request, 2026-11-22)
 
 The user wants to **track what is going on**, so the task state needs a screen. Today what's shown is spread out:
