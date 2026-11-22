@@ -22,6 +22,7 @@ from nova.actions import tools
 from nova import shared
 from nova import intents
 from nova import protocol
+from nova import log
 from nova.log import log_exception
 
 
@@ -50,6 +51,7 @@ CHECK_PROMPT = promptfiles.load("check")
 
 
 def task_log(line):
+    log.event("log", line)           # the row code can query; task_log.txt below is the copy people read
     try:
         if store.current().task_log.exists() and store.current().task_log.stat().st_size > 300_000:
             store.current().task_log.write_text(store.current().task_log.read_text(encoding="utf-8")[-100_000:], encoding="utf-8")

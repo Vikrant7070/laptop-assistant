@@ -13,7 +13,7 @@ import threading
 import time
 import traceback
 
-from nova import store
+from nova import db, store
 
 RATE_SECS = 60          # at most one report per place per minute
 _last = {}
@@ -41,11 +41,19 @@ def log_exception(where, exc=None):
                     + "".join("      " + line + "\n" for line in detail.splitlines()))
     except OSError:
         return False        # the log is the last thing that may fail; never raise from here
+    event("error", f"{where}: {type(exc).__name__ if exc else 'unknown'}: {exc}", where=where, detail=detail[-4000:])
     return True
 
 
+def event(kind, text="", **fields):
+    """One structured event: a row in nova.db's events table (find it with db.find_events). Never raises."""
+    return db.add_event(kind, text, fields or None)
+
+
 def note(line):
-    """One plain line in the task log (what a tool really did, for fixing it later). Never raises."""
+    """One plain line in the task log (what a tool really did, for fixing it later), and the same line as a
+    "log" event. Never raises."""
+    event("log", line)
     try:
         store.current().task_log.parent.mkdir(parents=True, exist_ok=True)
         with store.current().task_log.open("a", encoding="utf-8") as f:

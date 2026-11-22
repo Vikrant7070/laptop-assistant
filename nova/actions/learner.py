@@ -1,6 +1,6 @@
 """The episode log and the automatic Learner (manager plan, phase 2).
 
-Episode log (data/episodes.jsonl, local): one line per finished task - the goal, the steps (tool, arguments with
+Episode log (episodes table, data/nova.db): one row per finished task - the goal, the steps (tool, arguments with
 anything secret-looking hidden, worked or not), the Judge's verdict, time taken, the brain, background jobs it
 started and how they ended. Raw episodes are deleted after KEEP_DAYS; what was learned from them stays.
 
@@ -23,6 +23,7 @@ import time
 import urllib.parse
 
 from nova.log import log_exception
+from nova import db
 from nova import store
 
 KEEP_DAYS = 30
@@ -92,30 +93,16 @@ def episode_from_task(task, brain="", now=None):
 def load(now=None):
     """Episodes, oldest first (ones older than KEEP_DAYS are left out)."""
     now = now or time.time()
-    out = []
     with _lock:
         try:
-            lines = store.current().episodes.read_text(encoding="utf-8").splitlines()
-        except FileNotFoundError:
-            return []
+            return db.load_episodes(since=now - KEEP_DAYS * 86400)
         except Exception:
             log_exception("learner episodes read")
             return []
-    for line in lines:
-        try:
-            ep = json.loads(line)
-        except Exception:
-            continue        # intentional: one torn line (a crash mid-write) must not hide the other episodes
-        if isinstance(ep, dict) and now - float(ep.get("ts", 0)) <= KEEP_DAYS * 86400:
-            out.append(ep)
-    return out
 
 
 def _write(eps):
-    store.current().episodes.parent.mkdir(parents=True, exist_ok=True)
-    tmp = store.current().episodes.with_suffix(".tmp")
-    tmp.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in eps[-MAX_EPISODES:]), encoding="utf-8")
-    tmp.replace(store.current().episodes)
+    db.replace_episodes(eps[-MAX_EPISODES:])
 
 
 def record(ep, now=None):
