@@ -71,10 +71,12 @@ class Mobile:
     """on_message(text) -> Nova's answer dict (reply / pending / activity / error); on_confirm(approved) -> answer dict;
     on_stop() -> bool; status_text() -> str. All set by app.py, like phone.Phone."""
 
-    def __init__(self, on_message=None, on_confirm=None, on_stop=None, status_text=None, state=None, tasks=None):
+    def __init__(self, on_message=None, on_confirm=None, on_stop=None, status_text=None, state=None, tasks=None,
+                 on_answer=None):
         self.on_message, self.on_confirm, self.on_stop, self.status_text = on_message, on_confirm, on_stop, status_text
         self.state = state or (lambda: {})
         self.tasks = tasks or (lambda: [])      # the Tasks page's rows, read-only
+        self.on_answer = on_answer               # on_answer(card id, answers) -> reply dict: a tap on a question card
         self.pair_code, self.pair_until = "", 0.0
         self.wrong, self.locked_until = 0, 0.0
         self.events, self.next_id = deque(maxlen=50), 1
@@ -167,6 +169,9 @@ class Mobile:
             what = [p.get("label", "").lower() for p in pend]
             detail = "; ".join(json.dumps(p.get("input") or {}, ensure_ascii=False)[:150] for p in pend)
             self.add("ask", text=reply, what=what, detail="" if detail == "{}" else detail)
+            return
+        if out.get("question"):
+            self.add("question", text=reply, card=out["question"])
             return
         if out.get("activity") and not reply:
             reply = "Done: " + ", ".join(out["activity"][:5])
@@ -285,6 +290,16 @@ class Mobile:
         @authed
         def status():
             return jsonify(text=me.status_text() if me.status_text else "", **me.state())
+
+        @app.post("/m/answer")
+        @authed
+        def answer():
+            b = body()
+            if not me.on_answer:
+                return jsonify(error="not available"), 404
+            qid, answers = str(b.get("id") or ""), b.get("answers") if isinstance(b.get("answers"), dict) else {}
+            me.work.put(lambda: me.say(me.on_answer(qid, answers)))
+            return jsonify(ok=True), 202
 
         @app.get("/m/tasks")
         @authed

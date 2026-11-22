@@ -128,8 +128,10 @@ def on_start():
     cards = [c for c in cards if c["status"] == "interrupted"]
     if not cards:
         return ""
-    session.state["resume_ask"] = {"kind": "restart", "ids": [cards[0]["id"]], "ts": time.time()}
-    return f"Before the restart I was on {task_state.where(cards[0])}. Should I continue?"
+    card = asking.make("resume", [asking.question(
+        "go", f"Before the restart I was on {task_state.where(cards[0])}. Should I continue?", "yesno",
+        choices=[("yes", "Continue"), ("no", "Not now")])], task=cards[0]["id"], data={"kind": "restart"})
+    return asking.ask(card, "Asked about the task a restart cut short", wait=False)["reply"]
 
 
 def offer_after_start():
@@ -141,7 +143,7 @@ def offer_after_start():
         return
     if line:
         conversation.task_log("RESUME OFFER: " + line)
-        voice_io.push_event({"reply": line, "kind": "resume"})
+        voice_io.push_event({"reply": line, "kind": "resume", "question": asking.public(asking.current())})
         voice_io.announce(line)
 
 
@@ -247,35 +249,20 @@ def _find(cid):
     return None
 
 
-def _choice(text, n):
-    """'two' / 'the second one' / '2' -> 1; a plain yes with one choice -> 0; else None."""
-    i = intents.choice(text)
-    if i is not None and i < n:
-        return i
-    if n == 1 and (intents.YES.search(text) or intents.RESUME.search(text)):
-        return 0
-    return None
-
-
 def direct(text):
     """The user's words, before any brain turn. -> a reply made by code, or None (go on as usual; `take` may then
     have a task to carry on with)."""
     clean = protocol.unspoken(text).strip()
     session.state.pop("last_reply", None)          # a new request: a barge-in from now on isn't about the old reply
     session.state.pop("stop_why", None)
-    ask = session.state.pop("resume_ask", None)
-    if ask and time.time() - ask["ts"] < ASK_SECS:
-        got = _answer(ask, clean)
-        if got is not False:
-            return got
-        if ask["kind"] == "redo" and (card := _find(ask["ids"][0])) is not None and card["status"] == "waiting":
-            task_state.mark(card, "stopped", "you moved on")      # still there for "continue" later
-            save({"card": card})
+    pick = session.state.pop("resume_pick", None)   # the strip's / Tasks page's Continue on one task
     if not intents.RESUME.search(clean):
         return None
     cut = session.state.pop("cutoff", None)
     if cut and time.time() - cut["ts"] < CUTOFF_SECS:
         return _finish_cut_off(cut)
+    if pick and time.time() - pick["ts"] < ASK_SECS and (card := _find(pick["id"])) is not None:
+        return prepare(card)
     try:
         cards = _candidates()
     except Exception:
@@ -284,31 +271,30 @@ def direct(text):
     if not cards:
         return None                     # nothing stopped: an ordinary request ("keep going" with nothing to go on with)
     if len(cards) > 1:
-        names = ", ".join(f"{w}: {c['goal'][:60]}" for w, c in zip(("one", "two", "three"), cards))
-        session.state["resume_ask"] = {"kind": "which", "ids": [c["id"] for c in cards], "ts": time.time()}
-        return _out(f"I stopped more than one task. Which one should I carry on with? {names}.", "Asked which task")
+        card = asking.make("resume", [asking.question(
+            "task", "I stopped more than one task. Which one should I carry on with?", "one",
+            choices=[(c["id"], c["goal"][:60]) for c in cards] + [("none", "Not now")])], data={"kind": "which"})
+        return asking.ask(card, "Asked which task", wait=False)
     return prepare(cards[0])
 
 
-def _answer(ask, clean):
-    """The answer to a resume question. -> a reply, None (carry on through take), or False (not an answer)."""
-    if ask["kind"] in ("which", "restart"):
-        i = _choice(clean, len(ask["ids"]))
-        if i is None:
-            if intents.NO.search(clean):
-                return _out("Okay, I'll leave it. Say “continue” any time.", "Left the task")
-            return False                # a new request: the old tasks stay stopped
-        card = _find(ask["ids"][i])
-        return prepare(card) if card else _out("I can't find that task any more.", "Task gone")
-    if ask["kind"] == "redo":
-        card = _find(ask["ids"][0])
-        if card is None:
-            return False
-        if intents.YES.search(clean) or intents.RESUME.search(clean):
-            return prepare(card, redo=True)
-        if intents.NO.search(clean):
-            return prepare(card, redo=False)
-    return False
+def _answered(qcard, answers):
+    """A resume card's answer (asking.handler). -> a reply, or None with the task queued for take."""
+    kind, a = qcard["data"].get("kind"), next(iter(answers.values()))["value"]
+    if kind == "redo":
+        card = _find(qcard["task"])
+        return prepare(card, redo=(a == "yes")) if card else _out("I can't find that task any more.", "Task gone")
+    if a in ("no", "none"):
+        return _out("Okay, I'll leave it. Say “continue” any time.", "Left the task")
+    card = _find(qcard["task"] if kind == "restart" else a)
+    return prepare(card) if card else _out("I can't find that task any more.", "Task gone")
+
+
+def _dropped(qcard):
+    """The redo question went unanswered: the task goes back to stopped, ready for "continue" later."""
+    if qcard["data"].get("kind") == "redo" and (card := _find(qcard["task"])) is not None and card["status"] == "waiting":
+        task_state.mark(card, "stopped", "you moved on")
+        save({"card": card})
 
 
 def _changes_things(tool):
@@ -367,12 +353,15 @@ def prepare(card, redo=None):
     extra = []
     if half and redo is None:
         r = half[-1]
-        session.state["resume_ask"] = {"kind": "redo", "ids": [card["id"]], "ts": time.time()}
         what = f"{r['tool']} {r['hint']}".strip()
+        qcard = asking.make("resume", [asking.question(
+            "redo", f"When it stopped I was in the middle of a step ({what}) - it may have half happened. "
+            "Should I do that step again?", "yesno", choices=[("yes", "Do it again"), ("no", "Skip that step")],
+            why="It changes things, so I never redo it without asking.")], task=card["id"], data={"kind": "redo"})
+        out = asking.ask(qcard, "Asked before redoing a step")
         task_state.mark(card, "waiting", "do that step again?")
         save({"card": card})
-        return _out(f"When it stopped I was in the middle of a step ({what}) - it may have half happened. "
-                    "Should I do that step again?", "Asked before redoing a step")
+        return out
     if half and redo is False:
         for r in half:
             r["state"], r["result"] = "skipped", "not redone - the user said no"
@@ -430,6 +419,9 @@ def strip_for(card):
     out = task_state.strip(card)
     if out and task_state.of(session.state.get("task")) is card:
         out["brain"] = brain_label()
+    q = session.state.get("question")
+    if out and q and q.get("task") == card["id"]:
+        out["question"] = asking.public(q)          # the strip shows its buttons
     return out
 
 
@@ -447,6 +439,9 @@ def strip_now():
     if cur is not None and (cur["status"] not in ("done", "failed", "dropped")
                             or time.time() - cur["updated"] < STRIP_DONE_SECS):
         return strip_for(cur)
+    q = session.state.get("question")
+    if q and q.get("task") and (asked := _find(q["task"])) is not None:
+        return strip_for(asked)                 # the task a question card is about: its buttons go on the strip
     try:
         cards = _candidates()
     except Exception:
@@ -481,10 +476,11 @@ def task_pick():
     card = _find(api._text(api._body(), "id"))
     if card is None or not task_state.resumable(card):
         return jsonify(error="That task can't be carried on."), 404
-    session.state["resume_ask"] = {"kind": "which", "ids": [card["id"]], "ts": time.time()}
+    session.state["resume_pick"] = {"id": card["id"], "ts": time.time()}
     return jsonify(ok=True)
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
 from nova.actions import tools  # noqa: E402
-from nova.core.app import config, conversation, session, voice_io  # noqa: E402
+from nova.core.app import asking, config, conversation, session, voice_io  # noqa: E402
+asking.handler("resume", _answered, _dropped)

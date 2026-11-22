@@ -222,13 +222,29 @@ function render(j) {
     im.title = "What Nova saw (not saved) - click to enlarge"; im.onclick = () => im.classList.toggle("big");
     log.append(im); log.scrollTop = 1e9;
   }
-  if (j.reply) {
+  if (j.reply && !(j.question && j.question.id)) {      // a question card says its own words (no second bubble)
     const m = add("nova", j.reply);
     if (j.kind) m.classList.add(j.kind);                       // notification / suggestion / job
     else { last3d = null; body3d("happy"); }                    // (her bubble follows her voice: server side)
   }
   if (j.offer) showOffer(j.offer);
   if (j.pending) showConfirm(j.pending);
+  if (j.question) showQuestion(j.question);
+}
+// 🙋 A question card (question.js): a tap answers it like a chat message, so her reply lands here as usual.
+const shownQuestions = new Set();
+function showQuestion(card) {
+  if (!card || !card.id || shownQuestions.has(card.id)) return;
+  shownQuestions.add(card.id);
+  const box = questionCard(card, answers => handle(api("/api/answer", {id: card.id, answers})));
+  box.classList.add("confirm");
+  log.append(box); log.scrollTop = 1e9;
+}
+function questionClosed(e) {          // answered elsewhere (voice, phone, the strip) or dropped: no more taps here
+  loadTask();                         // the strip shows (or stops showing) its buttons
+  if (!e || !e.closed) return showQuestion(e);
+  const box = log.querySelector(`.qcard[data-id="${CSS.escape(e.id)}"]`);
+  if (box && !box.classList.contains("answered")) box.closeCard(e.closed === "answered" ? "Answered ✓" : "Not waiting any more");
 }
 // A background job is done: "Show it" brings its window (Gmail, Notepad) to the front.
 function showOffer(o) {
@@ -624,6 +640,7 @@ function listen() {
   on("wake_phrase", j => wakePhrase(j.phrase));
   on("pulse", showPulse);
   on("task", showTask);                  // the live task strip (taskstrip.js)
+  on("question", questionClosed);        // a question card opened, answered or dropped
   // The browser reconnects by itself (and catches up from Last-Event-ID); only a stream that never worked, or that
   // the server refused, falls back to polling.
   es.onerror = () => { if (!opened || es.readyState === EventSource.CLOSED) { es.close(); startPolling(); } };
@@ -638,5 +655,6 @@ if (draft) { input.value = draft.slice(0, 500); history.replaceState(null, "", "
   const s = await loadStatus(); window.__ready = s.ready;
   pulse(); listen();
   if (!s.ready) openSetup(s); else greet();
+  fetch("/api/question", {cache: "no-store"}).then(r => r.json()).then(showQuestion).catch(() => {});   // asked before this page opened
   input.focus();
 })();

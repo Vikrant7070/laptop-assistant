@@ -256,3 +256,14 @@
 {"kind": "intent", "intent": "resume", "query": "continue playing the video", "match": false, "note": "a new request"}
 {"kind": "intent", "intent": "resume", "query": "don't continue", "match": false, "note": "near-miss"}
 {"kind": "intent", "intent": "resume", "query": "how do I continue a loop in python", "match": false, "note": "near-miss"}
+{"kind": "intent", "intent": "skip", "query": "skip", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "skip", "query": "you decide", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "skip", "query": "use your best guess", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "skip", "query": "skip the intro and play the video", "match": false, "note": "a new request"}
+{"kind": "intent", "intent": "all_of_them", "query": "all of them", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "all_of_them", "query": "close all of them", "match": false, "note": "a new request"}
+{"kind": "intent", "intent": "skip", "query": "whatever you think", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "skip", "query": "it doesn't matter", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "all_of_them", "query": "all", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "all_of_them", "query": "everything", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "all_of_them", "query": "all three", "match": true, "note": "says it"}

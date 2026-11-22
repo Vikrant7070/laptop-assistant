@@ -37,6 +37,7 @@
   .ask .q { font-weight: 600; margin-bottom: 4px; } .ask .d { font-size: 13px; color: var(--soft); margin-bottom: 10px; word-break: break-word; }
   .ask .row { display: flex; gap: 10px; }
   .ask button { flex: 1; font-size: 18px; padding: 12px; border-radius: 12px; border: 0; color: #fff; }
+  .ask .row.choices { flex-wrap: wrap; } .ask .pick { flex: 1 1 40%; background: var(--accent); font-size: 16px; }
   .ask .yes { background: var(--good); } .ask .no { background: var(--bad); } .ask button:disabled { opacity: .35; }
   .ask .done { color: var(--soft); font-size: 14px; }
   .typing { color: var(--soft); font-size: 14px; align-self: flex-start; padding: 2px 6px; }
@@ -152,11 +153,30 @@ function ask(e) {
   yes.onclick = decide(true); no.onclick = decide(false);
   row.append(yes, no); box.appendChild(row); $("#log").appendChild(box); scroll(); askBox = box;
 }
+// 🙋 a question card: a button per choice (one question, yes/no or pick one); other kinds are answered by typing
+function question(e) {
+  bubble(e.text || "");
+  const card = e.card || {}, q = (card.questions || [])[0];
+  if (!q || card.questions.length !== 1 || !["yesno", "one"].includes(q.kind)) return;
+  const box = document.createElement("div"); box.className = "ask";
+  const row = document.createElement("div"); row.className = "row choices";
+  for (const c of q.choices) {
+    const b = document.createElement("button"); b.className = "pick"; b.textContent = c.label;
+    b.onclick = async () => {
+      row.querySelectorAll("button").forEach(x => x.disabled = true);
+      try { await call("/m/answer", {id: card.id, answers: {[q.key]: c.value}}); row.remove(); box.appendChild(line("done", "You picked: " + c.label)); poll(); }
+      catch (err) { row.querySelectorAll("button").forEach(x => x.disabled = false); bubble("Couldn't send your answer: " + err.message, "err"); }
+    };
+    row.appendChild(b);
+  }
+  box.appendChild(row); $("#log").appendChild(box); scroll();
+}
 function handle(e) {
   if (e.kind === "working") working(true);
   else if (e.kind === "reply") { working(false); bubble(e.text); }
   else if (e.kind === "error") { working(false); bubble(e.text, "err"); }
   else if (e.kind === "ask") { working(false); ask(e); }
+  else if (e.kind === "question") { working(false); question(e); }
 }
 
 /* ---- long-polling Nova's events ---- */

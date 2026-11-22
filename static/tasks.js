@@ -71,7 +71,25 @@ async function openRow(det) {
   } catch (e) { box.textContent = "Can't reach Nova."; }
 }
 
+// 🙋 a question she is waiting on (question.js): answered here like in the chat; her reply is shown under it.
+let shownQ = null;
+async function loadQuestion() {
+  let q = {};
+  try { q = await (await fetch("/api/question", {cache: "no-store"})).json(); } catch (e) { return; }
+  $("asking").hidden = !q.id;
+  if (!q.id || q.id === shownQ) return;
+  shownQ = q.id;
+  const box = $("question"); box.replaceChildren();
+  box.append(questionCard(q, async answers => {
+    const j = await post("/api/answer", {id: q.id, answers});
+    const said = document.createElement("div"); said.className = "qreply";
+    said.textContent = (j.reply || "") + " (the rest is in the chat)";
+    box.append(said); load();
+  }));
+}
+
 async function load() {
+  loadQuestion();
   const q = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
   let j;
   try { j = await (await fetch("/api/tasks?" + q, {cache: "no-store"})).json(); } catch (e) { say("Can't reach Nova."); return; }
@@ -127,6 +145,7 @@ function soon() { clearTimeout(again); again = setTimeout(load, 400); }
 if (window.EventSource) {
   const es = new EventSource("/api/stream");
   es.addEventListener("task", soon);
+  es.addEventListener("question", soon);
 }
 setInterval(() => { if (live) load(); }, 5000);
 load();

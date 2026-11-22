@@ -613,6 +613,31 @@ it shows. The question card is needed by 4a, which asks the questions.
   - Commit… filled the chat box without sending; Drop it worked;
   - no sideways scroll at 375 px; no console errors after a reload.
 
+**4-pre (e) as built (2026-11-22, branch `feat/manager-question-card`, stacked on (d)):** `nova/core/app/asking.py`,
+`static/question.js`.
+- A card is made by code (`asking.make(owner, [asking.question(...)], task=…)`, at most 2 questions, each with its
+  reason) and opened with `asking.ask(card)`. Kinds: yesno, one, many (checkboxes + Done), text. Pick-one and
+  pick-several questions can offer Other…; a question with a `guess` can be skipped, and the owner gets
+  `how="skip"`. `last` is highlighted; `fact` is carried for 4a.
+- Answers reach the owner's handler (`asking.handler(owner, on_answer, on_drop)`) three ways:
+  - a tap: `POST /api/answer`, checked against the choices offered (400 otherwise, 410 for an old card), then run
+    through `body.answer` with the chosen labels as your words;
+  - typed or spoken words: `from_words`, first in `body.answer`: "two", "the second one", a label, yes/no, "skip",
+    "other: …", "all of them". Words answer the first question; a second one takes its guess;
+  - words that don't answer it: the card is dropped (`on_drop`) and the words go on as a new request.
+- Read aloud and sent to the phone with numbered choices ("one: …, two: …").
+- Shown in the chat (one card, no second bubble), on the strip (pick-one / yes-no buttons on the line; the task a
+  question is about is the one shown), and on `/tasks` ("Waiting for your answer"). Telegram gets a button per
+  choice (`q:<i>`; only the newest card's buttons count), and the iPhone app the same (`/m/answer`, with its key).
+- The resume questions from (b) are cards now: Continue / Not now after a restart; which task (+ Not now);
+  Do it again / Skip that step. `/api/task/pick` sets `resume_pick` (the old `resume_ask` is gone).
+- Live check (2026-11-22) on a separate copy (port 5098, throwaway data):
+  - Not now on the restart card gave a code reply;
+  - "continue" brought the which-task card, and a tap brought the redo card, with no brain call;
+  - after a restart, the strip carried the question's buttons, and Continue there turned it amber with
+    Do it again / Skip that step;
+  - a sample pick-several + open-answer card was checked for looks at 375 px.
+
 ## 7. Phase 5 — Judges for workers' results
 
 Quality comes from measurement, not from the user's habits or the worker's own claim:

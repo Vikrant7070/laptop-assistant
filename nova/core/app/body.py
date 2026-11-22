@@ -200,7 +200,9 @@ def answer(text, quiet=False, remote=False):
             screen = ""
         missing = conversation.not_open_note(text)
         screen = (screen or "none") + missing if missing else screen
-        by_code = resume_module.direct(text)      # "continue": a cut-off reply's rest, or which task / redo? (no brain)
+        handled, by_code = asking.from_words(text)      # the answer to a question card (a tap, or words)
+        if not handled:
+            by_code = resume_module.direct(text)      # "continue": a cut-off reply's rest, or the task to carry on
         carry_on = "" if by_code else conversation.new_task(text)
         # (Tried also passing the time and battery here to save a tool call: the small model then read the line
         # out loud and stopped calling tools for other facts. Only the window list is passed.)
@@ -362,4 +364,4 @@ def react_later(reaction, wait_for_speech=True, repeat=None):
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
 from nova.core.app import config, conversation, judging, learning, session, voice_io  # noqa: E402
-from nova.core.app import resume as resume_module  # noqa: E402
+from nova.core.app import asking, resume as resume_module  # noqa: E402

@@ -168,4 +168,17 @@ form{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
 .taskstrip .ts-card li{margin:2px 0}.taskstrip .ts-card li.pending{color:var(--muted)}
 .taskstrip .ts-card small{display:block;color:var(--muted);margin-left:18px;overflow-wrap:anywhere}
 .taskstrip a{color:var(--accent2)}
+.taskstrip .ts-q{display:inline-flex;flex-wrap:wrap;gap:6px}
+/* ---------- 🙋 question cards (question.js) ---------- */
+.qcard .qq{margin:4px 0 10px}.qcard .qtext{font-weight:600}.qcard .qwhy{display:block;color:var(--muted)}
+.qcard .qopts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.qcard .qopts button,.qcard .qdone{padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);margin:0}
+.qcard .qopt.last{border-color:var(--accent2)}.qcard button.on{background:var(--accent);color:#fff}
+.qcard .qskip,.qcard .qother{color:var(--muted)}
+.qcard .qchk{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:4px 10px}
+.qcard .qchk.last{border-color:var(--accent2)}
+.qcard input:not([type=checkbox]){background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-width:0;width:100%;max-width:360px;margin-top:6px}
+.qcard .qdone{background:var(--accent);color:#fff;font-weight:600}
+.qcard .qnote{margin-left:8px;color:var(--muted);font-size:12.5px}
+.qcard.answered{opacity:.65}.qcard .qnote:empty{display:none}.qcard .qq:last-of-type{margin-bottom:2px}
 @media (max-width:600px){.taskstrip summary{padding:7px 10px}.taskstrip .ts-card{padding:0 10px 10px 16px}}

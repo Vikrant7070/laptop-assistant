@@ -37,8 +37,13 @@ function showTask(t) {
     continue: html`<button type="button" class="ts-go">▶ Continue</button>`,
     drop: html`<button type="button" class="ts-drop">Drop it</button>`,
   };
+  // A question card about this task: its buttons right on the line (one tap answers it), in place of Continue / Drop.
+  const q = t.question, q1 = q && q.questions.length === 1 && ["yesno", "one"].includes(q.questions[0].kind) ? q.questions[0] : null;
+  const acts = q ? t.actions.filter(a => a === "stop") : t.actions;
+  const ask = q ? (q1 ? html`<span class="ts-q">${q1.choices.map(c => html`<button type="button" class="ts-qa" data-v="${c.value}">${c.label}</button>`)}</span>`
+                      : html`<i>answer in the chat ↓</i>`) : "";
   put(box, html`<summary><span class="ts-icon">🧩</span><span class="ts-text">${taskLine(t).map((p, i) =>
-      html`${i ? html`<i> · </i>` : ""}<span>${p}</span>`)}</span><time>${taskTime(t)}</time>${t.actions.map(a => btn[a] || "")}</summary>
+      html`${i ? html`<i> · </i>` : ""}<span>${p}</span>`)}</span><time>${taskTime(t)}</time>${ask}${acts.map(a => btn[a] || "")}</summary>
     <div class="ts-card">
       ${t.plan.length ? html`<ol>${t.plan.map(s => html`<li class="${s.state}"><b>${TASK_ICON[s.state] || "·"}</b> ${s.text}${
           s.result ? html`<small>→ ${s.result}</small>` : ""}</li>`)}</ol>`
@@ -55,6 +60,12 @@ function showTask(t) {
   go(".ts-stop", () => stopNova());
   go(".ts-go", async () => { try { await api("/api/task/pick", {id: t.id}); send("continue"); } catch (e) { add("err", e.message); } });
   go(".ts-drop", async () => { try { showTask(await api("/api/task/drop", {id: t.id})); } catch (e) { add("err", e.message); } });
+  box.querySelectorAll(".ts-qa").forEach(b => b.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    box.querySelectorAll(".ts-qa").forEach(x => x.disabled = true);
+    add("me", "🙋 " + b.textContent);
+    handle(api("/api/answer", {id: q.id, answers: {[q1.key]: b.dataset.v}}));
+  });
   clearInterval(taskClock);
   if (t.status === "running" || t.status === "waiting") {
     taskClock = setInterval(() => { const c = box.querySelector("time"); if (c && taskNow) c.textContent = taskTime(taskNow); }, 1000);
