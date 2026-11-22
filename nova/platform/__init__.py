@@ -84,6 +84,24 @@ class Desktop(Protocol):
     def dpi_aware(self) -> bool:
         """Make this process work in real pixels (so clicks land where UI Automation says)."""
 
+    def protect(self, data: bytes) -> bytes:
+        """Encrypt for this Windows account only (DPAPI). Raises OSError if it can't."""
+
+    def unprotect(self, data: bytes) -> bytes:
+        """Decrypt what protect() made. Raises OSError if it can't."""
+
+    def user_display_name(self) -> str:
+        """The account's display name ("" if unknown)."""
+
+    def memory_commit(self) -> tuple | None:
+        """(used, limit) bytes of RAM + pagefile programs have claimed; None if unknown."""
+
+    def set_wallpaper(self, path) -> bool:
+        """Set the desktop wallpaper. -> accepted?"""
+
+    def set_dark_mode(self, on: bool) -> None:
+        """Switch apps and Windows to the dark (or light) theme."""
+
 
 from nova.platform.fake import FakeDesktop  # noqa: E402  (fake.py imports Window from here)
 

@@ -9,10 +9,10 @@ import socket
 import subprocess
 import time
 from pathlib import Path
-import ctypes
 
 import psutil
 
+from nova import platform as nova_platform     # (the stdlib `platform` is imported above)
 from nova.actions.registry import tool
 from nova.shared import ps_escape
 from nova.actions.tools import common, windows
@@ -316,10 +316,9 @@ def open_settings_page(page):
 @tool("Turn Windows dark mode on or off.", friendly="Changed theme", hints="dark mode light mode theme",
       props={"enabled": common.B}, required=["enabled"])
 def set_dark_mode(enabled):
-    v = 0 if enabled in (True, "true", "on", 1) else 1
-    for name in ("AppsUseLightTheme", "SystemUsesLightTheme"):
-        common._ps(f"Set-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize -Name {name} -Value {v}")
-    return f"Dark mode {'on' if v == 0 else 'off'}."
+    on = enabled in (True, "true", "on", 1)
+    nova_platform.current().set_dark_mode(on)
+    return f"Dark mode {'on' if on else 'off'}."
 
 
 @tool("Set the desktop wallpaper from an image file.", friendly="Changed wallpaper", risky="Change your wallpaper",
@@ -328,5 +327,5 @@ def set_wallpaper(image_path):
     p = common._resolve(image_path)
     if not p.is_file():
         return f"{p} is not an image file."
-    ctypes.windll.user32.SystemParametersInfoW(20, 0, str(p), 3)
+    nova_platform.current().set_wallpaper(p)
     return f"Wallpaper set to {p.name}."

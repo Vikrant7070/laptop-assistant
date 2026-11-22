@@ -15,14 +15,10 @@ CHROME = (5, "News - Google Chrome", "chrome.exe")
 WIN32_OUTSIDE_PLATFORM = {
     "nova/actions/coworker.py",           # hiding, parking and claiming research windows
     "nova/actions/recorder.py",           # its own hooks thread
-    "nova/actions/speedup.py",
-    "nova/actions/tools/system.py",
     "nova/actions/tools/windows.py",      # moving, closing and minimising windows; keys and the clipboard
     "nova/actions/watcher.py",
     "nova/avatar/avatar.py",
     "nova/avatar/win32.py",               # the avatar's drawing calls (last step)
-    "nova/brain/cloud.py",                # DPAPI
-    "nova/core/app/session.py",
     "nova/core/desktop.py",
 }
 
@@ -101,3 +97,29 @@ def test_screen_readings_come_from_the_platform(desktop):
     desktop.taskbar = (3, (0, 708, 1366, 768))
     assert app.background.user_idle_secs() == 321.0 and presence.screen_locked() is True
     assert shared.work_area() == (0, 0, 1366, 728) and shared.autohide_taskbar() == (3, (0, 708, 1366, 768))
+
+
+def test_saved_keys_are_encrypted_through_the_platform(desktop):
+    from nova import store
+    from nova.brain import cloud
+    cloud.set_key("anthropic", "sk-test-123")
+    stored = store.current().keys.read_text(encoding="utf-8")
+    assert "sk-test-123" not in stored                       # never on disk in the clear
+    assert cloud.get_key("anthropic") == "sk-test-123"
+    with __import__("pytest").raises(cloud.CloudError):
+        cloud._dpapi(b"not ours", False)                     # Windows refusing -> the same CloudError as before
+
+
+def test_system_settings_go_through_the_platform(desktop, tmp_path):
+    from nova.actions import speedup
+    from nova.core import app
+    assert tools.set_dark_mode(True) == "Dark mode on." and desktop.dark is True
+    assert tools.set_dark_mode("off") == "Dark mode off." and desktop.logged("dark_mode") == [True, False]
+    pic = tmp_path / "sky.png"
+    pic.write_bytes(b"png")
+    assert tools.set_wallpaper(str(pic)) == "Wallpaper set to sky.png." and desktop.logged("wallpaper") == [str(pic)]
+    desktop.display_name = "Asha Verma"
+    assert app.session._windows_display_name() == "Asha"
+    desktop.display_name = ""
+    assert app.session._windows_display_name() == ""
+    assert speedup._commit() == desktop.memory

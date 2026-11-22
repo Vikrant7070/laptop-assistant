@@ -3,7 +3,8 @@
 Moved here unchanged from nova/actions/tools/windows.py: window listing and focus (step 1); the clipboard save /
 set / restore and the focused box's text (step 2); from checks.py, shared.py, presence.py, background.py and
 tools/common.py: window and monitor rectangles, the work area and an auto-hiding taskbar, dark mode, idle time, the
-lock screen and DPI awareness (step 3). Keys go through the `keyboard` package, plain clipboard text
+lock screen and DPI awareness (step 3); from brain/cloud.py, app/session.py, speedup.py and tools/system.py: DPAPI,
+the account's display name, memory commit, the wallpaper and the dark-mode switch (step 4). Keys go through the `keyboard` package, plain clipboard text
 through `pyperclip`, both imported on use.
 """
 import ctypes
@@ -30,6 +31,30 @@ class _APPBARDATA(ctypes.Structure):
 
 class _LASTINPUTINFO(ctypes.Structure):
     _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+
+class _MemStatus(ctypes.Structure):
+    _fields_ = [("dwLength", wintypes.DWORD), ("dwMemoryLoad", wintypes.DWORD),
+                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+
+class _Blob(ctypes.Structure):
+    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+
+def _dpapi(data, protect):
+    buf = ctypes.create_string_buffer(data, len(data))
+    src, out = _Blob(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char))), _Blob()
+    fn = ctypes.windll.crypt32.CryptProtectData if protect else ctypes.windll.crypt32.CryptUnprotectData
+    if not fn(ctypes.byref(src), None, None, None, None, 0, ctypes.byref(out)):
+        raise OSError("Windows couldn't encrypt/decrypt the saved key.")
+    try:
+        return ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        kernel32.LocalFree(out.pbData)
 
 
 class Win32Desktop:
@@ -179,6 +204,45 @@ class Win32Desktop:
             return True
         except Exception:
             return False
+
+    # -- the system (step 4)
+    def protect(self, data):
+        """DPAPI: bytes only this Windows account can decrypt. Raises OSError if Windows refuses."""
+        return _dpapi(data, True)
+
+    def unprotect(self, data):
+        return _dpapi(data, False)
+
+    def user_display_name(self):
+        """The Windows account's display name ("Vikrant Kumar"), "" if unknown."""
+        try:
+            size = ctypes.c_ulong(256)
+            buf = ctypes.create_unicode_buffer(256)
+            if ctypes.windll.secur32.GetUserNameExW(3, buf, ctypes.byref(size)):
+                return buf.value.strip()
+        except Exception:
+            pass        # intentional: the display name is a nicety; callers fall back to "boss"
+        return ""
+
+    def memory_commit(self):
+        """(used, limit) in bytes: RAM + pagefile that programs have claimed, and the most they can claim; None if unknown."""
+        m = _MemStatus()
+        m.dwLength = ctypes.sizeof(m)
+        if not kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+            return None
+        return m.ullTotalPageFile - m.ullAvailPageFile, m.ullTotalPageFile
+
+    def set_wallpaper(self, path):
+        """SPI_SETDESKWALLPAPER, saved and broadcast. -> did Windows accept it?"""
+        return bool(user32.SystemParametersInfoW(20, 0, str(path), 3))
+
+    def set_dark_mode(self, on):
+        """Apps and Windows itself in the dark (or light) theme."""
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                            0, winreg.KEY_SET_VALUE) as k:
+            for name in ("AppsUseLightTheme", "SystemUsesLightTheme"):
+                winreg.SetValueEx(k, name, 0, winreg.REG_DWORD, 0 if on else 1)
 
 
 # ------------------------------------------------------------------ the clipboard (moved unchanged from tools/windows.py)
