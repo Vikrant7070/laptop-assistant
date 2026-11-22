@@ -18,6 +18,7 @@ from nova.actions import judge
 from nova.actions import recorder
 from nova.actions import tools
 from nova import shared
+from nova import intents
 from nova import protocol
 from nova.log import log_exception
 
@@ -128,15 +129,6 @@ def new_turn():
         session.thoughts["turn"] += 1
 
 
-# "keep going" after she paused a long task: carry on with that task, don't start a new one (a skill matched
-# "keep going" to work-mode once and opened VS Code and Gmail instead).
-CONTINUE_RE = re.compile(r"^\W*(please\s+)?(ok(ay)?\W+)?(keep going|carry on|continue|go on|resume|proceed|"
-                         r"finish (it|that|the task)|jaari rakho|chalu rakho|aage badho|karte raho)\b", re.I)
-
-
-EMAIL_WORDS = re.compile(r"\b(e-?mails?|mails?|gmail|inbox|unread|otp|verification code)\b", re.I)    # her mail stays local
-
-
 def new_task(goal):
     """Start a request. Returns a note to add to the user's message (only when a paused task is resumed)."""
     task_log(f"\n=== {time.strftime('%Y-%m-%d')} REQUEST: {goal[:300]}")
@@ -150,7 +142,7 @@ def new_task(goal):
         session.state["last_trace"] = {"goal": last.get("goal", ""), "trace": list(last["trace"])}
     if not last.get("paused"):
         learning.record_episode(last)                 # the last task is over: one line in the episode log (learner.py)
-    if last.get("paused") and CONTINUE_RE.search(clean):
+    if last.get("paused") and intents.CONTINUE.search(clean):
         last["paused"] = False
         task_log(f"RESUMING paused task: {last['goal'][:200]}")
         session.think(f"▶️ Carrying on with: {last['goal'][:120]}", cloud_too=False)
@@ -197,7 +189,7 @@ def new_task(goal):
     if cloud.parse(config.brain(s)) and llm.cloud_resting():   # the cloud failed a moment ago: this whole task runs locally
         session.state["task"]["model"] = s["model"]
         task_log(f"CLOUD RESTING -> local {s['model']} for this task")
-    if cloud.parse(config.brain(s)) and not s.get("email_cloud") and not session.state["task"].get("model") and EMAIL_WORDS.search(clean):
+    if cloud.parse(config.brain(s)) and not s.get("email_cloud") and not session.state["task"].get("model") and intents.EMAIL.search(clean):
         session.state["task"]["model"] = s["model"]      # her mail never goes to a cloud brain unless ⚙ allows it
         task_log(f"EMAIL: local {s['model']} for this task")
     if not cloud.parse(task_brain(s)) and not direct:      # no brain turn coming: no helper brain to load
@@ -217,15 +209,10 @@ def choose_local_route(task, s):
     """Pick the local helper brain from the request's words (brain/router.py); _agent_loop acts on it next turn."""
     if task and router.options(s)["auto_route"] and not task.get("routed"):
         goal = task.get("goal", "")
-        if JOB_STATUS_RE.search(goal):      # "how's the coding job going?" is a background_jobs lookup, not code
+        if intents.JOB_STATUS.search(goal):      # "how's the coding job going?" is a background_jobs lookup, not code
             task["route"] = None            # (live 2026-11-21: the coder brain took 269 s and guessed "still running")
             return
         task["route"] = "code" if router.code_wanted(goal) else "deep" if router.deep_wanted(goal) else None
-
-
-JOB_STATUS_RE = re.compile(r"\b(how'?s|how is|is|status of|progress (of|on)|done with|finished)\b.{0,40}\b(job|jobs|"
-                           r"worker|research)\b|\b(job|jobs|worker)\b.{0,30}\b(going|done|finished|ready|status|"
-                           r"progress)\b", re.I)
 
 
 def local_route_for(task, s):
@@ -312,10 +299,6 @@ def more_tools(task, need):
     return "You now also have these tools: " + ", ".join(added) + ". Use the right one now."
 
 
-WATCH_SEARCH_RE = re.compile(r"\b(show me|on (my|the) screen|in front of me|open (google|chrome)|let me (see|watch)|"
-                             r"browse|in chrome|in the browser)\b", re.I)
-
-
 def wrong_app(c):
     """The request named an app ("type hello in notepad"): refuse keys/typing that would land in another window
     (2026-11-20 she pressed ctrl+n in VS Code and typed there, because Notepad wasn't open). None when it's fine."""
@@ -344,7 +327,7 @@ def not_open_note(text):
 
 def _execute_one(c, approved, activity, model):
     check_stop()
-    if c["name"] == "web_research" and not WATCH_SEARCH_RE.search(config._unspoken(((session.state.get("task") or {}).get("goal")) or "")):
+    if c["name"] == "web_research" and not intents.WATCH_SEARCH.search(config._unspoken(((session.state.get("task") or {}).get("goal")) or "")):
         # The small brain picks the on-screen Google tool for plain "research X" and then makes up the answer
         # (it never reads a page). Plain research belongs in the background job, which really reads sources.
         q = (c.get("args") or {}).get("query") or ""

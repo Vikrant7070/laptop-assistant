@@ -7,5 +7,5 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 | Area (paths) | Owner (session, agent or person) | Branch | Since |
 |---|---|---|---|
 | Manager Phase 4: step 0 merged (PR #24); step 4-pre (task state) added to `docs/plans/nova-manager-plan.md` (doc only); the code and the manager loop (`nova/actions/manager.py`) aren't started, they wait for the user's go-ahead | Claude session (manager plan) | `docs/manager-task-state` | 2026-11-22 |
-| Improvement roadmap Phase 1: R9 event stream (`nova/core/app/eventbus.py`, `background.py`, `voice_io.py`, `session.py`, `static/nova.js`, `static/ear.html`); R7, the skills split and the docs tidy-up are merged | Claude session (roadmap Phase 1) | `feat/r9-event-stream` | 2026-11-22 |
+| Improvement roadmap Phase 1 (structure items R14, R15, R11, R13, R12, R10): `nova/intents.py`, then prompts, threads, storage, platform, voice state | Claude session (roadmap structure) | `refactor/r14-intents` | 2026-11-22 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |

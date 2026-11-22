@@ -24,6 +24,7 @@ from nova.actions import learner
 from nova.actions import workers
 from nova.brain import toolpick
 from nova.actions import tools
+from nova import intents
 from nova import protocol
 from nova.core.app import api
 
@@ -32,9 +33,6 @@ offer = {"job": None, "until": 0.0}      # the "want to see it?" she asked last 
 
 
 offers_waiting = []                      # earlier finished jobs whose offer wasn't answered yet: (job, until)
-
-
-SHOW_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|haan?|show( it| me)?|open it|let me see|please)\b", re.I)
 
 
 OFFER_SECS = 900
@@ -122,8 +120,8 @@ def take_offer(text, force=None, job_id=None):
         return None
     clean = config._unspoken(text).strip()
     short = len(clean.split()) <= 8
-    yes = force is True or (force is None and short and SHOW_RE.search(clean))
-    no = force is False or (force is None and short and voice_io.NO_RE.search(clean) and not yes)
+    yes = force is True or (force is None and short and intents.SHOW.search(clean))
+    no = force is False or (force is None and short and intents.NO.search(clean) and not yes)
     if not (yes or no):
         return None
     if offer["job"] is job:
@@ -334,8 +332,8 @@ def tell_away(line):
 
 def phone_message(text):
     conversation.task_log(f"PHONE in: {text[:200]}")
-    if session.state["pending"] and len(text.split()) <= 4 and (voice_io.YES_RE.search(text) or voice_io.NO_RE.search(text)):
-        out, _ = voice_io.confirm_pending(bool(voice_io.YES_RE.search(text)) and not voice_io.NO_RE.search(text), quiet=True, remote=True)
+    if session.state["pending"] and len(text.split()) <= 4 and (intents.YES.search(text) or intents.NO.search(text)):
+        out, _ = voice_io.confirm_pending(bool(intents.YES.search(text)) and not intents.NO.search(text), quiet=True, remote=True)
     else:
         out, _ = body.answer(f"{PHONE_TAG} {text}", quiet=True, remote=True)
     voice_io.push_event({"me": "📱 " + text, **{k: v for k, v in out.items() if k != "images"}})
@@ -370,8 +368,8 @@ MOBILE_TAG = protocol.MOBILE_TAG
 
 def mobile_message(text):
     conversation.task_log(f"MOBILE in: {text[:200]}")
-    if session.state["pending"] and len(text.split()) <= 4 and (voice_io.YES_RE.search(text) or voice_io.NO_RE.search(text)):
-        out, _ = voice_io.confirm_pending(bool(voice_io.YES_RE.search(text)) and not voice_io.NO_RE.search(text), quiet=True, remote=True)
+    if session.state["pending"] and len(text.split()) <= 4 and (intents.YES.search(text) or intents.NO.search(text)):
+        out, _ = voice_io.confirm_pending(bool(intents.YES.search(text)) and not intents.NO.search(text), quiet=True, remote=True)
     else:
         out, _ = body.answer(f"{MOBILE_TAG} {text}", quiet=True, remote=True)
     voice_io.push_event({"me": "📱 " + text, **{k: v for k, v in out.items() if k != "images"}})
@@ -590,9 +588,6 @@ HELP_SECS = 180          # a bare "yes" answers the help offer this long
 HELP_EVERY = 90          # at most one help offer per 90 s
 
 
-HELP_YES_RE = re.compile(r"^\W*(help( me)?|close it|fix it|please)\b", re.I)
-
-
 help_offer = {"item": None, "until": 0.0, "id": 0, "at": 0.0}
 
 
@@ -622,8 +617,8 @@ def take_help(text, force=None, offer_id=None):
         return None
     clean = config._unspoken(text).strip()
     short = len(clean.split()) <= 6
-    yes = force is True or (force is None and short and bool(voice_io.YES_RE.search(clean) or HELP_YES_RE.search(clean)))
-    no = force is False or (force is None and short and bool(voice_io.NO_RE.search(clean)) and not yes)
+    yes = force is True or (force is None and short and bool(intents.YES.search(clean) or intents.HELP_YES.search(clean)))
+    no = force is False or (force is None and short and bool(intents.NO.search(clean)) and not yes)
     if not (yes or no):
         return None
     help_offer.update(item=None, until=0.0)

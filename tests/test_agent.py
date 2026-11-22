@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from nova import intents
 from nova import store
 from nova.core import app
 
@@ -117,7 +118,7 @@ def test_trimmed_history_keeps_task_request():
     ("how much battery do I have", "get_system_status"), ("is my internet working", "network_info"),
 ])
 def test_fact_shortcuts(text, tool):
-    assert next(t for rx, t in app.FACT_ASK if rx.search(text)) == tool
+    assert next(t for rx, t in intents.FACT if rx.search(text)) == tool
 
 
 @pytest.mark.parametrize("text,action", [
@@ -125,13 +126,13 @@ def test_fact_shortcuts(text, tool):
     ("turn on subtitles", "captions"), ("skip this video", "next"),
 ])
 def test_video_shortcuts(text, action):
-    assert next(a for rx, a in app.VIDEO_ASK if rx.search(text)) == action
+    assert next(a for rx, a in intents.VIDEO if rx.search(text)) == action
 
 
 @pytest.mark.parametrize("text,yes", [("yes please", True), ("haan kar do", True), ("no thanks", False), ("nahi", False)])
 def test_voice_yes_no(text, yes):
-    assert bool(app.YES_RE.search(text)) == yes
-    assert bool(app.NO_RE.search(text)) == (not yes)
+    assert bool(intents.YES.search(text)) == yes
+    assert bool(intents.NO.search(text)) == (not yes)
 
 
 def test_speech_stream_hides_window_list():

@@ -19,6 +19,7 @@ from nova.actions import questions
 from nova.actions import recorder
 from nova.actions import tools
 from nova import shared
+from nova import intents
 from nova import protocol
 from nova.shared import REACTIONS
 from nova.core.app import api
@@ -86,10 +87,6 @@ def question_line(now=None):
     return f"{lead}: {q['text']} (I'm asking because {q['why']}.)"
 
 
-ANSWER_YES_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|do it|go ahead|please( do)?|save it|haan?|han|ji|"
-                           r"of course)\b", re.I)
-
-
 def take_question(text, force=None):
     """'yes' / 'no' right after her question from the daily list. Returns her answer, or None if this isn't one."""
     pend = session.state.get("question")
@@ -100,8 +97,8 @@ def take_question(text, force=None):
         return None
     clean = config._unspoken(text).strip()
     short = len(clean.split()) <= 8
-    yes = force is True or (force is None and short and bool(ANSWER_YES_RE.search(clean)))
-    no = force is False or (force is None and short and bool(voice_io.NO_RE.search(clean)) and not yes)
+    yes = force is True or (force is None and short and bool(intents.ANSWER_YES.search(clean)))
+    no = force is False or (force is None and short and bool(intents.NO.search(clean)) and not yes)
     if not (yes or no):
         return None             # something else: the question stays on the list for another day
     session.state.pop("question", None)
@@ -136,33 +133,18 @@ def save_offered_skill(data):
     return msg
 
 
-RESEARCH_CUE = re.compile(
-    r"\b(research|look (it |that |this )?up|look into|find out|search|google|investigate|dig (in|into)|compare|"
-    r"comparison|versus|vs\.?|latest|news|current|today'?s|prices?|reviews?|best|top \d+|sources?|report|"
-    r"on the (web|internet)|online|in the background|deep dive)\b", re.I)
-
-
 def _asked_to_research(task):
     """Did the user's request ask for research / looking something up? (Explaining a topic is not.)"""
     goal = (task or {}).get("goal") or ""
-    return bool(RESEARCH_CUE.search(config._unspoken(goal)))
-
-
-WATCH_START_RE = re.compile(r"^\W*(ok(ay)?\W+|hey\W+)?(nova\W+)?(please\W+)?(watch me\b|watch (how|what) i do\b|"
-                            r"watch and learn\b|let me show you\b|i'?ll show you( how)?\b|learn (this|from me)\b|"
-                            r"record (this|what i do)\b)", re.I)
-
-
-WATCH_DONE_RE = re.compile(r"^\W*(ok(ay)?\W+|so\W+)?(nova\W+)?(i'?m |i am |all )?(done|finished|that'?s it|that'?s all|"
-                           r"stop watching|you can stop( watching)?)(\W+nova)?\W*$", re.I)
+    return bool(intents.RESEARCH.search(config._unspoken(goal)))
 
 
 def watch_command(text):
     """'watch me' / 'done' -> the answer dict, or None if the request is something else."""
     t = config._unspoken(text).strip()
-    if recorder.recording() and WATCH_DONE_RE.search(t):
+    if recorder.recording() and intents.WATCH_DONE.search(t):
         return _watch_answer(finish_watching())
-    if WATCH_START_RE.search(t):
+    if intents.WATCH_START.search(t):
         return _watch_answer(start_watching_now(t))
     return None
 
@@ -275,20 +257,6 @@ def _say_final(final, activity):
     return {"reply": final, "activity": activity, "say": final}
 
 
-CORRECTION_RE = re.compile(
-    r"(that'?s (wrong|not right|not what|incorrect)|not what i (asked|said|meant|wanted)|wrong (one|window|app|tab|file|thing)|"
-    r"\byou (didn'?t|did not|forgot|missed|got (it|that) wrong|made a mistake|misunderstood|misheard)\b|"
-    r"\bi (said|told you|asked you|asked for|meant)\b|^\W*no[,.! ]+(not|i |that|it|you|wrong)|why did you|stop doing|"
-    r"don'?t do that|\bincorrect\b|\bgalat\b|\bnot like that\b)", re.I)
-
-
-ABOUT_ME_RE = re.compile(
-    r"\b(my name is|call me|i am a|i'?m a|i work|i study|my job|i like|i love|i enjoy|i prefer|i hate|i don'?t like|"
-    r"my favou?rite|i usually|i always|i never|every (day|morning|evening|night|week)|i live|i'?m from|i am from|"
-    r"my (wife|husband|mom|mother|dad|father|brother|sister|friend|boss|girlfriend|boyfriend|son|daughter|team|company)|"
-    r"remember that|from now on|next time|in future|always (do|use|open|reply|answer)|never (do|use|open))\b", re.I)
-
-
 FAILED_RE = re.compile(r"(i don'?t think i finished|\bi (couldn'?t|could not|wasn'?t able to)\b|didn'?t work|\bfailed\b|i'?m stuck)", re.I)
 
 
@@ -349,12 +317,12 @@ def why_review(user_text, out):
     if {"Saved a lesson", "Updated your profile", "Remembered something"} & set(activity):
         return None                            # she already wrote it down herself
     clean_text = config._unspoken(user_text)
-    if CORRECTION_RE.search(clean_text):
+    if intents.CORRECTION.search(clean_text):
         return "the user corrected Nova or was unhappy with what she did"
     task = session.state.get("task") or {}
     if FAILED_RE.search(out.get("reply") or "") or (task.get("nudged") and task.get("done") is False):
         return "Nova could not finish what was asked"
-    if ABOUT_ME_RE.search(clean_text):
+    if intents.ABOUT_ME.search(clean_text):
         return "the user said something about themselves or how they want things done"
     return None
 
@@ -401,7 +369,7 @@ def after_turn(user_text, out):
     """Everything that happens once an answer is out: her body reacts, and she may learn from the exchange."""
     try:
         clean_text = config._unspoken(user_text)
-        corrected = bool(CORRECTION_RE.search(clean_text))
+        corrected = bool(intents.CORRECTION.search(clean_text))
         asked = session.state.pop("react_after", None)      # the brain's own pick (react tool) wins over the automatic one
         session.state.pop("invent", None)
         stage = out.get("stage_reaction") or shared.stage_reaction(shared.stage_directions(out.get("reply") or "")[1])

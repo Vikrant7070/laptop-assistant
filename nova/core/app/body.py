@@ -11,6 +11,7 @@ from nova.avatar import avatar_client
 from nova.brain import llm
 from nova.audio import sfx
 from nova.actions import tools
+from nova import intents
 from nova import protocol
 from nova.shared import REACTIONS
 
@@ -31,28 +32,6 @@ DANCE_NAMES = ["thumka", "bhangra", "garba", "dandiya", "kathak", "ghoomar", "la
 
 
 DANCE_WORDS = r"(dance|dancing|move|moves|step|steps|thumka|jig|twerk|moonwalk|pose|routine|groove|nachna|naach|nach)"
-
-
-_NAME = r"(?:hey |hi |ok |okay )?(?:nova|novah|noah|nover|nava|nowa|sophia)"
-
-
-_BODY_POLITE = re.compile(rf"^\W*(?:{_NAME}\W+)?(?:(?:no|nope|nah|arey|arre|yaar|oh)\W+)*|(?:\W+{_NAME})?\W*$", re.I)
-
-
-BODY_ASK_RE = re.compile(
-    r"^(?:(?:can|could|will|would) you |please |now |just |go |ok |okay |come on |show me |let'?s see you |"
-    r"i want (?:to see )?you to |i'?d like you to |do you know how to )*"
-    r"(?:(?P<verb>do|give me|show me|perform|try) (?:a |an |the |some |your |my |that |one |another |me a )?"
-    r"(?:little |quick |small |cute |nice |happy |big |proper |real |usual |normal |regular |own )?)?"
-    r"(?P<what>[a-z][a-z' -]{1,30}?)"
-    r"(?:\s+(?:for me|for us|again|once more|now|please|one more time|properly|for real|a bit|"
-    r"(?P<times>two|three|four|five|\d) times|twice))*\W*$", re.I)
-
-
-BODY_NOT_DONE_RE = re.compile(
-    r"\b(?:you'?re not|you are not|you aren'?t|you'?re still not|you are still not|you never)\s+(?P<a>\w+ing)\b|"
-    r"\byou (?:didn'?t|did not|don'?t|do not|haven'?t)\s+(?P<b>dance|clap|spin|laugh|wave|bow|jump)\b|"
-    r"\b(?:i )?(?:can'?t|cannot|don'?t) see you\s+(?P<c>\w+ing)\b", re.I)
 
 
 _TIMES = {"two": 2, "twice": 2, "three": 3, "four": 4, "five": 5}
@@ -80,7 +59,7 @@ def body_command(text):
     A dance she doesn't know ('do a desi thumka') -> she asks what to do. Anything else -> None (the brain)."""
     if session.state.get("remote"):
         return None
-    t = _BODY_POLITE.sub("", config._unspoken(text).strip()).strip()
+    t = intents.BODY_POLITE.sub("", config._unspoken(text).strip()).strip()
     if not t or len(t.split()) > 9:
         return None
     asked = session.state.pop("body_ask", None)       # she asked "make one up, or my usual dance?" - this is the answer
@@ -101,14 +80,14 @@ def body_command(text):
         if re.search(r"\b(usual|normal|regular|old|known|dance|that one|the one you know)\b", t, re.I):
             t = "dance"
     name, times, reply = None, None, None
-    miss = BODY_NOT_DONE_RE.search(t)
+    miss = intents.BODY_NOT_DONE.search(t)
     if miss:
         word = (miss.group("a") or miss.group("b") or miss.group("c") or "").lower()
         name = BODY_WORDS.get(word)
         if name:
             reply = f"Sorry! Here's a real {name} for you." if name == "dance" else "Sorry! Here it is, for real."
     if not name:
-        m = BODY_ASK_RE.match(t)
+        m = intents.BODY_ASK.match(t)
         if not m:
             return None
         what = m.group("what").strip()
@@ -150,19 +129,19 @@ def look_first(text, activity):
         activity.extend(moved["activity"])
         return moved
     text = config._unspoken(text)       # only the user's words: the 📱 phone note itself mentions "the screen"
-    video_action = next((a for rx, a in voice_io.VIDEO_ASK if rx.search(text)), None)
+    video_action = next((a for rx, a in intents.VIDEO if rx.search(text)), None)
     if video_action and tools._video_window():
         name, args = "video_control", {"action": video_action}
-    elif voice_io.SELECTION_ASK.search(text):     # before SCREEN_ASK: a screenshot only showed her one line of the selection
+    elif intents.SELECTION.search(text):     # before SCREEN: a screenshot only showed her one line of the selection
         name, args = "read_selection", {}
-    elif voice_io.SCREEN_ASK.search(text):
+    elif intents.SCREEN.search(text):
         name, args = "look_at_screen", {"question": text}
-    elif voice_io.CAMERA_ASK.search(text):
+    elif intents.CAMERA.search(text):
         name, args = "look_through_camera", {"question": text}
     else:
         # Plain facts, in English or Hinglish. The small model sometimes answers these from its head ("12:45 baje",
         # "Speed 10 Mbps"); fetching the fact first makes the answer right, and saves one round trip to the model.
-        name, args = next(((tool, {}) for rx, tool in voice_io.FACT_ASK if rx.search(text)), (None, None))
+        name, args = next(((tool, {}) for rx, tool in intents.FACT if rx.search(text)), (None, None))
         if not name:
             return
     session.think({"look_at_screen": "👀 You asked about your screen - I'll look at it first.",
@@ -178,7 +157,7 @@ def look_first(text, activity):
                              {"role": "assistant", "content": json.dumps({"tool": call["name"], "args": call["args"]})})
     session.state["messages"].extend(judging.execute([call], True, activity, model))
     out = session.state["last_outs"][0]
-    if name == "read_selection" and not voice_io.READ_MORE_ASK.search(config._unspoken(text)) and not out.startswith(("Error", "Nothing is")):
+    if name == "read_selection" and not intents.READ_MORE.search(config._unspoken(text)) and not out.startswith(("Error", "Nothing is")):
         # Just "read it": say the text itself. Through the brain it came out as one line (a summary, or the local
         # model's short reply limit), so the words are read out word for word here instead.
         return {"reply": out, "activity": activity, "say": out.split("\n[... cut here")[0]}

@@ -1,7 +1,6 @@
 """Her voice and ears: speaking, the ear bubble, wake word and conversation mode, sleep, barge-in, naps."""
 
 
-import re
 import threading
 import time
 
@@ -14,6 +13,7 @@ from nova.brain import retrieval
 from nova.actions import skills
 from nova.brain import toolpick
 from nova.audio import voice
+from nova import intents
 from nova import protocol
 from nova.log import log_exception
 from nova.core.app import config, conversation, eventbus
@@ -36,7 +36,7 @@ def use_character_voice_and_name(ch):
     global JUST_STOP_RE
     voice.speak.NEURAL_VOICE = ch["voice"]        # its home module: speak.py reads it when she talks
     voice.set_wake(characters.wake_names(ch), ch["wake"]["hint"], ch["name"])
-    JUST_STOP_RE = just_stop_re(voice.NOVA_NAMES)
+    JUST_STOP_RE = intents.just_stop_re(voice.NOVA_NAMES)
 
 
 def apply_character(cid):
@@ -97,47 +97,6 @@ def announce(text, spoken=None):
     bubble(text)
 
 
-CAMERA_ASK = re.compile(
-    r"\b(look at me|see me|how do i look|how am i looking|what am i (holding|wearing|doing)|"
-    r"what('?s| is) (this|in my hand)|(through|use|open|check) (the |your |my )?(web)?cam(era)?|"
-    r"can you see|do i look|am i smiling|what do you see)\b", re.I)
-
-
-SCREEN_ASK = re.compile(
-    r"\b(my screen|on (the |my )?screen|this screen|screen ?shot of|look at (this|my) (window|page|tab|error|code)|"
-    r"read (this|that|the) (error|message|page)|what('?s| is) this error|this error|what am i looking at|"
-    r"what('?s| is) open|what do you see on|"
-    r"(any |a |some )?(suggestions?|tips?|ideas?)\b[^.?!]{0,30}\b(screen|working on|doing|this)|"
-    r"what should i do next|help me with (this|what i'?m doing))\b", re.I)
-
-
-# Text the user highlighted: "read this selected text", "what does the highlighted part say", "padho jo select kiya".
-SELECTION_ASK = re.compile(r"\b(selected|selection|highlighted|highlight|select kiya|select ki)\b", re.I)
-
-
-# ...and more than reading it out: then the brain gets the text and does the rest.
-READ_MORE_ASK = re.compile(r"\b(summar|translat|explain|mean|fix|rewrite|correct|improve|check|reply|answer|why|"
-                           r"short|simplif|convert|count|search|google|save|note|email|type|paste|samjha|matlab)", re.I)
-
-
-VIDEO_ASK = [  # clear video-player requests, done directly (the small model mixed up video vs window full screen)
-    (re.compile(r"\b(exit|leave|close|get out of|come out of|stop|remove|minimi[sz]e)\b[^.?!]{0,25}full ?screen", re.I),
-     "exit_fullscreen"),
-    (re.compile(r"\bfull ?screen\b|\b(video|it)\b[^.?!]{0,20}\b(bigger|whole screen|entire screen)", re.I), "fullscreen"),
-    (re.compile(r"\b(turn on|show|enable|switch on)\b[^.?!]{0,15}\b(subtitles|captions|cc)\b", re.I), "captions"),
-    (re.compile(r"\btheat(er|re) mode\b", re.I), "theater"),
-    (re.compile(r"\b(next video|skip (this|the) (video|song))\b", re.I), "next"),
-]
-
-
-FACT_ASK = [
-    (re.compile(r"\b(what(?:'s| is) the time|what time|time (?:kya|kitna)|kitne baj|kitna baj|baje h|baj gaye|samay|"
-                r"what(?:'s| is) the date|today'?s date|what day|aaj (?:kya|kaun)|tarikh|tareekh)", re.I), "get_datetime"),
-    (re.compile(r"\b(battery|charging|charge (?:kitna|hai|left))", re.I), "get_system_status"),
-    (re.compile(r"\b(internet|wi-?fi|network|net (?:chal|slow|band))", re.I), "network_info"),
-]
-
-
 def warm_brain():
     """Run the long system prompt through the model once at start-up, so the first real question isn't the slow one.
     Also loads the small model that picks facts and tools for each request (CPU, a few seconds)."""
@@ -163,28 +122,10 @@ ear_cmds = []                         # commands for the ear bubble
 ear_hooks = {"show": None, "hide": None}   # set by desktop.py
 
 
-# English and Hindi/Hinglish (Whisper writes Hindi in English letters - see voice.HINGLISH_HINT).
-# Whisper often mishears it ("Noah got to sleep", "go too sleep"), so the verbs and the "to" are loose. Only short
-# utterances count (wants_sleep), so "I can't go to sleep at night, any tips?" is a normal question.
-SLEEP_RE = re.compile(r"\b((go|got|goes|going|gotta|gonna|gone)( (to|too|two|2|ta))? ?sleep|sleep now|(go )?back to sleep|(you can|time to|now) sleep|"
-                      r"sleep,? (nova|noah|now)|(nova|noah),? sleep|take a nap|nap time|go to bed|stop listening|"
-                      r"good ?night|that'?s all|bye,? (nova|noah)|so ?jao|sunna band|shubh ratri|bas itna hi)\b", re.I)
-
-
 SLEEP_MAX_WORDS = 8
 
 
-# A bare "Nova, stop" / "ruko" / "bas" / "chup" said to her is a command, not a chat: it ends whatever she's doing
-# (talking, a task) and goes nowhere near her brain. Before, it went to the brain, which chatted back ("I'm here,
-# Vikrant - ready to help") - the opposite of stop. "Stop the music" has more words, so it still goes to the brain.
-def just_stop_re(names):
-    return re.compile(rf"^\W*(?:(?:hey|hi|ok|okay|arey)\W+)?(?:{names}\W+)?(?:please\W+)?"
-                      r"(?:stop(?: it| that| talking| now)?|ru+c*k*h?o|roko|ruk jao|bas(?: karo)?|chup(?: raho| ho jao)?|"
-                      r"enough|quiet|be quiet|shut up|that'?s enough)"
-                      rf"(?:\W+(?:{names}|please|now|yaar))*\W*$", re.I)
-
-
-JUST_STOP_RE = just_stop_re(voice.NOVA_NAMES)
+JUST_STOP_RE = intents.just_stop_re(voice.NOVA_NAMES)
 
 
 use_character_voice_and_name(characters.get(config.settings().get("character")))   # her name, voice and "stop" words
@@ -207,14 +148,7 @@ def stopped_by_voice(text, via="silent"):
 def wants_sleep(text):
     """Is this the user telling her to go to sleep (not just a sentence that mentions sleep)?"""
     clean = config._unspoken(text)
-    return bool(SLEEP_RE.search(clean)) and len(clean.split()) <= SLEEP_MAX_WORDS
-
-
-YES_RE = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|do it|go ahead|allow( it)?|please do|haan?|han|ji|"
-                    r"th?ee?k hai|kar ?do|karo|chalega|bilkul)\b", re.I)
-
-
-NO_RE = re.compile(r"^\W*(no|nope|don'?t|cancel|stop|never ?mind|nahin?|nai|mat|rehne do|ruko?|chhodo)\b", re.I)
+    return bool(intents.SLEEP.search(clean)) and len(clean.split()) <= SLEEP_MAX_WORDS
 
 
 def ear_listen():
@@ -546,8 +480,8 @@ def heard(text, via="bubble"):
     eventbus.publish("thinking", {"on": True})
     avatar_client.send("anim", name="think", timeout=2)
     try:
-        if session.state["pending"] and (YES_RE.search(text) or NO_RE.search(text)):
-            out, status = confirm_pending(bool(YES_RE.search(text)))
+        if session.state["pending"] and (intents.YES.search(text) or intents.NO.search(text)):
+            out, status = confirm_pending(bool(intents.YES.search(text)))
         else:
             out, status = body.answer(f"{protocol.SPOKEN} {text}")
     finally:
