@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.request
 
+from nova import prompts as promptfiles
 from nova.brain import cloud, gpu_signal
 
 HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
@@ -139,10 +140,7 @@ def text_protocol(tools):
         args = ", ".join(f'{k}{"" if k in t["input_schema"]["required"] else "?"}: '
                          f'{"|".join(v["enum"]) if "enum" in v else v["type"]}' for k, v in props.items())
         lines.append(f"- {t['name']}({args}): {t['description']}")
-    return ("\n\nTOOLS. To use a tool, reply with ONLY one JSON object and nothing else, for example:\n"
-            '{"tool": "get_system_status", "args": {}}\n'
-            "You will then receive the result in a message starting with TOOL RESULT. Use one tool at a time. "
-            "When you are done, reply normally in plain text (no JSON).\nAvailable tools:\n" + "\n".join(lines))
+    return "\n\n" + promptfiles.load("text_protocol") + "\n" + "\n".join(lines)
 
 
 def _parse_text_call(text, tool_names):
@@ -409,10 +407,7 @@ def see(image_b64, question, preferred=None, kind="camera"):
     if kind == "check":      # Nova checking her own work: the caller wrote the whole prompt
         prompt = question
     elif kind == "screen":
-        prompt = (f"This is a screenshot of the user's computer screen. {question or 'What is on the screen?'}\n"
-                  "Answer in 2-5 short sentences. Name the apps/windows you see, and quote any important text "
-                  "(like error messages) exactly. Never repeat passwords, API keys, tokens or other secrets - "
-                  "just say a secret is visible.")
+        prompt = promptfiles.load("see_screen", question=question or "What is on the screen?")
     else:
         prompt = (question or "Describe what you see.") + \
             "\nAnswer in 2-4 short sentences. Describe only what is visible; don't guess who a person is."

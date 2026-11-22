@@ -6,6 +6,7 @@ import re
 import threading
 import time
 
+from nova import prompts as promptfiles
 from nova import store
 from nova.avatar import avatar_client
 from nova.avatar import body as body_module
@@ -44,15 +45,7 @@ MAX_TURNS, MAX_TASK_TURNS = 10, 24
 DEEP_TASK_TURNS = 50
 
 
-CHECK_PROMPT = """This is a screenshot of the user's computer screen. An assistant is doing a task for the user, one step at a time.
-Task: {goal}
-Step just done: {step} -> {result}
-Open windows, front first: {windows}
-Answer in exactly three lines, nothing else:
-SCREEN: one sentence - which app or page is in front and what it shows now
-STEP WORKED: yes or no
-TASK DONE: yes or no (yes if every part of the task has now been done; no if a part is still missing. A video's own
-page with one big player counts as playing - videos start by themselves. A list of search results is NOT playing.)"""
+CHECK_PROMPT = promptfiles.load("check")
 
 
 def task_log(line):
@@ -226,12 +219,7 @@ def local_route_for(task, s):
 
 # Live test: asked what's wrong with print('hi' - 1), the coder ran `python3` (on Windows that opens the Microsoft
 # Store), was told "Python was not found" and said to install Python - which was already there.
-CODER_NOTE = ("\n\nYOU ARE THE CODING BRAIN for this task. This laptop runs Windows: run Python as `python` (never "
-              "`python3` - on Windows that opens the Microsoft Store instead), and commands run in PowerShell. If the "
-              "user only asks what is wrong with some code, what an error means or how to write something, answer "
-              "straight away from what you know - run nothing. Run commands only when the job needs this laptop "
-              "(run, change, install or inspect something here). A command that fails is not proof that something "
-              "is missing: say what failed instead of guessing.")
+CODER_NOTE = "\n\n" + promptfiles.load("coder_note")
 
 
 CODER_QUESTION_NOTE = ("\n\nTHIS REQUEST IS A QUESTION. You have no tools for it: answer now in plain words - what is "
