@@ -568,6 +568,25 @@ it shows. The question card is needed by 4a, which asks the questions.
 - Also: AGENTS.md's live-test rule; the barge-in echo bug is an open item under R10 in the roadmap.
 - Not yet: step time limits; new planning triggers, the cloud planner and its privacy setting; the UI (c–e).
 
+**4-pre (c) as built (2026-11-22, branch `feat/manager-task-strip`, stacked on (b)):** `static/taskstrip.js`.
+- One line above the chat (`<details id="taskStrip">`): the goal, step N of M, what she is doing now (the tool
+  running, else the current plan step), and the time so far, counted in the page.
+  - running: **■ Stop** (the existing `/api/stop`);
+  - waiting (an approval, "do that step again?"): amber, "Waiting for you: …";
+  - stopped / interrupted: **▶ Continue** (`POST /api/task/pick` with the id, then the page sends "continue"
+    through the chat, so (b)'s safe-resume checks all apply) and **Drop it** (`POST /api/task/drop` → new status
+    *dropped*, never picked by "continue" again);
+  - stuck: Drop it; done / failed: shown 8 s, then hidden.
+- Click it: the plan with ✅ ⏳ ❌ ⏭ · and each step's result, where the plan came from, which brain, and the last
+  6 steps that really ran.
+- Data: `task_state.on_change` → `resume._changed` publishes a `task` event with `task_state.strip(card)` on every
+  card change (the page's existing `/api/stream`). `GET /api/task` is what to show when a page opens: the task in
+  memory while it runs or for 10 s after, else the newest one that can be carried on. The polling fallback reads
+  it every 2 s.
+- Live check (2026-11-22) on a separate copy (port 5098, throwaway data folder, voice off): the interrupted card
+  and the restart offer showed. Continue led to the redo question with no brain call, and the strip turned amber.
+  The strip had no sideways scroll at 375 px, and there were no console errors.
+
 ## 7. Phase 5 — Judges for workers' results
 
 Quality comes from measurement, not from the user's habits or the worker's own claim:

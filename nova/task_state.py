@@ -30,7 +30,8 @@ STEP_CHARS = 48             # one plan step's text on the card
 RESULT_CHARS = 70           # one run's result on the card
 
 ICONS = {"pending": "·", "started": "⏳", "done": "✅", "failed": "❌", "skipped": "⏭"}
-STATUSES = ("running", "waiting", "stopped", "interrupted", "done", "failed", "stuck")
+STATUSES = ("running", "waiting", "stopped", "interrupted", "done", "failed", "stuck", "dropped")
+on_change = None            # on_change(card): set by app.resume - the live task strip hears every change (4-pre c)
 SOURCES = ("skill", "deep brain", "cloud", "none")
 
 # A result that says the step never ran: not a failure of the step, it was skipped.
@@ -294,6 +295,36 @@ def mark(card, status, why=""):
 
 def _touch(card):
     card["updated"] = time.time()
+    if on_change is not None:
+        try:
+            on_change(card)
+        except Exception:
+            pass        # intentional: showing the card must never break the task; app.resume logs its own errors
+
+
+ACTIONS = {"running": ("stop",), "stopped": ("continue", "drop"), "interrupted": ("continue", "drop"),
+           "stuck": ("drop",)}
+
+
+def strip(card, runs=6):
+    """What the live task strip shows (plain JSON, cleaned like the card): the one line, and the card behind it."""
+    if card is None:
+        return {}
+    i = current(card)
+    open_run = next((r for r in card["runs"] if r["id"] in card["open"]), None) if card["open"] else None
+    now = (f"{open_run['tool']} {open_run['hint']}".strip() if open_run
+           else card["plan"][i]["text"] if i is not None else "")
+    acts = ACTIONS.get(card["status"], ())
+    if "continue" in acts and not resumable(card):
+        acts = ("drop",)
+    return {"id": card["id"], "goal": card["goal"], "status": card["status"], "why": card["why"],
+            "step": (i + 1) if i is not None else None, "steps": len(card["plan"]), "now": now,
+            "source": card["source"], "started": card["started"], "updated": card["updated"],
+            "done": sum(r["state"] == "done" for r in card["runs"]), "actions": list(acts),
+            "plan": [{"text": st["text"], "state": st["state"], "result": st["result"]} for st in card["plan"]],
+            "runs": [{"tool": r["tool"], "hint": r["hint"], "state": r["state"], "result": r["result"]}
+                     for r in card["runs"][-runs:]],
+            "read_only": bool(card.get("read_only"))}
 
 
 # ------------------------------------------------------------------ what the brain sees

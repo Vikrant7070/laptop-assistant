@@ -15,6 +15,9 @@
   4. then `take` / `note` hand the brain the saved card with "carry on from step N, don't redo ✅ steps".
 - **One laptop task at a time.** A new request while one is waiting or stopped leaves that one stopped and resumable
   (`leave`).
+- **The live task strip** (4-pre c, static/taskstrip.js): every card change is published as a "task" event with
+  task_state.strip(); GET /api/task is what the strip shows when a page opens; POST /api/task/pick + "continue" and
+  POST /api/task/drop are its buttons.
 """
 import re
 import time
@@ -22,8 +25,10 @@ import time
 from nova import db, intents, protocol, store, task_state
 from nova.actions import judge, skills
 from nova.actions import checks
-from nova.brain import router
+from nova.brain import cloud, router
 from nova.log import log_exception
+from nova.core.app import api, eventbus
+from flask import jsonify
 
 KEEP_DAYS = 30              # task cards older than this are deleted at start-up
 CHAT_TAIL = 12              # chat messages kept for after a restart
@@ -223,10 +228,11 @@ def _candidates():
 
 
 def _find(cid):
+    """A task card by id: the one in memory, else a saved one (any status, newest 50)."""
     cur = task_state.of(session.state.get("task"))
     if cur is not None and cur["id"] == cid:
         return cur
-    for card in db.load_tasks(statuses=task_state.RESUMABLE, limit=20):
+    for card in db.load_tasks(limit=50):
         if card.get("id") == cid:
             return task_state.upgrade(card)
     return None
@@ -252,6 +258,9 @@ def direct(text):
         got = _answer(ask, clean)
         if got is not False:
             return got
+        if ask["kind"] == "redo" and (card := _find(ask["ids"][0])) is not None and card["status"] == "waiting":
+            task_state.mark(card, "stopped", "you moved on")      # still there for "continue" later
+            save({"card": card})
     if not intents.RESUME.search(clean):
         return None
     cut = session.state.pop("cutoff", None)
@@ -350,6 +359,8 @@ def prepare(card, redo=None):
         r = half[-1]
         session.state["resume_ask"] = {"kind": "redo", "ids": [card["id"]], "ts": time.time()}
         what = f"{r['tool']} {r['hint']}".strip()
+        task_state.mark(card, "waiting", "do that step again?")
+        save({"card": card})
         return _out(f"When it stopped I was in the middle of a step ({what}) - it may have half happened. "
                     "Should I do that step again?", "Asked before redoing a step")
     if half and redo is False:
@@ -390,6 +401,78 @@ def leave(task):
     if card is not None and card["status"] in ("running", "waiting") and not task.get("paused"):
         task_state.mark(card, "stopped" if card["runs"] else "done", "a new request came")
         save(task)
+
+
+# ------------------------------------------------------------------ the live task strip (4-pre c)
+
+STRIP_DONE_SECS = 10        # a finished task stays on the strip this long (the page hides it after a few seconds)
+
+
+def brain_label(task=None):
+    """Which brain works on the task: the model it runs on, 'cloud (gemini)' for a cloud brain."""
+    task = task if task is not None else session.state.get("task") or {}
+    m = str(task.get("model") or config.brain())
+    c = cloud.parse(m)
+    return f"cloud ({c[0]})" if c else m
+
+
+def strip_for(card):
+    out = task_state.strip(card)
+    if out and task_state.of(session.state.get("task")) is card:
+        out["brain"] = brain_label()
+    return out
+
+
+def _changed(card):
+    eventbus.publish("task", strip_for(card))
+
+
+task_state.on_change = _changed
+
+
+def strip_now():
+    """What the strip shows right now: the task in memory while it runs (or just ended), else the newest one that
+    can be carried on, else nothing."""
+    cur = task_state.of(session.state.get("task"))
+    if cur is not None and (cur["status"] not in ("done", "failed", "dropped")
+                            or time.time() - cur["updated"] < STRIP_DONE_SECS):
+        return strip_for(cur)
+    try:
+        cards = _candidates()
+    except Exception:
+        log_exception("resume: the task strip")
+        return {}
+    return strip_for(cards[0]) if cards else {}
+
+
+@api.app.get("/api/task")
+def task_get():
+    return jsonify(strip_now())
+
+
+@api.app.post("/api/task/drop")
+def task_drop():
+    """The strip's "Drop it": the task is over and "continue" never picks it again."""
+    card = _find(api._text(api._body(), "id"))
+    if card is None:
+        return jsonify(error="That task isn't there any more."), 404
+    task_state.mark(card, "dropped", "you dropped it")
+    save({"card": card})
+    cur = session.state.get("task") or {}
+    if task_state.of(cur) is card:
+        cur.pop("paused", None)
+    conversation.task_log(f"TASK DROPPED: {card['goal'][:120]}")
+    return jsonify(strip_now())
+
+
+@api.app.post("/api/task/pick")
+def task_pick():
+    """The strip's "Continue": this task is the one the next "continue" carries on (the page then sends it)."""
+    card = _find(api._text(api._body(), "id"))
+    if card is None or not task_state.resumable(card):
+        return jsonify(error="That task can't be carried on."), 404
+    session.state["resume_ask"] = {"kind": "which", "ids": [card["id"]], "ts": time.time()}
+    return jsonify(ok=True)
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
