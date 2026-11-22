@@ -1,10 +1,11 @@
-Status: active — 2026-11-22, phases 1–3 and Phase 4 step 0 built (step 0 merged as PR #24); the manager loop design waits for the user's go-ahead.
+Status: active — 2026-11-22, phases 1–3 and Phase 4 step 0 built (step 0 merged as PR #24); step 4-pre (task state) added to the plan; the manager loop design waits for the user's go-ahead.
 
 # Nova as a manager — plan
 
 **Status (2026-11-22): phase 1 (Judge, `nova/actions/judge.py`), phase 2 (episode log + Learner,
 `nova/actions/learner.py`, `nova/actions/questions.py`), phase 3 (workers, `nova/actions/workers.py`) and Phase 4
-step 0 (research as a worker, PR #24) are built. The manager loop (rest of Phase 4) and phases 5–8 are not.** The user's answers are in
+step 0 (research as a worker, PR #24) are built. Step 4-pre (task state, section 6), the manager loop (rest of
+Phase 4) and phases 5–8 are not.** The user's answers are in
 section 9. Build the phases in order, one at a time, each on its own branch/commit with tests, and only after the
 user says go.
 
@@ -333,6 +334,8 @@ in, the same way `toolpick.CODING` does: build/make/create + site/app/page, "res
    - The Learner turns that into worker notes ("OpenCode did small README fixes 3/3"), which step 4 uses.
 
 **Build order (each its own commit and live check):**
+- **4-pre:** the task state (below): one working memory for Nova's own laptop tasks and worker jobs. 4a's brief is
+  built on it.
 - **4a:** triage, questions, brief. For now it shows the brief and the user says "go".
 - **4b:** worker pick from history, plus the research→coding chain.
 - **4c:** checks, one send-back round, report.
@@ -342,6 +345,80 @@ in, the same way `toolpick.CODING` does: build/make/create + site/app/page, "res
 user's "go", cheap OpenCode jobs included. The user will relax this later, once they have seen how the manager
 performs. Build it as a setting (default: ask for every job) so it can be loosened without a code change. Direct
 `start_coding_job` calls keep today's rules: OpenCode doesn't ask, Claude Code asks.
+
+### Step 4-pre — Task state: one working memory for every task (added 2026-11-22, waiting for the go-ahead)
+
+**Why (what happened on 2026-11-21, from `data/task_log.txt`):**
+- 21:33 "Is my laptop clean?" She started her answer. At 21:33:46 barge-in stopped her on her **own echo** (it
+  "heard" *"Not too bad, boss. R.E.M. is a big…"*, her own words).
+- The user said "continue, you were saying something". She answered "I'm here and ready". Asked "do you remember
+  what you were saying?", she said "I remember you said 'Going on'".
+- From 21:35, Nova was quit and restarted about once a minute (24 `QUIT (asked)` lines in the log). Each restart
+  starts her with no memory.
+
+**The gaps this shows:**
+1. **The chat lives only in memory** (`session.state["messages"]`). A restart, a crash or a quit wipes it. A
+   character switch clears it on purpose.
+2. **An unfinished laptop task isn't recorded anywhere.** After a Stop or a restart there's no "I was doing X, I got to
+   step 3". Worker jobs already survive a restart through `jobs.json`; Nova's own tasks don't.
+3. **A cut-off reply isn't marked as cut off.** The whole reply goes into the history as if she said all of it, and
+   "continue" has no code path. It goes to the small brain, which didn't make the connection, even with a learned
+   lesson about "keep going".
+4. **Barge-in can take her own echo for the user** (see the barge-in notes). This is a separate fix on the voice
+   side; listed here because it started the chain.
+
+**What exists today:**
+- `trimmed_history` keeps the request in front of a long task, so the goal never scrolls away.
+- `task["did"]` lists the tool calls that really ran. The brain sees it only in the one "not finished yet" push
+  (`conversation.py`, near the `nudged` check).
+- The deep brain (`router.make_plan`, `deepseek-r1:8b`) writes plans in a good shape
+  (`step - tool - how to tell it worked`, `RISKS`, `DONE WHEN`). It runs only on trigger words, a long request, or
+  `route_task`. It ran **0 times** in the current task log. Its plan is pasted into the instructions as plain text;
+  nothing tracks which step is done.
+
+**The design: a task card, kept by code, shown to the brain on every step.**
+
+```
+TASK: clean my laptop and tell me how much space was freed
+PLAN: 1 check disk ✅  2 clean temp files ✅  3 empty recycle bin ⏳  4 report
+DONE (really): get_system_status → disk 77%; clean_temp_files → 937 MB freed
+NOW: step 3
+```
+
+1. **One record per task** (`task_state`): goal, plan steps, steps done (with a one-line result each), the current
+   step, checks, and status (`running` / `stopped` / `interrupted` / `done` / `failed`).
+   - For a **laptop task** it's the card the small brain sees.
+   - For a **worker job** it's the job record, and 4a's brief is the worker version of the same card. One system,
+     not two.
+2. **Code writes the card, never the brain.** A step is ✅ only when its tool really ran and its check passed (the
+   Phase 1 Judge). The brain's own "done" is never enough.
+3. **Where the plan comes from, in order:** a skill's own steps → a cloud brain, if one is on (seconds) → the deep
+   brain (`deepseek-r1:8b`, about a minute with model swapping on the 6 GB GPU) → no plan (only goal + done + now).
+   The small 4B brain never writes the plan. Code drops any step that names a tool Nova doesn't have.
+4. **When to plan:** not for one-step requests or a skill with fixed steps. Plan when code sees a real multi-step task:
+   several actions joined by "and", no matching skill, or the task has already taken 3 or more steps.
+5. **Re-plan:** if a step fails twice, the planner gets the card ("steps 1–2 done, step 3 failed: X") and fixes the
+   rest of the plan. At most once per task.
+6. **Small:** the card stays under ~250 tokens. Older tool results it summarises can be cut from what the brain sees,
+   which frees room in the 8K window (~5300 tokens already go to instructions and tools).
+7. **Saved to disk** (through `nova/store.py`) when it changes. After a restart, a Stop or an interruption Nova says
+   "Before the restart I was on step 3 of cleaning your laptop. Should I continue?" She never carries on by herself;
+   the user says go.
+8. **Cut-off replies:** when barge-in stops her, the stored reply is cut to what was really spoken, marked as cut off,
+   and the rest is kept on the card. "Continue" / "go on" / "you were saying" are caught by code and finish the
+   unsaid part, with no brain turn.
+9. **Chat after a restart:** the last few turns are saved with the card and loaded back at start-up, so a restart
+   doesn't leave her blank. (This is the "reload" half; the searchable diary is the upgrade plan's A2.)
+
+**How to measure it:** run the task exam (`python -m nova.exam`, the user starts it) before and after, and compare
+the long tasks (3+ steps). Expect the gain there, not on one-step jobs.
+
+**Tests:** card built from real tool results only; brain claims don't tick a step; unknown tools dropped from a plan;
+card saved and reloaded after a restart; "continue" after a cut-off finishes the unsaid part; the card stays under its
+size limit.
+
+**Related:** upgrade plan A2 (saved, searchable chat history) and B3 (steering a running task) are planned and not
+built. The task state is what B3 would steer, so build it first.
 
 ## 7. Phase 5 — Judges for workers' results
 
