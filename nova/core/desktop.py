@@ -3,7 +3,6 @@
 Run:  pythonw desktop.py            (the launcher in the project folder; or double-click "Start Nova.bat")
       pythonw desktop.py --hidden   (start in the tray, used for auto-start)
 """
-import ctypes
 import os
 import subprocess
 import sys
@@ -73,7 +72,7 @@ def main():
     quitting = {"v": False}
     ducked = {"v": False}
     from nova.actions import tools
-    u32 = ctypes.windll.user32
+    from nova import platform
 
     def chat_hwnd():
         return next((h for h, title, _ in tools._windows() if title == "Nova"), None)
@@ -81,7 +80,7 @@ def main():
     def chat_on_screen():
         """Ask Windows directly (no pywebview event callbacks: those deadlocked when other threads moved the window)."""
         h = chat_hwnd()
-        return bool(h and u32.IsWindowVisible(h) and not u32.IsIconic(h))
+        return bool(h and platform.current().is_visible(h) and not platform.current().is_minimized(h))
 
     def show(*_):
         window.show()

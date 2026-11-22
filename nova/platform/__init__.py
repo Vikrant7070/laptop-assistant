@@ -84,6 +84,47 @@ class Desktop(Protocol):
     def dpi_aware(self) -> bool:
         """Make this process work in real pixels (so clicks land where UI Automation says)."""
 
+    def is_window(self, hwnd: int) -> bool: ...
+    def is_visible(self, hwnd: int) -> bool: ...
+    def is_minimized(self, hwnd: int) -> bool: ...
+    def is_maximized(self, hwnd: int) -> bool: ...
+    def is_hung(self, hwnd: int) -> bool: ...
+
+    def show(self, hwnd: int, cmd: int) -> None:
+        """ShowWindow: SW_MAXIMIZE 3, SW_SHOWNOACTIVATE 4, SW_MINIMIZE 6, SW_SHOWMINNOACTIVE 7, SW_RESTORE 9."""
+
+    def close(self, hwnd: int) -> None:
+        """Ask it to close, like clicking its X (WM_CLOSE): the app may still ask to save."""
+
+    def window_pid(self, hwnd: int) -> int: ...
+    def class_name(self, hwnd: int) -> str: ...
+    def title(self, hwnd: int) -> str: ...
+    def dpi(self, hwnd: int) -> int: ...
+
+    def frame_rect(self, hwnd: int) -> tuple:
+        """The visible rectangle, without the invisible resize borders."""
+
+    def move(self, hwnd: int, x: int, y: int, w: int, h: int, flags: int = 0) -> None:
+        """Move and size (SetWindowPos flags: SWP_NOZORDER 0x4, SWP_NOACTIVATE 0x10, SWP_SHOWWINDOW 0x40)."""
+
+    def set_placement(self, hwnd: int, rect: tuple, show_cmd: int) -> None:
+        """The restored rectangle and how the window is shown, in one go."""
+
+    def virtual_screen(self) -> tuple:
+        """(left, width) of all monitors together."""
+
+    def top_level(self) -> list:
+        """Every visible top-level window, titled or not: [(hwnd, class, title, pid, process name)]."""
+
+    def children(self, hwnd: int) -> list:
+        """Child windows: [(hwnd, class, title, visible)]."""
+
+    def cursor_pos(self) -> tuple: ...
+    def set_cursor(self, x: int, y: int) -> None: ...
+
+    def mouse(self, flags: int, data: int = 0) -> None:
+        """A raw mouse event: LEFTDOWN 0x2, LEFTUP 0x4, RIGHTDOWN 0x8, RIGHTUP 0x10, WHEEL 0x800 (data +-120 a notch)."""
+
     def protect(self, data: bytes) -> bytes:
         """Encrypt for this Windows account only (DPAPI). Raises OSError if it can't."""
 

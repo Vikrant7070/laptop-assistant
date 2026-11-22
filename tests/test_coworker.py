@@ -21,13 +21,13 @@ def wait_for(cond, secs=5):
 
 
 @pytest.fixture
-def fake_desktop(monkeypatch):
+def fake_desktop(monkeypatch, desktop):
     """A pretend browser/Notepad: windows open 'hidden', titles load instantly, nothing real appears."""
     opened = []
     monkeypatch.setattr(coworker, "open_hidden", lambda args, proc, match=None, wait=15: (opened.append((args, proc)), 4242)[1])
     monkeypatch.setattr(coworker, "_browser", lambda: ("chrome.exe", "chrome.exe"))
     monkeypatch.setattr(coworker, "_title", lambda h: "Compose Mail - me@example.com - Gmail - Google Chrome")
-    monkeypatch.setattr(coworker._user32, "IsWindow", lambda h: True)
+    monkeypatch.setattr(desktop, "is_window", lambda h: bool(h))     # the pretend windows exist
     monkeypatch.setattr(coworker, "keep_hidden", lambda h, front=None: None)
     real_sleep = time.sleep
     monkeypatch.setattr(coworker.time, "sleep", lambda s: real_sleep(0.001))

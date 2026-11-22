@@ -142,21 +142,22 @@ import pytest as _pytest  # noqa: E402
 
 
 @_pytest.fixture
-def window(monkeypatch):
+def window(monkeypatch, desktop):
     st = {"front": 0, "fronted": [], "moved": [], "closed": [], "now": 1000.0}
     monkeypatch.setattr(coworker, "claimed", set())
     monkeypatch.setattr(coworker, "_born", {})
     monkeypatch.setattr(coworker, "_mode", {})
     monkeypatch.setattr(coworker, "WATCH", False)
     st["iconic"] = False
-    monkeypatch.setattr(coworker._user32, "IsIconic", lambda h: st["iconic"])
+    # the fake desktop answers from `st`, which each test changes as the user would
+    monkeypatch.setattr(desktop, "is_minimized", lambda h: st["iconic"])
     monkeypatch.setattr(coworker.time, "time", lambda: st["now"])
-    monkeypatch.setattr(coworker._user32, "IsWindow", lambda h: True)
-    monkeypatch.setattr(coworker._user32, "GetForegroundWindow", lambda: st["front"])
-    monkeypatch.setattr(coworker._user32, "PostMessageW", lambda h, m, w, l: st["closed"].append(h))
+    monkeypatch.setattr(desktop, "is_window", lambda h: True)
+    monkeypatch.setattr(desktop, "foreground", lambda: st["front"])
+    monkeypatch.setattr(desktop, "close", lambda h: st["closed"].append(h))
     monkeypatch.setattr(coworker, "_bring_on_screen", lambda h: st["moved"].append(h))
     monkeypatch.setattr(coworker, "_note", lambda t: None)
-    monkeypatch.setattr(coworker.tools, "_focus", lambda h: st["fronted"].append(h))
+    monkeypatch.setattr(desktop, "focus", lambda h: st["fronted"].append(h))
     return st
 
 
@@ -188,9 +189,9 @@ def test_a_window_nobody_touched_is_still_hidden_and_closed(window):
     assert window["closed"] == [7]
 
 
-def test_user_took_forgets_closed_windows(window, monkeypatch):
+def test_user_took_forgets_closed_windows(window, monkeypatch, desktop):
     coworker.claimed.add(7)
-    monkeypatch.setattr(coworker._user32, "IsWindow", lambda h: False)
+    monkeypatch.setattr(desktop, "is_window", lambda h: False)
     assert coworker.user_took(7) is False and 7 not in coworker.claimed
 
 

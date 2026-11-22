@@ -7,10 +7,8 @@ Every few seconds (no screenshot, no AI - just asking Windows about its windows,
 Each error / frozen window is offered once. Nova's own windows and anything already open when she starts are ignored.
 The error text goes to her brain only if the user says yes.
 """
-import ctypes
 import re
 import time
-from ctypes import wintypes
 
 import psutil
 
@@ -25,60 +23,28 @@ NEVER_CLOSE = {"explorer.exe", "dwm.exe", "csrss.exe", "winlogon.exe", "python.e
 HUNG_SECS = 10
 MAX_TEXT = 300
 
-_u = ctypes.windll.user32
+def _desk():
+    from nova import platform
+    return platform.current()
 
 
 def _text_of(hwnd):
-    n = _u.GetWindowTextLengthW(hwnd)
-    if not n:
-        return ""
-    buf = ctypes.create_unicode_buffer(n + 1)
-    _u.GetWindowTextW(hwnd, buf, n + 1)
-    return buf.value
+    return _desk().title(hwnd)
 
 
 def _class_of(hwnd):
-    buf = ctypes.create_unicode_buffer(64)
-    _u.GetClassNameW(hwnd, buf, 64)
-    return buf.value
-
-
-def _proc_of(hwnd):
-    pid = wintypes.DWORD()
-    _u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    try:
-        return pid.value, psutil.Process(pid.value).name()
-    except psutil.Error:
-        return pid.value, "?"
+    return _desk().class_name(hwnd)
 
 
 def top_windows():
-    """Visible top-level windows: (hwnd, class, title, pid, process name)."""
-    out = []
-
-    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    def cb(hwnd, _):
-        if _u.IsWindowVisible(hwnd):
-            pid, proc = _proc_of(hwnd)
-            out.append((hwnd, _class_of(hwnd), _text_of(hwnd), pid, proc))
-        return True
-    _u.EnumWindows(cb, 0)
-    return out
+    """Visible top-level windows: (hwnd, class, title, pid, process name) (nova.platform)."""
+    return _desk().top_level()
 
 
 def dialog_text(hwnd):
     """The message inside a dialog. Classic message boxes keep it in Static children; task dialogs (the newer style)
     draw it themselves, so UI Automation reads those."""
-    parts = []
-
-    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    def cb(child, _):
-        if _class_of(child) == "Static" and _u.IsWindowVisible(child):
-            t = _text_of(child).strip()
-            if t:
-                parts.append(t)
-        return True
-    _u.EnumChildWindows(hwnd, cb, 0)
+    parts = [t.strip() for _, cls, t, visible in _desk().children(hwnd) if cls == "Static" and visible and t.strip()]
     if not parts:
         try:
             import uiautomation as uia
@@ -95,7 +61,7 @@ def dialog_text(hwnd):
 
 
 def is_hung(hwnd):
-    return bool(_u.IsHungAppWindow(hwnd))
+    return _desk().is_hung(hwnd)
 
 
 def short_app(proc, title):
@@ -155,7 +121,7 @@ class Watcher:
 def still_there(item):
     """Is it still worth offering? The box is still open / the app is still frozen."""
     try:
-        if not _u.IsWindow(item["hwnd"]) or not _u.IsWindowVisible(item["hwnd"]):
+        if not _desk().is_window(item["hwnd"]) or not _desk().is_visible(item["hwnd"]):
             return False
         return is_hung(item["hwnd"]) if item["kind"] == "hung" else True
     except Exception:

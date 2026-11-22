@@ -3,12 +3,11 @@
 
 import re
 import time
-import ctypes
-from ctypes import wintypes
 
+from nova import platform
 from nova import store
 from nova.actions.registry import tool
-from nova.actions.tools import common, forms, system, windows
+from nova.actions.tools import common, forms, system
 
 
 LAST_IMAGE = {"jpg_b64": None}  # shown in the chat so the user always sees what Nova looked at
@@ -117,9 +116,8 @@ def _grab_screen_jpeg(what="screen", window="", max_width=1400):
         w = forms._target_window(window)
         if not w:
             raise RuntimeError(f"No open window matches '{window}'.")
-        r = wintypes.RECT()
-        windows._user32.GetWindowRect(w[0], ctypes.byref(r))
-        bbox = (max(r.left, 0), max(r.top, 0), r.right, r.bottom)
+        left, top, right, bottom = platform.current().window_rect(w[0])
+        bbox = (max(left, 0), max(top, 0), right, bottom)
     # Step out of the way so the picture shows the user's stuff, not Nova.
     avatar_client.send("duck", timeout=2)
     if SCREEN_HOOKS["hide"]:

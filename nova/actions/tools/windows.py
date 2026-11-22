@@ -4,8 +4,6 @@
 import datetime as dt
 import re
 import time
-import ctypes
-from ctypes import wintypes
 
 import psutil
 
@@ -13,8 +11,6 @@ from nova import platform
 from nova.actions.registry import tool
 from nova.actions.tools import apps, common, forms
 
-
-_user32 = ctypes.windll.user32
 
 
 def _windows():
@@ -52,10 +48,7 @@ CAPTION_SLOT = {"close": 0.5, "maximize": 1.5, "minimize": 2.5}     # standard b
 
 def _frame(hwnd):
     """The window's visible rectangle (without the invisible resize borders)."""
-    r = wintypes.RECT()
-    if ctypes.windll.dwmapi.DwmGetWindowAttribute(hwnd, 9, ctypes.byref(r), ctypes.sizeof(r)) != 0:
-        _user32.GetWindowRect(hwnd, ctypes.byref(r))
-    return r.left, r.top, r.right, r.bottom
+    return platform.current().frame_rect(hwnd)
 
 
 def _caption_button(hwnd, which):
@@ -71,39 +64,38 @@ def _caption_button(hwnd, which):
                     return (r.left + r.right) // 2, (r.top + r.bottom) // 2
     except Exception:
         pass  # intentional: UI Automation/cleanup is best effort; the tool reports its own result
-    scale = (_user32.GetDpiForWindow(hwnd) or 96) / 96
+    scale = platform.current().dpi(hwnd) / 96
     return int(right - CAPTION_SLOT[which] * 46 * scale), int(top + 16 * scale)
 
 
 def _done(hwnd, action):
+    d = platform.current()
     if action == "close":
-        return not _user32.IsWindow(hwnd) or not _user32.IsWindowVisible(hwnd)
+        return not d.is_window(hwnd) or not d.is_visible(hwnd)
     if action == "minimize":
-        return bool(_user32.IsIconic(hwnd))
-    return bool(_user32.IsZoomed(hwnd))
+        return d.is_minimized(hwnd)
+    return d.is_maximized(hwnd)
 
 
 def _asks_to_save(hwnd, pid):
     """After clicking X: is the app now showing its own little window ("Save changes?") instead of closing?"""
-    fg = _user32.GetForegroundWindow()
+    fg = platform.current().foreground()
     if not fg or fg == hwnd:
         return False
-    other = wintypes.DWORD()
-    _user32.GetWindowThreadProcessId(fg, ctypes.byref(other))
-    return other.value == pid
+    return platform.current().window_pid(fg) == pid
 
 
 def _window_by_hand(hwnd, title, action):
     """Nova walks over and clicks the window's own button -> (done, note)."""
     from nova.avatar import avatar_client
-    pid = wintypes.DWORD()
-    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    d = platform.current()
+    pid = d.window_pid(hwnd)
     if avatar_client.running():
-        if _user32.IsIconic(hwnd) and action != "minimize":
-            _user32.ShowWindow(hwnd, 9)          # bring a minimized window back first, so its X can be clicked
+        if d.is_minimized(hwnd) and action != "minimize":
+            d.show(hwnd, 9)                      # bring a minimized window back first, so its X can be clicked
         _focus(hwnd)
         time.sleep(0.35)
-        if action == "maximize" and _user32.IsZoomed(hwnd):
+        if action == "maximize" and d.is_maximized(hwnd):
             return True, ""
         x, y = _caption_button(hwnd, action)
         label = {"close": "X", "minimize": "minimize", "maximize": "maximize"}[action]
@@ -113,13 +105,13 @@ def _window_by_hand(hwnd, title, action):
             time.sleep(0.1)
         if _done(hwnd, action):
             return True, ""
-        if action == "close" and _asks_to_save(hwnd, pid.value):
+        if action == "close" and _asks_to_save(hwnd, pid):
             return False, "asks"
     # No body on screen, or the click didn't do it: the old way.
     if action == "close":
-        _user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE: the app may still ask to save
+        d.close(hwnd)                            # WM_CLOSE: the app may still ask to save
     else:
-        _user32.ShowWindow(hwnd, {"minimize": 6, "maximize": 3}[action])
+        d.show(hwnd, {"minimize": 6, "maximize": 3}[action])
     return True, ""
 
 
@@ -160,16 +152,12 @@ SKIP_PROCS = {"textinputhost.exe", "applicationframehost.exe", "shellexperienceh
 def close_all_windows():
     """Close every open app window except Nova's own and the Windows shell - one by one, Nova walking to each X
     (the top window first). Stops at an app that asks whether to save: that choice is the user's."""
-    mine, closed = _own_pids(), 0
-    cls = ctypes.create_unicode_buffer(256)
+    mine, closed, d = _own_pids(), 0, platform.current()
     for hwnd, title, proc in _windows():
-        pid = wintypes.DWORD()
-        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        if pid.value in mine or proc.lower() in SKIP_PROCS or not _user32.IsWindow(hwnd):
+        if d.window_pid(hwnd) in mine or proc.lower() in SKIP_PROCS or not d.is_window(hwnd):
             continue
         if proc.lower() == "explorer.exe":       # only File Explorer folder windows, never the taskbar/desktop
-            _user32.GetClassNameW(hwnd, cls, 256)
-            if cls.value != "CabinetWClass":
+            if d.class_name(hwnd) != "CabinetWClass":
                 continue
         done, note = _window_by_hand(hwnd, title, "close")
         if note == "asks":

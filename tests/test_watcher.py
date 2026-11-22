@@ -174,6 +174,9 @@ def test_job_offer_newer_than_help_wins(brain, client):
 
 def test_reads_a_real_message_box():
     """Opens a real (classic) Windows message box in a child process and checks the watcher reads its text."""
+    from nova import platform
+    from nova.platform.win32 import Win32Desktop
+    platform.use(Win32Desktop())                          # this one test reads the real desktop (conftest resets it)
     code = ("import ctypes; ctypes.windll.user32.MessageBoxW(0, 'Cannot open file C:/nope.txt. Access is denied.', "
             "'Nova test error', 0x10)")
     proc = subprocess.Popen([sys.executable, "-c", code])
@@ -208,6 +211,9 @@ def test_reads_a_real_message_box():
 
 def test_notices_a_really_frozen_window(monkeypatch):
     """A child process opens a window and then stops answering Windows' messages - like a frozen app."""
+    from nova import platform
+    from nova.platform.win32 import Win32Desktop
+    platform.use(Win32Desktop())                          # this one test reads the real desktop (conftest resets it)
     code = ("import tkinter as tk, time; r = tk.Tk(); r.title('Nova hung test'); r.geometry('200x80+0+0'); "
             "r.update(); r.update(); time.sleep(90)")
     proc = subprocess.Popen([sys.executable, "-c", code])
