@@ -36,6 +36,30 @@ class Desktop(Protocol):
     def focus(self, hwnd: int) -> None:
         """Bring the window to the front (restoring it if minimised), without pressing keys."""
 
+    def press(self, keys: str) -> None:
+        """A key or shortcut in whatever has the focus: "ctrl+v", "enter", "windows+h"."""
+
+    def write(self, text: str, delay: float = 0) -> None:
+        """Type text as key presses, one letter at a time."""
+
+    def clipboard_text(self) -> str:
+        """The clipboard's plain text ("" if none)."""
+
+    def set_clipboard_text(self, text: str) -> None:
+        """A plain copy, as the user's own would be (it shows in clipboard history)."""
+
+    def clipboard_save(self) -> list | None:
+        """Everything on the clipboard as [(format, bytes)]; [] when empty; None when it can't be read."""
+
+    def clipboard_set_text(self, text: str) -> int:
+        """Text on the clipboard kept out of clipboard history -> its sequence number (0: clipboard busy)."""
+
+    def clipboard_restore(self, saved: list | None, our_seq: int) -> None:
+        """Put `saved` back, unless something else was copied after our_seq."""
+
+    def focused_text(self) -> str | None:
+        """What the focused box holds, None if it can't be read."""
+
 
 from nova.platform.fake import FakeDesktop  # noqa: E402  (fake.py imports Window from here)
 

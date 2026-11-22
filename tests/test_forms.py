@@ -43,9 +43,8 @@ def test_cards_and_ids_are_not_saved():
     assert not err and "password" not in saved and forms.load()["email"] == "asha@example.com"
 
 
-def test_fill_form_never_tells_the_brain_the_values(monkeypatch):
+def test_fill_form_never_tells_the_brain_the_values(monkeypatch, desktop):
     forms.save(DETAILS)
-    typed = []
 
     class Ctrl:
         def SetFocus(self):
@@ -56,11 +55,9 @@ def test_fill_form_never_tells_the_brain_the_values(monkeypatch):
     monkeypatch.setattr(tools.forms, "_form_boxes", lambda window: ((1, "Sign up - Chrome", "chrome.exe"), boxes))
     monkeypatch.setattr(tools.forms, "_nova_click", lambda *a, **k: None)
     monkeypatch.setattr(tools.forms, "_focused_is_password", lambda: False)
-    monkeypatch.setattr(tools.keyboard, "write", lambda text, delay=0: typed.append(text))
-    monkeypatch.setattr(tools.keyboard, "send", lambda keys: None)
     monkeypatch.setattr(tools.time, "sleep", lambda s: None)
     out = tools.fill_form("Sign up")
-    assert typed == ["Asha Verma", "asha@example.com"]                   # typed on the laptop...
+    assert desktop.logged("write") == ["Asha Verma", "asha@example.com"]      # typed on the laptop...
     assert "Asha" not in out and "asha@" not in out                      # ...but never said to the brain
     assert "Password" in out and "OTP" in out and "NOT submit" in out
 
@@ -69,11 +66,9 @@ def test_fill_form_without_details_points_to_settings():
     assert "📝 Forms" in tools.fill_form()
 
 
-def test_typing_into_a_password_box_is_refused(monkeypatch):
+def test_typing_into_a_password_box_is_refused(monkeypatch, desktop):
     monkeypatch.setattr(tools.forms, "_focused_is_password", lambda: True)
-    written = []
-    monkeypatch.setattr(tools.keyboard, "write", lambda *a, **k: written.append(a))
-    assert tools.type_text("hunter2") == tools.NO_SECRETS and not written
+    assert tools.type_text("hunter2") == tools.NO_SECRETS and desktop.log == []
 
 
 def test_fill_in_refuses_a_password_box(monkeypatch):

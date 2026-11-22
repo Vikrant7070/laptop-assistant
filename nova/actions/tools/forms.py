@@ -6,8 +6,8 @@ import time
 import ctypes
 from ctypes import wintypes
 
-import keyboard
 
+from nova import platform
 from nova.actions.registry import tool
 from nova.actions.tools import common, windows
 
@@ -140,12 +140,12 @@ def fill_in(text, box="", window="", press_enter=True):
     time.sleep(0.3)
     if _focused_is_password():
         return NO_SECRETS
-    keyboard.send("ctrl+a")
+    platform.current().press("ctrl+a")
     time.sleep(0.1)
     windows._type_into_focus(text)
     if press_enter:
         time.sleep(0.2)
-        keyboard.send("enter")
+        platform.current().press("enter")
     return f"Typed '{text}' into '{match['name']}'" + (" and pressed Enter." if press_enter else ".")
 
 
@@ -233,9 +233,9 @@ def fill_form(window=""):
                 time.sleep(0.25)
                 if _focused_is_password():        # (never - but if a page lies about its box, don't type there)
                     continue
-                keyboard.send("ctrl+a")
+                platform.current().press("ctrl+a")
                 time.sleep(0.05)
-            keyboard.write(value, delay=0.015)
+            platform.current().write(value, delay=0.015)
             time.sleep(0.15)
             done.append(box["name"])
         except Exception:

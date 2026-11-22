@@ -8,6 +8,7 @@ from pathlib import Path
 
 from flask import jsonify, request, send_file
 
+from nova import platform
 from nova.avatar import avatar_client
 from nova.core import characters
 from nova.actions import tools
@@ -131,9 +132,9 @@ def voice_typing():
     ?fresh=1 first closes a voice-typing panel that may still be open, so Win+H starts listening again
     instead of toggling it off."""
     if request.args.get("fresh"):
-        tools.keyboard.send("esc")
+        platform.current().press("esc")
         time.sleep(0.3)
-    tools.keyboard.send("windows+h")
+    platform.current().press("windows+h")
     return jsonify(ok=True)
 
 
