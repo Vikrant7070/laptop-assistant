@@ -7,6 +7,7 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 
 from nova.avatar import body as body_module
 from nova.brain import cloud
+from nova.brain import usage
 from nova.core import characters
 from nova.brain import llm
 from nova.actions import presence
@@ -181,7 +182,8 @@ def cloud_key():
         llm.reset_cloud()
     except cloud.CloudError as e:
         return jsonify(error=str(e)), 400
-    return jsonify(ok=True, models=ids, suggested=cloud.suggest(provider, ids) if ids else "")
+    return jsonify(ok=True, models=ids, suggested=cloud.suggest(provider, ids) if ids else "",
+                   kinds=usage.kinds(provider, ids))
 
 
 @app.get("/api/cloud/models")
@@ -193,7 +195,45 @@ def cloud_models():
         ids = cloud.list_models(provider)
     except cloud.CloudError as e:
         return jsonify(error=str(e), models=[]), 400
-    return jsonify(models=ids, suggested=cloud.suggest(provider, ids))
+    return jsonify(models=ids, suggested=cloud.suggest(provider, ids), kinds=usage.kinds(provider, ids))
+
+
+def _chosen_cloud(provider=None):
+    """(provider, model name) the meter should feature: the asked provider's chosen model, else the active brain's."""
+    s = config.settings()
+    provider = provider if provider in cloud.PROVIDERS else s.get("provider", "ollama")
+    if provider not in cloud.PROVIDERS:
+        return None, None
+    return provider, (s.get("cloud_models") or {}).get(provider) or cloud.DEFAULT_MODELS.get(provider)
+
+
+@app.get("/api/cloud/usage")
+def cloud_usage():
+    """The free-uses meter: today's count per model, the limits Nova knows, and which models are out until when."""
+    provider, name = _chosen_cloud(request.args.get("provider"))
+    snap = usage.snapshot(provider, name)
+    snap["active"] = config.settings().get("provider", "ollama") in cloud.PROVIDERS
+    return jsonify(snap)
+
+
+@app.post("/api/cloud/limits")
+def cloud_limits():
+    """The free limits the user read on AI Studio's rate-limit page, for one model (empty = not known)."""
+    body = _body()
+    provider, name = body.get("provider"), _text(body, "model")
+    if provider not in cloud.PROVIDERS or not name:
+        return jsonify(error="Pick a cloud model first."), 400
+    nums = {}
+    for k in ("rpd", "rpm"):
+        v = body.get(k)
+        if v in (None, ""):
+            nums[k] = None
+        elif isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10_000_000:
+            nums[k] = v
+        else:
+            return jsonify(error=f"'{k}' must be a whole number."), 400
+    usage.set_limits(provider, name, **nums)
+    return jsonify(usage.snapshot(provider, name))
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.

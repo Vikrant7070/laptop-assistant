@@ -120,6 +120,7 @@
         <button id="resetBtn" title="Start a fresh conversation">↺ New chat</button>
         <button id="tasksBtn" title="Everything Nova did or handed to a worker, and why it ended" onclick="location.href='/tasks'">📋 Tasks</button>
         <button id="kbBtn" title="What Nova knows about you, and what she has learned" onclick="location.href='/knowledge'">🧠 Knowledge</button>
+        <button id="cloudChip" title="Free cloud uses left today - click for details" hidden></button>
         <button id="keyBtn" title="Choose model">⚙ Model</button>
         <button id="quitBtn" title="Shut Nova down completely (windows, 3D Nova, listening, tray icon)">⏻ Quit</button>
       </div>
@@ -180,6 +181,7 @@
         </div>
         <select id="cloudModel" class="sel"></select>
         <p id="cloudNote" class="mood" style="margin:4px 0 0"></p>
+        <div id="cloudUsage" class="mood" style="margin:6px 0 0"></div>
       </div>
       <p id="localLabel">Pick an installed Ollama model. Everything stays on your laptop.</p>
       <select id="model" class="sel"></select>
