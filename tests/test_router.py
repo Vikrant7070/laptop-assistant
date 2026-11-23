@@ -120,6 +120,38 @@ def test_planner_gets_room_to_think_and_its_own_sampling(monkeypatch):
     assert seen["num_predict"] == router.PLAN_PREDICT >= 3000      # 900 ran out while the model was still thinking
 
 
+FAKE_FOLDERS = {"Home": r"C:\Users\vikra", "Desktop": r"C:\Users\vikra\OneDrive\Desktop",
+                "Documents": r"C:\Users\vikra\OneDrive\Documents", "Downloads": r"C:\Users\vikra\Downloads"}
+
+
+def test_planner_is_told_the_real_folders(monkeypatch):
+    monkeypatch.setattr(router.shared, "_folders", dict(FAKE_FOLDERS))
+    sent = []
+    monkeypatch.setattr(router.llm, "chat", lambda m, msgs, t, **kw: (sent.append(msgs[0]["content"]), ({}, "1. a", []))[1])
+    router.make_plan(app.settings(), "find the biggest folders in my downloads step by step")
+    assert r"Downloads = C:\Users\vikra\Downloads" in sent[0] and r"Desktop = C:\Users\vikra\OneDrive\Desktop" in sent[0]
+
+
+def test_every_brain_is_told_the_real_folders(monkeypatch):
+    from nova.core.app import prompts
+    monkeypatch.setattr(router.shared, "_folders", dict(FAKE_FOLDERS))
+    for model in ("qwen3-vl:4b-instruct", "cloud:google:gemini-2.5-flash"):
+        text = prompts.system_prompt(model)
+        assert r"Downloads = C:\Users\vikra\Downloads" in text and "never build a path from the user's name" in text
+
+
+def test_folders_come_from_windows_with_a_home_fallback(monkeypatch):
+    from nova import platform
+    fake = platform.FakeDesktop([])
+    fake.folders = {"Desktop": r"C:\Users\vikra\OneDrive\Desktop"}      # Documents/Downloads: Windows can't say
+    monkeypatch.setattr(platform, "current", lambda: fake)
+    monkeypatch.setattr(router.shared, "_folders", {})
+    got = router.shared.user_folders()
+    assert got["Desktop"] == r"C:\Users\vikra\OneDrive\Desktop"
+    assert set(got) == {"Home", "Desktop", "Documents", "Downloads"}
+    assert got["Downloads"].endswith("Downloads") and got["Downloads"].startswith(got["Home"])
+
+
 def test_own_sampling_leaves_temperature_and_repeat_penalty_to_the_model(monkeypatch):
     bodies = []
     monkeypatch.setattr(router.llm, "capabilities", lambda m: ["completion", "thinking"])

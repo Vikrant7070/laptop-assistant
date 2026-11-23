@@ -3,6 +3,7 @@
 
 from nova import prompts as promptfiles
 from nova import intents
+from nova import shared
 from nova.brain import cloud
 from nova.core import characters
 from nova.actions import knowledge
@@ -87,7 +88,9 @@ def system_prompt(model):
              "on this laptop takes over)") if c else f"{model} (running locally on this laptop via Ollama)"
     brain_line = (f"\n\nYour brain (the AI model you run on) right now is {which}. If asked which model you are, say "
                   "exactly this - it may differ from what you said earlier in this chat.")
-    return persona_text() + facts + brain_line + proto
+    folders_line = (f"\n\nThe user's real folders on this laptop: {shared.folders_line()}. Use these exact paths; never "
+                    "build a path from the user's name.")
+    return persona_text() + facts + brain_line + folders_line + proto
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.

@@ -340,6 +340,27 @@ class Win32Desktop:
             pass        # intentional: the display name is a nicety; callers fall back to "boss"
         return ""
 
+    KNOWN_FOLDERS = {"Desktop": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
+                     "Documents": "FDD39AD0-238F-46AF-ADB4-6C85480369C7",
+                     "Downloads": "374DE290-123F-4565-9164-39C4925E467B"}
+
+    def known_folder(self, name):
+        """The real path of a Windows known folder (SHGetKnownFolderPath), so a Desktop moved into OneDrive is found.
+        None if Windows can't say; callers fall back to <home>\\<name>."""
+        guid = self.KNOWN_FOLDERS.get(name)
+        if not guid:
+            return None
+        import uuid
+        path = ctypes.c_wchar_p()
+        try:
+            hr = ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.create_string_buffer(uuid.UUID(guid).bytes_le, 16),
+                                                            0, None, ctypes.byref(path))
+            return path.value if hr == 0 and path.value else None
+        except OSError:
+            return None
+        finally:
+            ctypes.windll.ole32.CoTaskMemFree(path)
+
     def memory_commit(self):
         """(used, limit) in bytes: RAM + pagefile that programs have claimed, and the most they can claim; None if unknown."""
         m = _MemStatus()

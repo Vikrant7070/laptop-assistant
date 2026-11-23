@@ -6,6 +6,8 @@ Write a complete plan for this task:
 
 Tools you can name in steps (use these exact names where one fits): {tools}
 
+The user's real folders (write these exact paths in steps, never a placeholder like C:\Users\Name): {folders}
+
 Reply with ONLY the plan, in this shape:
 1. <step> - tool or app to use - how to tell it worked
 2. ...
