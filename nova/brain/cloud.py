@@ -12,10 +12,14 @@ import base64
 import json
 import os
 import re
+import threading
+import time
 import urllib.error
 import urllib.request
+from nova import log
 from nova import platform
 from nova import store
+from nova.brain import usage
 
 PROVIDERS = {
     "google": {"label": "Google Gemini", "env": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
@@ -41,7 +45,13 @@ _OPENAI_EFFORT = {"low": ["low"], "high": ["high"], "max": ["xhigh", "high"]}
 
 
 class CloudError(Exception):
-    pass
+    """code: the HTTP status when the provider answered with one (429 = a limit ran out); body: its full text."""
+    def __init__(self, message, code=None, body=""):
+        super().__init__(message)
+        self.code, self.body = code, body
+
+
+_tokens = threading.local()     # tokens the last reply on this thread used (for the free-uses meter)
 
 
 # ------------------------------------------------------------------ names
@@ -118,14 +128,14 @@ def _http(method, url, key, body=None, timeout=90):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
-        detail = e.read().decode(errors="ignore")
+        detail = body = e.read().decode(errors="ignore")
         try:
             j = json.loads(detail)
             j = j[0] if isinstance(j, list) and j else j
             detail = (j.get("error") or {}).get("message") or detail
         except (ValueError, AttributeError):
             pass
-        raise CloudError(_friendly(e.code, detail[:300])) from e
+        raise CloudError(_friendly(e.code, detail[:300]), e.code, body) from e
     except TimeoutError as e:
         raise CloudError(f"The cloud brain didn't answer within {timeout} s (busy or overloaded).") from e
     except (urllib.error.URLError, ConnectionError) as e:
@@ -306,6 +316,7 @@ def _openai_chat(provider, name, key, messages, tools, level="low", show=False):
         if not extra:
             _plain.add(name)                   # takes no reasoning settings at all
         break
+    _tokens.n = ((r.get("usage") or {}).get("total_tokens") or 0) if isinstance(r.get("usage"), dict) else 0
     choice = (r.get("choices") or [{}])[0]
     m = choice.get("message") or {}
     calls = []
@@ -426,7 +437,9 @@ def _anthropic_chat(name, key, messages, tools, level="low", show=False):
                 _plain.add(name)      # an older model that doesn't take effort/fallbacks
                 r = client.messages.create(**base)
     except Exception as e:
-        raise CloudError(_anthropic_error(e)) from e
+        raise CloudError(_anthropic_error(e), getattr(e, "status_code", None), str(getattr(e, "body", "") or "")) from e
+    u = getattr(r, "usage", None)
+    _tokens.n = (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "output_tokens", 0) or 0)
     if r.stop_reason == "refusal":
         return "Sorry, I can't help with that one.", [], ""
     text = "".join(b.text for b in r.content if b.type == "text")
@@ -439,6 +452,20 @@ def _anthropic_chat(name, key, messages, tools, level="low", show=False):
 
 # ------------------------------------------------------------------ one turn
 
+def _count(provider, name, error=None):
+    """Tell the free-uses meter about this call. A 429 marks the model out (and its whole answer goes to the task log,
+    to learn what Google's limit messages look like); any other answer counts as one use. Never raises."""
+    try:
+        if error is not None and (error.code == 429 or (error.code is None and "(429)" in str(error))):
+            until = usage.hit_limit(provider, name, error.body or str(error))
+            log.note(f"CLOUD LIMIT {provider}:{name} out until {time.strftime('%H:%M', time.localtime(until))}: "
+                     + (error.body or str(error))[:2000].replace("\n", " "))
+        elif error is None or error.code is not None:
+            usage.record(provider, name, getattr(_tokens, "n", 0))
+    except Exception as e:
+        log.log_exception("cloud usage meter", e)
+
+
 def chat(model, messages, tools, reasoning="low", on_think=None):
     """Returns (assistant_message_in_ollama_format, text, calls[{id,name,args}]).
     reasoning: "low" | "high" | "max" - how hard the model thinks first. on_think(text) gets a readable summary of
@@ -449,12 +476,21 @@ def chat(model, messages, tools, reasoning="low", on_think=None):
     key = get_key(provider)
     if not key:
         raise CloudError(f"No API key saved for {PROVIDERS[provider]['label']}.")
-    if provider == "anthropic":
-        text, calls, thoughts = _anthropic_chat(name, key, messages, tools, level, show)
-    elif provider in PROVIDERS:
-        text, calls, thoughts = _openai_chat(provider, name, key, messages, tools, level, show)
-    else:
+    if provider not in PROVIDERS:
         raise CloudError(f"Unknown provider '{provider}'.")
+    out = usage.blocked(provider, name)
+    if out:                         # its limit is used up: don't spend a call (and 25 s) learning that again
+        raise CloudError(out)
+    _tokens.n = 0
+    try:
+        if provider == "anthropic":
+            text, calls, thoughts = _anthropic_chat(name, key, messages, tools, level, show)
+        else:
+            text, calls, thoughts = _openai_chat(provider, name, key, messages, tools, level, show)
+    except CloudError as e:
+        _count(provider, name, e)
+        raise
+    _count(provider, name)
     if thoughts and on_think:
         on_think(thoughts)
     return _stored(text, calls), text, [{"id": c["id"], "name": c["name"], "args": c["args"]} for c in calls]
