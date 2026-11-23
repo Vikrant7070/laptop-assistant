@@ -94,6 +94,8 @@ def copy_path(args, out):
 
 def create_folder(args, out):
     p = _resolve(args.get("path", ""))
+    if str(out).startswith("Nothing created"):        # it was already there: no new folder was made
+        return _failed(f"no new folder was made ({p.name} was already there)", str(p))
     return _passed(f"{p.name} is there", str(p)) if p.is_dir() else _failed(f"{p.name} is missing", str(p))
 
 

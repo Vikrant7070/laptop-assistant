@@ -51,7 +51,7 @@ MAX_APPROVALS = 3
 NOT_DONE_RE = re.compile(
     r"\b(can'?t|cannot|couldn'?t|could not|unable|not able|wasn'?t able|didn'?t|did not|don'?t have|doesn'?t exist|"
     r"does not exist|no such|isn'?t installed|not installed|not find|couldn'?t find|can'?t find|failed|"
-    r"i don'?t think i finished|not possible|no way to|sorry)\b", re.I)
+    r"i don'?t think i finished|not possible|no way to|sorry|paused here|i paused)\b", re.I)
 
 
 @dataclass

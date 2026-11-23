@@ -158,3 +158,23 @@ def test_a_failed_read_back_fails_its_plan_step_and_the_tasks_page_counts_plan_s
     assert card["plan"][0]["state"] == "failed" and card["plan"][0]["result"] == "new.txt failed"
     row = tasks_page.task_row(card)
     assert (row["steps_done"], row["steps_total"]) == (0, 2)
+
+
+# --- what the exam on this branch found (2026-11-23) -----------------------------------------------------------
+
+def test_nothing_created_is_a_failed_check(tmp_path):
+    rb = readback.read_back("create_folder", {"path": str(tmp_path)}, f"Nothing created: {tmp_path} was already there.")
+    assert rb["state"] == "failed" and "no new folder was made" in rb["why"]
+
+
+def test_the_judge_checks_make_folder_and_rename_goals():
+    from nova.actions import judge
+    made = judge.goal_checks(r"create a folder called exam-made in C:\Temp\nova-exam-x")
+    assert made == {"checks": [{"check": "file_exists", "arg": r"C:\Temp\nova-exam-x\exam-made"}], "covers": True}
+    made = judge.goal_checks(r"rename C:\Temp\nova-exam-x\old.txt to new.txt")
+    assert made["checks"] == [{"check": "file_exists", "arg": r"C:\Temp\nova-exam-x\new.txt"}]
+
+
+def test_the_exam_counts_a_paused_task_as_not_done():
+    from nova import exam
+    assert exam.claimed({"reply": "(That was a lot of steps, so I paused here. Say “keep going” and I'll carry on.)"}) == "not done"

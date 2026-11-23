@@ -13,6 +13,7 @@ dropped, never fixed.
 """
 import os
 import re
+from pathlib import Path as _Path
 
 from nova import prompts as promptfiles
 
@@ -40,6 +41,12 @@ _FULL = re.compile(r"\b(?:in\s+)?full\s?-?screen\b", re.I)
 # itself and said "File saved").
 _SAVE_AS = re.compile(r"^save\s+(?:it|this|that|the\s+(?:file|note|document))?\s*as\s+[\"']?"
                       r"(?P<path>(?:[A-Za-z]:[\\/]|~[\\/])[^\"']+?)[\"']?$", re.I)
+# "create a folder called exam-made in C:\work": that folder must exist (task exam 2026-11-23: she created the parent
+# and said "folder created"). "rename C:\work\old.txt to new.txt": the new name must exist next to the old one.
+_PATH = r"(?:[A-Za-z]:[\\/]|~[\\/])[^\"']+?"
+_MAKE_DIR = re.compile(r"^(?:create|make)\s+(?:a\s+|an\s+)?(?:new\s+)?folder\s+(?:called|named)\s+[\"']?(?P<name>[^\"'\\/]+?)[\"']?"
+                       r"\s+(?:in|inside|under|at)\s+[\"']?(?P<parent>" + _PATH + r")[\"']?$", re.I)
+_RENAME = re.compile(r"^rename\s+[\"']?(?P<old>" + _PATH + r")[\"']?\s+to\s+[\"']?(?P<new>[^\"'\\/]+?)[\"']?$", re.I)
 _FILLER = {"my", "the", "a", "an", "app", "application", "program", "folder", "website", "site", "page", "window",
            "for", "me", "please", "now", "up"}
 # A part that starts with one of these is its own action, not more things to open ("open notepad and type hi").
@@ -74,6 +81,12 @@ def clause_check(clause):
     m = _SAVE_AS.match(c)
     if m:
         return [{"check": "file_exists", "arg": m.group("path").strip()}]
+    m = _MAKE_DIR.match(c)
+    if m:
+        return [{"check": "file_exists", "arg": str(_Path(m.group("parent").strip()) / m.group("name").strip())}]
+    m = _RENAME.match(c)
+    if m:
+        return [{"check": "file_exists", "arg": str(_Path(m.group("old").strip()).parent / m.group("new").strip())}]
     if _DARK_OFF.search(c):
         return [{"check": "dark_mode", "arg": "off"}]
     if _DARK_ON.search(c):
