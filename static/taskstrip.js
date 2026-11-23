@@ -52,7 +52,10 @@ function showTask(t) {
           t.read_only ? " · saved by a newer Nova (read-only)" : ""} · <a href="/tasks#t:${t.id}">See it on the Tasks page</a></p>
       ${t.runs.length ? html`<p class="mood">Steps that really ran:</p><ul>${t.runs.map(r =>
           html`<li class="${r.state}">${TASK_ICON[r.state] || "·"} ${r.tool}${r.hint ? " " + r.hint : ""}${
-            r.result ? html`<small>→ ${r.result}</small>` : ""}</li>`)}</ul>` : ""}
+            r.result ? html`<small>→ ${r.result}</small>` : ""}${
+            r.check ? html`<small>${{passed: "✓", failed: "✗", skipped: "–"}[r.check.state]} read back: ${r.check.why}</small>` : ""}</li>`)}</ul>` : ""}
+      ${t.left && t.left.length ? html`<p class="mood">Couldn't finish: ${t.left.join("; ")}</p>` : ""}
+      ${t.not_checked ? html`<p class="mood">Done, not checked: no step could be read back.</p>` : ""}
     </div>`);
   box.open = wasOpen;
   box.hidden = false;

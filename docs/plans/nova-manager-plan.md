@@ -797,6 +797,37 @@ worker, checked by reading the result back, and remembered.
 - **Done when:** a fake "saved" (the file is missing) is caught and reported; a project with no known test command
   shows "tests: skipped"; one send-back round runs, then it stops and tells the user.
 
+**4c-1 as built (2026-11-23, branch `feat/manager-4c-readback`): read-back for Nova's own laptop steps.**
+`nova/actions/readback.py`.
+- After every step that changes something, `judging.execute` reads the result back. The run on the task card gets
+  `check` = passed / failed / skipped, with why, and the brain reads "[check: FAILED - … It is NOT done.]" under that
+  step's result.
+- What is read back:
+  - files: write (the file exists, size > 0, has the start of the text), move / rename (the new path is there, the
+    old one gone), copy, create folder, delete (gone);
+  - `open_app` (the window, given 5 s), `window_action` focus / close, dark mode, brightness, Wi-Fi.
+  - `type_text`: text that can't be seen is *skipped*, not failed - some apps don't show their text to the screen
+    reader.
+  - `press_keys`, volume, clicks, and any step with no reader yet are skipped, with why. A reader that crashes is
+    skipped, never passed.
+  - Read-only steps need no check.
+- The verdict: `judging.readback_verdict` runs when she says she's finished. The newest read-back per thing checked
+  counts (a later fix replaces an earlier failure); a failure means not done, whatever the brain or the screen look
+  said. The Judge's own failed check keeps its wording.
+  - That feeds the existing path: one more go with the failing check on the card, then "I don't think I finished
+    that - <what>. Want me to try again?".
+  - A failed read-back also fails its plan step (❌ with the reason).
+- Couldn't finish (`task_state.left`): plan steps not done (a failed one with its reason) plus failed read-backs, each
+  once. It is on `/tasks` and the strip's card; "done, not checked" when every changing step was skipped.
+- Limits: the step limit as before, plus a time limit (`TASK_SECS` = 10 min): the task stops as "time limit", and
+  Continue picks it up.
+- Not built (said plainly): the "one new plan" on failure is one more go for the brain with the failing check on its
+  card, not a fresh plan from the deep brain. Mail / messages / forms / downloads have no reader yet (skipped).
+- `/tasks`: plan steps counted against the plan (it showed "3 of 2 steps").
+- Live check (2026-11-23) on a separate copy with saved tasks carrying passed / skipped / failed read-backs: `/tasks`
+  showed ✓ / – / ✗ "read back: …" under each step, the failed plan step ❌, and "Couldn't finish: step 2: Rename it
+  to final.txt (final.txt is missing)". No console errors.
+
 **4d — Watch progress: notice stuck and looping tasks**
 - The task card gets two lists kept by code:
   - *known*: facts given in the request, facts found on the way, guesses (marked as guesses);

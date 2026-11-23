@@ -40,6 +40,7 @@ STEP_CHECK_WAIT, FINAL_CHECK_WAIT = 1.5, 5.0   # seconds a judge check may wait 
 
 
 MAX_TURNS, MAX_TASK_TURNS = 10, 24
+TASK_SECS = 600             # 4c: a task stops after 10 minutes too (Continue picks it up from the same step)
 
 
 # A cloud brain on High/Max reasoning plans its steps well, so a big job (find my GitHub username, then set up the
@@ -574,6 +575,9 @@ def _agent_loop(activity):
         working = task and (task["steps"] or task.get("calls"))
         if turns >= ((DEEP_TASK_TURNS if deep else MAX_TASK_TURNS) if working else MAX_TURNS):
             break
+        if working and time.time() - task.get("started", time.time()) > TASK_SECS:
+            task["time_up"] = True                     # 4c: every task has a time limit, too
+            break
         turns += 1
         voice_io.nap["last_task"] = time.time()      # working on it: a long task is not "quiet", so no nap mid-job
         msgs = [{"role": "system", "content": prompts.system_prompt(model)}] + trimmed_history(model)
@@ -676,6 +680,8 @@ def _agent_loop(activity):
         if not calls and task and task["steps"] and (task.get("checks") or task["steps"] >= LOOK_FROM_STEP):
             # She says she's finished: the Judge decides (checks first, at most one advisory screen look).
             judging.final_judge(task, text, activity, model)
+        if not calls and task:
+            judging.readback_verdict(task)             # 4c: a failed read-back beats every "done"
         by_check = bool(task) and task.get("verdict_source") == "checks"
         if (not calls and task and (task["steps"] >= 2 or by_check) and task["done"] is False
                 and not task["nudged"]):
@@ -762,9 +768,10 @@ def _agent_loop(activity):
                               "what you already know, or do a different step if one is really needed.")})
     if task is not None:
         task["paused"] = True               # "keep going" now carries on with this task
-        task_state.mark(task_state.of(task), "stopped", "out of steps")
-    session.think("🛑 That's a lot of steps - pausing here.")
-    line = "That was a lot of steps, so I paused here. Say “keep going” and I'll carry on."
+        task_state.mark(task_state.of(task), "stopped", "time limit" if task.get("time_up") else "out of steps")
+    session.think("🛑 That's taking too long - pausing here." if task and task.get("time_up") else "🛑 That's a lot of steps - pausing here.")
+    line = ("That took over 10 minutes" if task and task.get("time_up") else "That was a lot of steps") + \
+        ", so I paused here. Say “keep going” and I'll carry on."
     unsaid.append(line)
     return result((" ".join(spoken) + f" ({line})").strip())
 

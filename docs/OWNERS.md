@@ -6,6 +6,6 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 
 | Area (paths) | Owner (session, agent or person) | Branch | Since |
 |---|---|---|---|
-| Manager Phase 4: 4-pre, 4a and 4b merged (PRs #50-#55, #57). Plan rewritten 2026-11-23 for every laptop task: 4c read-back checks, 4d stuck/loop watch, 4e risk levels, 4f remember + app notes, 4g scheduled jobs (`docs/plans/nova-manager-plan.md`); building waits for the user's go-ahead | Claude session (manager loop) | `docs/manager-all-tasks` | 2026-11-23 |
+| Manager Phase 4: 4-pre, 4a and 4b merged (PRs #50-#55, #57), exam fixes (#59). Plan for every laptop task (`docs/plans/nova-manager-plan.md`): 4c-1 read-back checks for laptop steps in progress (`nova/actions/readback.py`); then 4c-2 worker jobs, 4d-4g, each after the user's go | Claude session (manager loop) | `feat/manager-4c-readback` | 2026-11-23 |
 | Improvement roadmap Phase 1: R10 voice state machine (`nova/core/app/voice_machine.py`, the shadow calls in `voice_io.py`); R14, R15, R11, R13, R12 merged | Claude session (roadmap structure) | `feat/r10-voice-state` | 2026-11-22 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |

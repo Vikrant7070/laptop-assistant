@@ -4,6 +4,7 @@
    retry opens the chat with the words filled in (/?draft=...), where her Allow / No asks first. */
 const $ = id => document.getElementById(id);
 const ICON = {pending: "·", started: "⏳", done: "✅", failed: "❌", skipped: "⏭"};
+const CHECK = {passed: "✓", failed: "✗", skipped: "–"};
 const WORD = {running: "running", waiting: "waiting for you", stopped: "stopped", interrupted: "interrupted",
               stuck: "stuck", done: "done", failed: "didn't finish", dropped: "dropped"};
 const KIND = {laptop: "💻 Laptop", coding: "🧑‍💻 Coding", research: "🔎 Research"};
@@ -42,8 +43,11 @@ function taskBody(d) {
       html`<li class="${s.state}">${ICON[s.state] || "·"} ${s.text}${s.result ? html`<small>→ ${s.result}</small>` : ""}</li>`)}</ol>`
       : html`<p class="k">No written plan - she worked it out step by step.</p>`}
     <p class="k">Steps that really ran:</p>${c.runs.length ? html`<ul>${c.runs.map(r =>
-      html`<li class="${r.state}">${ICON[r.state] || "·"} ${r.tool}${r.hint ? " " + r.hint : ""}${r.result ? html`<small>→ ${r.result}</small>` : ""}</li>`)}</ul>`
+      html`<li class="${r.state}">${ICON[r.state] || "·"} ${r.tool}${r.hint ? " " + r.hint : ""}${r.result ? html`<small>→ ${r.result}</small>` : ""}${
+        r.check ? html`<small>${CHECK[r.check.state]} read back: ${r.check.why}</small>` : ""}</li>`)}</ul>`
       : html`<p class="k">None.</p>`}
+    ${c.left && c.left.length ? html`<p class="k">Couldn't finish: ${c.left.join("; ")}</p>` : ""}
+    ${c.not_checked ? html`<p class="k">Done, not checked: no step could be read back.</p>` : ""}
     ${d.checks.length ? html`<p class="k">The Judge's checks (${d.verdict_source || "checks"}): ${d.checks.join("; ")}</p>` : ""}
     <p class="k">Why it ended: ${d.status === "running" ? "still running" : d.status === "waiting" ? "waiting for you" + (d.why ? ": " + d.why : "")
       : d.why || (d.status === "done" ? "done" : WORD[d.status] || d.status)}${d.card.read_only ? " · saved by a newer Nova (read-only)" : ""}</p>`;
