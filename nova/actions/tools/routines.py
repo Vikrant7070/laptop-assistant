@@ -185,9 +185,10 @@ def delete_skill(name):
 
 @tool("Call this FIRST when the job is bigger than you can do well: kind='deep' for a complex, "
       "multi-step or tricky job (a stronger brain writes a full plan for you to follow), kind='code' for writing, "
-      "fixing or reviewing code (a coding brain takes over). Never for simple things like opening an app, the "
+      "fixing or reviewing code (a coding brain takes over), kind='cloud' when you are stuck and have tried "
+      "(a stronger cloud brain takes over, if one is set up). Never for simple things like opening an app, the "
       "time or chat. Takes a minute to switch.", friendly="Switched brain", core=True,
-      props={"kind": {"type": "string", "enum": ["deep", "code"]}, "why": common.S}, required=["kind"])
+      props={"kind": {"type": "string", "enum": ["deep", "code", "cloud"]}, "why": common.S}, required=["kind"])
 def escalate(kind="deep", why=""):
     # app.execute answers this one itself (it switches the brain); this is only the fallback.
     return "Nothing to switch to."

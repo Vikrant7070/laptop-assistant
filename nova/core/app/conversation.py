@@ -10,7 +10,6 @@ from nova import runtime
 from nova import prompts as promptfiles
 from nova import store
 from nova.avatar import avatar_client
-from nova.avatar import body as body_module
 from nova.brain import cloud, llm, retrieval, router, toolpick
 from nova.core import characters
 from nova.actions import knowledge
@@ -241,6 +240,8 @@ def route_task(kind, why=""):
     task, s = session.state.get("task"), config.settings()
     if not task or cloud.parse(task_brain(s, task)):
         return "No other brain to switch to - carry on yourself."
+    if kind == "cloud":
+        return brains.CLOUD_TAKES_OVER if brains.climb(task, why or "it asked for help") else "No cloud brain to switch to - carry on yourself."
     if kind == "code":
         m = router.pick_code_model(s)
         if not m:
@@ -263,6 +264,8 @@ def route_task(kind, why=""):
     ts.flush()
     if not plan:
         task_log(f"ROUTE deep failed: {m}")
+        if brains.climb(task, f"my local planner couldn't write a plan ({m})"):
+            return brains.CLOUD_TAKES_OVER
         session.think(f"🧠 Couldn't get a plan ({m}) - I'll work it out myself.", cloud_too=False)
         return f"No plan available ({m}). Work it out yourself, one step at a time."
     task_log(f"ROUTE deep -> plan from {m} in {time.time() - t0:.0f}s:\n      " + plan.replace("\n", "\n      "))
@@ -372,7 +375,7 @@ def _execute_one(c, approved, activity, model):
         out = "Done: you'll go to sleep right after this answer. Just say a very short goodnight (a few words)."
     elif c["name"] == "escalate":
         a = c["args"] or {}
-        out = route_task("code" if a.get("kind") == "code" else "deep", str(a.get("why", "")))
+        out = route_task(a.get("kind") if a.get("kind") in ("code", "cloud") else "deep", str(a.get("why", "")))
         activity.append("Switched brain")
     elif c["name"] == "more_tools":
         need = str((c["args"] or {}).get("need", ""))
@@ -564,6 +567,7 @@ def _agent_loop(activity):
     while True:
         check_stop()
         task = session.state.get("task")
+        brains.at_start(task, s)                                      # "ask Gemini ...": start this task on the cloud
         if task and task.get("route") and not task.get("routed"):       # chosen from the request's words
             task["routed"] = True
             route_task(task["route"], "request wording")
@@ -622,7 +626,7 @@ def _agent_loop(activity):
         if llm.LAST["fallback"] and "Used the local brain" not in activity:
             activity.append("Used the local brain")   # the cloud one failed; she carried on with the local model
             task_log(f"CLOUD BRAIN NOT USED ({model}): {llm.LAST['fallback']} -> local {s['model']}")
-            session.think("☁️ The cloud brain didn't answer, so I used my local one.")
+            session.think("☁️ " + (llm.LAST["fallback"] if "used up" in llm.LAST["fallback"] else "The cloud brain didn't answer, so I used my local one."))
             if task and cloud.parse(task_brain(s, task)):   # finish this task locally, with the local plan/coder help
                 task["model"] = s["model"]
                 choose_local_route(task, s)
@@ -697,6 +701,9 @@ def _agent_loop(activity):
                               "a tool. " + ("You may not say the task is done until the check passes. " if by_check else "")
                               + "If you are truly stuck, tell the user honestly in one sentence what is left.")})
             continue
+        if not calls and brains.at_answer(task, text, s):            # local first: stuck -> the cloud brain carries on
+            turns = same_calls = 0
+            continue
         if not calls and task and task["nudged"] and task["done"] is False:
             # Pushed once and still stopping with the task unfinished.
             if by_check:
@@ -766,6 +773,8 @@ def _agent_loop(activity):
                 protocol.note(f"You have now called {calls[0]['name']} {same_calls} times in a row with "
                               "the same arguments, and it won't give anything new. Don't call it again. Answer the user now with "
                               "what you already know, or do a different step if one is really needed.")})
+        if brains.after_step(task, s, same_calls, turns):            # local first: stuck -> the cloud brain carries on
+            turns = same_calls = 0
     if task is not None:
         task["paused"] = True               # "keep going" now carries on with this task
         task_state.mark(task_state.of(task), "stopped", "time limit" if task.get("time_up") else "out of steps")
@@ -776,22 +785,5 @@ def _agent_loop(activity):
     return result((" ".join(spoken) + f" ({line})").strip())
 
 
-def ready_info():
-    s = config.settings()
-    models = llm.list_models()
-    model = s["model"]
-    active = config.brain(s)
-    info = {"avatar_roam": body_module.roam_mode(s), "routing": {k: v for k, v in router.options(s).items() if k in router.ROUTING_KEYS},
-            "provider": s.get("provider", "ollama"), "cloud_models": s.get("cloud_models") or {},
-            "cloud_defaults": cloud.DEFAULT_MODELS, "keys": cloud.has_keys(), "brain": active,
-            "providers": {k: v["label"] for k, v in cloud.PROVIDERS.items()}}
-    on_cloud = active != model
-    if models is None:
-        return {"ready": on_cloud, "ollama": False, "models": [], "model": model, **info}
-    installed = model in models or f"{model}:latest" in models
-    return {"ready": installed or on_cloud, "ollama": True, "models": models, "model": model,
-            "tools": llm.supports_tools(model) if installed else None, **info}
-
-
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, config, judging, learning, prompts, resume, session, skillrun, voice_io  # noqa: E402
+from nova.core.app import body, brains, config, judging, learning, prompts, resume, session, skillrun, voice_io  # noqa: E402

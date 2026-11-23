@@ -64,6 +64,7 @@ class Settings:
     voice: bool = True
     wake: bool = False
     provider: str = "ollama"
+    brain_mode: typing.Literal["cloud_first", "local_first"] = "cloud_first"   # brains.py: local first, cloud when stuck
     cloud_models: dict = field(default_factory=dict)
     notifications: bool = False
     notif_sleep: bool = False
@@ -176,9 +177,12 @@ def save_settings(s):
 
 def brain(s=None):
     """The model that thinks for Nova: the chosen cloud model if it has a key, otherwise the local Ollama model
-    (s["model"]), which is also the fallback whenever the cloud fails."""
+    (s["model"]), which is also the fallback whenever the cloud fails. In "local_first" mode it is always the local
+    model: a task climbs to the cloud only when it gets stuck (brains.py), and side jobs stay local."""
     s = s or settings()
     p = s.get("provider", "ollama")
+    if s.get("brain_mode") == "local_first":
+        return s["model"]
     name = (s.get("cloud_models") or {}).get(p) or cloud.DEFAULT_MODELS.get(p)
     if p in cloud.PROVIDERS and name and cloud.get_key(p):
         return cloud.model_id(p, name)
