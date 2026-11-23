@@ -80,8 +80,10 @@ def set_clickthrough(hwnd, base_style, on):
     user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style)
 
 
-def blit(hwnd, dibs, data, w, h, x, y):
-    """Show `data` (premultiplied BGRA, w x h) at screen x, y. `dibs` caches one bitmap per size between calls."""
+def blit(hwnd, dibs, data, w, h, x, y, alpha=255):
+    """Show `data` (premultiplied BGRA, w x h) at screen x, y. `dibs` caches one bitmap per size between calls.
+    data None: show the picture already in the cached bitmap again (the hands-off glow's pulse only changes `alpha`,
+    the whole window's opacity; it must still pass the picture - with none, the glow vanished, found live)."""
     if (w, h) not in dibs:
         bmi = BITMAPINFO()
         bmi.bmiHeader = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
@@ -93,12 +95,14 @@ def blit(hwnd, dibs, data, w, h, x, y):
             dibs.clear()
         dibs[(w, h)] = (hbmp, bits)
     hbmp, bits = dibs[(w, h)]
-    ctypes.memmove(bits, data, len(data))
+    if data is not None:
+        ctypes.memmove(bits, data, len(data))
+    blend = BLEND if alpha >= 255 else BLENDFUNCTION(0, 0, max(0, int(alpha)), 1)
     screen = user32.GetDC(None)
     mem = gdi32.CreateCompatibleDC(screen)
     old = gdi32.SelectObject(mem, hbmp)
     user32.UpdateLayeredWindow(hwnd, screen, ctypes.byref(POINT(x, y)), ctypes.byref(SIZE(w, h)), mem,
-                               ctypes.byref(POINT(0, 0)), 0, ctypes.byref(BLEND), 2)
+                               ctypes.byref(POINT(0, 0)), 0, ctypes.byref(blend), 2)
     gdi32.SelectObject(mem, old)
     gdi32.DeleteDC(mem)
     user32.ReleaseDC(None, screen)

@@ -21,6 +21,31 @@ def test_the_glow_is_at_the_edges_and_the_middle_is_see_through():
     assert overlay.render(400, 300, "").getpixel((200, overlay.GLOW + 20))[3] == 0      # no text, no pill
 
 
+def test_every_screen_glows_and_the_pill_sits_on_the_primary():
+    # a 400x300 primary on the right of a 200x200 second screen that starts 50 px lower
+    img = overlay.render(600, 300, "Nova is using your laptop", [(200, 0, 400, 300), (0, 50, 200, 200)])
+    assert img.getpixel((200, 150))[3] > 150 and img.getpixel((599, 150))[3] > 150    # primary's left and right edges
+    assert img.getpixel((0, 150))[3] > 150 and img.getpixel((199, 150))[3] > 150      # the second screen's edges
+    assert img.getpixel((100, 150))[3] == 0                                           # its middle is clear
+    assert img.getpixel((100, 10))[3] == 0                                            # off every screen: nothing
+    assert img.getpixel((400, overlay.GLOW + 20))[3] > 200                            # the pill: middle of the primary
+    assert img.getpixel((100, 50 + overlay.GLOW + 20))[3] == 0                        # not on the second screen
+
+
+def test_one_window_spans_every_screen():
+    from nova.platform import overlay_window
+    rect, inside = overlay_window.layout([(0, 0, 1920, 1080), (-1280, 100, 1280, 1024)])
+    assert rect == (-1280, 0, 3200, 1124)
+    assert inside == [(1280, 0, 1920, 1080), (0, 100, 1280, 1024)]                   # primary stays first
+
+
+def test_the_glow_breathes_but_never_fades_out():
+    seen = [overlay.pulse(t / 10) for t in range(int(overlay.PULSE_SECS * 20))]
+    assert overlay.pulse(0) == 255 and max(seen) == 255
+    assert min(seen) >= overlay.PULSE_LOW > 100                                        # the pill stays readable
+    assert overlay.pulse(overlay.PULSE_SECS / 2) == overlay.PULSE_LOW
+
+
 def test_premultiplied_bgra_for_update_layered_window():
     from PIL import Image
     img = Image.new("RGBA", (1, 1), (200, 100, 50, 128))

@@ -538,9 +538,11 @@ exam) uses the keyboard and mouse, the screen's edges glow purple → cyan and a
 laptop - say “stop” or press ■ Stop to take over", like Claude's computer use. `nova/overlay.py` draws it and runs it as
 its own process (`python -m nova.overlay`, driven over stdin by `overlay.show/hide/close`); the window is
 `nova/platform/overlay_window.py`. Click-through, never focused, untitled (not in her window list), left out of
-screenshots (WDA_EXCLUDEFROMCAPTURE), primary screen only. Setting `hands_off_glow` (Senses) turns it off.
-Found live, while making it appear: withdraw/deiconify painted a grey full-screen Tk window, and an alpha-only
-UpdateLayeredWindow (a gentle pulse) made the glow vanish, so the window stays mapped and the glow is steady; and in
+screenshots (WDA_EXCLUDEFROMCAPTURE). One window spans every screen: each screen's edges glow, the pill sits on the
+primary. It breathes gently (opacity 150-255 every 2.4 s). Setting `hands_off_glow` (Senses) turns it off.
+Found live, while making it appear: withdraw/deiconify painted a grey full-screen Tk window, so the window stays
+mapped; a pulse that changed only the alpha with no picture (hdcSrc NULL) made the glow vanish, so the pulse passes
+the same picture again with a new constant alpha (~0.1 % CPU); and in
 the child process a thread blocked reading the stdin pipe froze Tk's main loop, so the glow never showed - the pipe is
 now moved off standard input (stdin becomes NUL) before Tk starts.
 

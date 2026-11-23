@@ -7,10 +7,12 @@ SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE): screenshots - her screen looks
 
 Found live (2026-11-23), so not done:
 - withdraw / deiconify: once shown again, the window paints as a plain grey Tk window over the whole screen;
-- a pulse that only changes the window's alpha (UpdateLayeredWindow with no new picture): the glow vanishes;
+- a pulse that only changes the window's alpha with no picture (UpdateLayeredWindow, hdcSrc NULL): the glow vanishes
+  (so the pulse passes the same picture again, with a new constant alpha);
 - a thread blocked reading the stdin pipe froze Tk's main loop and the glow vanished (see _take_stdin).
-So the window stays mapped the whole time: "hidden" is a fully see-through picture, "shown" is the glow. Steady, no
-pulse. The window has no title, so it isn't in Nova's window list. It runs in its own process (python -m nova.overlay).
+So the window stays mapped the whole time: "hidden" is a fully see-through picture, "shown" is the glow. One window
+spans every screen (the virtual desktop); each screen's edges glow. The window has no title, so it isn't in Nova's
+window list. It runs in its own process (python -m nova.overlay).
 """
 import ctypes
 import json
@@ -38,8 +40,42 @@ def _take_stdin():
     return os.fdopen(fd, "r", encoding="utf-8")
 
 
-def run(render, to_bytes, log):
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint32), ("rcMonitor", ctypes.c_long * 4), ("rcWork", ctypes.c_long * 4),
+                ("dwFlags", ctypes.c_uint32)]
+
+
+_MONITORENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_int, aw.VP, aw.VP, ctypes.c_void_p, ctypes.c_void_p)
+user32.EnumDisplayMonitors.argtypes = [aw.VP, aw.VP, _MONITORENUMPROC, ctypes.c_void_p]
+user32.GetMonitorInfoW.argtypes = [aw.VP, ctypes.POINTER(_MONITORINFO)]
+
+
+def monitors():
+    """Every screen as (x, y, w, h) in desktop pixels, the primary first."""
+    found = []
+
+    def one(hmon, _hdc, _rect, _data):
+        info = _MONITORINFO()
+        info.cbSize = ctypes.sizeof(_MONITORINFO)
+        if user32.GetMonitorInfoW(hmon, ctypes.byref(info)):
+            left, top, right, bottom = info.rcMonitor
+            found.append((not info.dwFlags & 1, (left, top, right - left, bottom - top)))   # 1 = MONITORINFOF_PRIMARY
+        return 1
+
+    user32.EnumDisplayMonitors(None, None, _MONITORENUMPROC(one), None)
+    return [rect for _, rect in sorted(found)]
+
+
+def layout(screens):
+    """The window over all `screens`: (x, y, w, h) of the desktop they span, and each screen inside that window."""
+    x0, y0 = min(s[0] for s in screens), min(s[1] for s in screens)
+    x1, y1 = max(s[0] + s[2] for s in screens), max(s[1] + s[3] for s in screens)
+    return (x0, y0, x1 - x0, y1 - y0), [(x - x0, y - y0, w, h) for x, y, w, h in screens]
+
+
+def run(render, to_bytes, pulse, log):
     """Read JSON commands from stdin ({"do": "show", "text"} / {"do": "hide"}) until it closes."""
+    import time
     pipe = _take_stdin()
     import tkinter as tk
     from nova import runtime
@@ -56,8 +92,9 @@ def run(render, to_bytes, log):
     if not os.environ.get("NOVA_OVERLAY_CAPTURE"):
         user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
     root.update()                        # map it first, then draw (drawing before mapping showed nothing, live)
-    clear, dibs = bytes(w * h * 4), {}
-    aw.blit(hwnd, dibs, clear, w, h, 0, 0)                 # mapped, but nothing to see
+    dibs = {}
+    state = {"rect": (0, 0, w, h), "since": None}          # since: when the glow went up (None: hidden)
+    aw.blit(hwnd, dibs, bytes(w * h * 4), w, h, 0, 0)      # mapped, but nothing to see
     commands = queue.Queue()
 
     def read_stdin():
@@ -73,14 +110,22 @@ def run(render, to_bytes, log):
             while not commands.empty():
                 cmd = commands.get_nowait()
                 if cmd.get("do") == "show":
-                    aw.blit(hwnd, dibs, to_bytes(render(w, h, str(cmd.get("text") or ""))), w, h, 0, 0)
-                    log(f"shown on a {w}x{h} screen (exstyle {hex(user32.GetWindowLongPtrW(hwnd, aw.GWL_EXSTYLE))}): "
-                        f"{str(cmd.get('text'))[:60]}")
+                    rect, inside = layout(monitors() or [(0, 0, w, h)])     # screens may have changed since last time
+                    state["rect"], state["since"] = rect, time.monotonic()
+                    aw.blit(hwnd, dibs, to_bytes(render(rect[2], rect[3], str(cmd.get("text") or ""), inside)),
+                            rect[2], rect[3], rect[0], rect[1], pulse(0))
+                    log(f"shown over {len(inside)} screen(s) {rect} (exstyle "
+                        f"{hex(user32.GetWindowLongPtrW(hwnd, aw.GWL_EXSTYLE))}): {str(cmd.get('text'))[:60]}")
                 elif cmd.get("do") == "hide":
-                    aw.blit(hwnd, dibs, clear, w, h, 0, 0)
+                    x, y, rw, rh = state["rect"]
+                    state["since"] = None
+                    aw.blit(hwnd, dibs, bytes(rw * rh * 4), rw, rh, x, y)
                 elif cmd.get("do") == "quit":
                     root.destroy()
                     return
+            if state["since"] is not None:                 # breathe: the same picture, the window's opacity changes
+                x, y, rw, rh = state["rect"]
+                aw.blit(hwnd, dibs, None, rw, rh, x, y, pulse(time.monotonic() - state["since"]))
         except Exception as e:
             log(f"error: {type(e).__name__}: {e}")
         root.after(TICK_MS, tick)
