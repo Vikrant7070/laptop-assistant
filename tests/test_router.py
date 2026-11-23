@@ -70,12 +70,13 @@ def test_deep_model_that_ignores_tools_never_runs_its_plan(brain, monkeypatch):
 
 
 def test_deep_model_runs_its_own_plan_only_when_allowed(brain, monkeypatch):
-    monkeypatch.setattr(router, "_probe", {"deepseek-r1:8b": True})
-    monkeypatch.setattr(router, "make_plan", lambda s, goal, on_think=None: ("1. Do it", "deepseek-r1:8b"))
+    deep = router.DEFAULTS["deep_model"]
+    monkeypatch.setattr(router, "_probe", {deep: True})
+    monkeypatch.setattr(router, "make_plan", lambda s, goal, on_think=None: ("1. Do it", deep))
     app.save_settings({**app.settings(), "deep_runs": True})
     models, _, _ = recorded(brain, [("Done.", [])])
     app.answer("make a plan to organize my downloads step by step")
-    assert models == ["deepseek-r1:8b"]
+    assert models == [deep]
 
 
 def test_escalate_tool_switches_mid_task(brain):
@@ -104,6 +105,37 @@ def test_not_installed_coder_is_skipped(brain, monkeypatch):
     models, _, _ = recorded(brain, [("Fixed it.", [])])
     app.answer("debug my python script")
     assert models == [app.settings()["model"]]
+
+
+def test_planner_gets_room_to_think_and_its_own_sampling(monkeypatch):
+    seen = {}
+
+    def chat(model, messages, tools_, **kw):
+        seen.update(kw, model=model)
+        return {}, "1. Open Downloads\n2. Sort by type", []
+    monkeypatch.setattr(router.llm, "chat", chat)
+    plan, model = router.make_plan(app.settings(), "organize my downloads step by step")
+    assert plan.startswith("1. Open Downloads") and model == "qwen3.5:4b" == seen["model"]
+    assert seen["think"] is True and seen["own_sampling"] is True
+    assert seen["num_predict"] == router.PLAN_PREDICT >= 3000      # 900 ran out while the model was still thinking
+
+
+def test_own_sampling_leaves_temperature_and_repeat_penalty_to_the_model(monkeypatch):
+    bodies = []
+    monkeypatch.setattr(router.llm, "capabilities", lambda m: ["completion", "thinking"])
+    monkeypatch.setattr(router.llm, "_run", lambda path, body: (bodies.append(body), {"message": {"content": "ok"}})[1])
+    router.llm.chat("qwen3.5:4b", [{"role": "user", "content": "plan"}], [], think=True, own_sampling=True)
+    router.llm.chat("qwen3-vl:4b-instruct", [{"role": "user", "content": "hi"}], [])
+    assert "temperature" not in bodies[0]["options"] and "repeat_penalty" not in bodies[0]["options"]
+    assert bodies[0]["options"]["num_ctx"] and bodies[0]["think"] is True
+    assert bodies[1]["options"]["temperature"] == 0.6 and bodies[1]["options"]["repeat_penalty"] == 1.15
+
+
+def test_committed_routing_file_names_the_new_planner():
+    import json
+    from pathlib import Path
+    conf = json.loads((Path(__file__).parent.parent / "config" / "model_routing.json").read_text(encoding="utf-8"))
+    assert conf["deep_model"] == router.DEFAULTS["deep_model"] == "qwen3.5:4b"
 
 
 LONG_PLAN = "\n".join(f"{i}. step {i}" for i in range(1, 9))

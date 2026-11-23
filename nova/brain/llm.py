@@ -263,7 +263,7 @@ def cloud_resting():
 
 
 def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_think=None, num_predict=200,
-         reasoning="low", keep_alive=None):
+         reasoning="low", keep_alive=None, own_sampling=False):
     """One model turn. Returns (assistant_message_to_store, text, [ {id,name,args} ]).
     on_text(piece) gets the reply piece by piece while it is being written, so Nova can start speaking the first
     sentence before the last one exists. on_think(piece) gets the model's own reasoning, when it shows any (a local
@@ -271,6 +271,8 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_th
     reasoning ("low" | "high" | "max") sets how hard a cloud model thinks first.
     keep_alive: how long Ollama keeps this model on the GPU afterwards (default KEEP_ALIVE). A bigger model the router
     borrowed for one task uses a short one, so it doesn't sit on the 6 GB card pushing the everyday model off.
+    own_sampling=True leaves temperature and repeat_penalty to the model's own Ollama settings: qwen3.5 with ours
+    (0.6 / 1.15) never stops thinking (measured 2026-11-23: 2000+ words, no plan); with its own it plans in ~60 s.
     For a cloud model ("cloud:provider:name"), any failure (no internet, bad key, credit ran out...) makes this
     turn run on the local Ollama model `fallback` instead; LAST["fallback"] then says why."""
     LAST["fallback"] = None
@@ -294,6 +296,9 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_th
             "options": {"num_ctx": NUM_CTX, "temperature": 0.6,
                         "num_predict": num_predict,  # replies are spoken: short (200). Also stops a small model rambling in loops
                         "repeat_penalty": 1.15}}
+    if own_sampling:
+        for k in ("temperature", "repeat_penalty"):
+            del body["options"][k]
     if native:
         body["tools"] = _to_ollama_tools(tools)
     if "thinking" in capabilities(model):
