@@ -22,7 +22,7 @@
 import re
 import time
 
-from nova import db, intents, protocol, store, task_state
+from nova import db, intents, overlay, protocol, store, task_state
 from nova.actions import judge, skills
 from nova.actions import checks
 from nova.brain import cloud, router
@@ -427,6 +427,25 @@ def strip_for(card):
 
 def _changed(card):
     eventbus.publish("task", strip_for(card))
+    _hands_off(card)
+
+
+def on_screen(tool):
+    """A step that uses the keyboard, the mouse or the windows (the ones the Judge settles the screen after)."""
+    return tool in conversation.ACT_TOOLS or tool in ("type_text", "press_keys")
+
+
+def _hands_off(card):
+    """The hands-off glow (nova/overlay.py): on while a task that has used the keyboard / mouse is still running;
+    off when it ends, waits for the user (a question, an approval) or is stopped."""
+    try:
+        if (card["status"] == "running" and config.settings().get("hands_off_glow", True)
+                and any(on_screen(r["tool"]) for r in card["runs"])):
+            overlay.show(overlay.TASK_TEXT)
+        else:
+            overlay.hide()
+    except Exception:
+        log_exception("resume: the hands-off glow")
 
 
 task_state.on_change = _changed

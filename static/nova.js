@@ -421,7 +421,7 @@ function openSetup(s) {
     $("#toolNote").textContent = s.ready ? (s.tools ? "✓ This model supports tool calling." : "This model has no native tool calling - I'll use a text-based fallback (works, but less reliably).") : "";
     $("#think").checked = s.think; $("#autostart").checked = s.autostart; $("#camera").checked = s.camera; $("#screen").checked = s.screen;
     $("#suggest").checked = !!s.suggest; $("#notifications").checked = !!s.notifications; $("#notifSleep").checked = !!s.notif_sleep; $("#deepSleep").checked = s.deep_sleep !== false; $("#listenPause").value = s.listen_pause ?? 0.7; $("#listenMax").value = s.listen_max ?? 10; $("#micLevel").value = s.mic_level ?? 5; showMicLevel(); $("#phoneCalls").checked = s.phone_calls !== false; $("#phoneQuiet").checked = s.phone_quiet !== false;$("#phoneCloud").checked = !!s.phone_notes_cloud; $("#emailCloud").checked = !!s.email_cloud;
-    $("#errorHelp").checked = s.error_help !== false; $("#bargeIn").checked = s.barge_in !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
+    $("#errorHelp").checked = s.error_help !== false; $("#bargeIn").checked = s.barge_in !== false; $("#handsOffGlow").checked = s.hands_off_glow !== false; $("#presence").checked = !!s.presence; $("#presenceLock").checked = !!s.presence_lock;
     put($("#visionNote"), s.vision_model ? html`Eyes: <b>${s.vision_model}</b> ✓`
       : html`She needs a vision model to see: run <code>ollama pull qwen3-vl:8b</code>`);
     document.querySelectorAll("[name=aut]").forEach(r => r.checked = r.value === s.autonomy);
@@ -574,7 +574,7 @@ $("#saveModel").onclick = async () => {
       avatar_roam: $("#avatarRoam").value, character: $("#character").value !== $("#character").dataset.was ? $("#character").value : undefined,
       routing: {auto_route: $("#autoRoute").checked, coder_model: $("#coderModel").value, deep_model: $("#deepModel").value,
         heavy_model: $("#heavyModel").value, heavy_steps: +$("#heavySteps").value || 6},
-      error_help: $("#errorHelp").checked, barge_in: $("#bargeIn").checked, presence: $("#presence").checked, presence_lock: $("#presenceLock").checked});
+      error_help: $("#errorHelp").checked, barge_in: $("#bargeIn").checked, hands_off_glow: $("#handsOffGlow").checked, presence: $("#presence").checked, presence_lock: $("#presenceLock").checked});
     if (!s.ready) { $("#keyErr").textContent = "That model isn't available."; return; }
     $("#setup").classList.remove("show"); const first = !window.__ready; window.__ready = true; loadStatus(); if (first) greet();
   } catch (e) { $("#keyErr").textContent = e.message; }

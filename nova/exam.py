@@ -37,7 +37,7 @@ import tomllib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from nova import shared
+from nova import overlay, shared
 
 TASKS_FILE = shared.ROOT / "exam" / "tasks.toml"
 RESULTS_DIR = shared.ROOT / "exam" / "results"
@@ -304,6 +304,24 @@ def _commit():
         return "?"
 
 
+COUNTDOWN_SECS = 10        # time to step away after "don't touch the keyboard or mouse"
+FINISHED_SECS = 8
+
+
+def notepad_open():
+    """Notepad is running (its old tabs would be typed into)."""
+    import psutil
+    return any((p.info.get("name") or "").lower() == "notepad.exe" for p in psutil.process_iter(["name"]))
+
+
+def hands_off_countdown(n, sleep=time.sleep):
+    """The glow and a countdown before the exam takes the keyboard and mouse (the user's request, 2026-11-23)."""
+    print(f"Hands off: the exam starts in {COUNTDOWN_SECS} s and uses the keyboard and mouse for its {n} tasks.", flush=True)
+    for left in range(COUNTDOWN_SECS, 0, -1):
+        overlay.show(f"Nova's task exam starts in {left} s - please don't touch the keyboard or mouse for about 20 minutes")
+        sleep(1)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python -m nova.exam", description="Nova's task exam (acts on this laptop).")
     ap.add_argument("--model", help="the brain to test, e.g. qwen3-vl:4b-instruct or cloud:google:gemini-2.5-flash")
@@ -328,6 +346,10 @@ def main(argv=None):
         return 0
     if not args.model:
         ap.error("--model is required to run the exam")
+    if notepad_open():
+        print("Notepad is open. Save and close its tabs first: the exam types into Notepad, and Windows 11 reopens your\n"
+              "old tabs - on 2026-11-23 it typed into one of yours and pressed Ctrl+S.")
+        return 2
     if nova_running():
         print("Nova is running (port 5055). Quit her from the tray first: two Novas fight over the desktop.")
         return 2
@@ -354,9 +376,11 @@ def main(argv=None):
         return (out if isinstance(out, dict) else {"reply": str(out)}), status
 
     results = []
+    hands_off_countdown(len(tasks))
     try:
         for i, task in enumerate(tasks, 1):
             print(f"[{i}/{len(tasks)}] {task.id}: {task.request}", flush=True)
+            overlay.show(f"Nova's task exam is running - please don't touch the keyboard or mouse (task {i} of {len(tasks)})")
             r = run_task(task, answer=answer, approve=approve, check=desktop_check, act=desktop_act, sandbox=sandbox)
             print(f"    -> {r.outcome} ({r.claimed}, {r.seconds} s)" + (f" {r.error}" if r.error else ""), flush=True)
             results.append(r)
@@ -368,6 +392,9 @@ def main(argv=None):
             print(f"Couldn't restore dark mode: {e}")
     base = save(results, meta)
     summ = summary(results)
+    overlay.show(f"Exam finished ({summ['success_rate']:.0%} success) - you can use the laptop again")
+    time.sleep(FINISHED_SECS)
+    overlay.close()
     print(f"\nSuccess {summ['success_rate']:.0%}, false 'done' {summ['false_done_rate']:.0%}, honest failures "
           f"{summ['honest_failure_rate']:.0%}, median {summ['median_seconds']} s/task.\nSaved {base}.json and .md")
     return 0
