@@ -12,13 +12,14 @@ trying for a few seconds, because a page that was just opened takes a moment to 
     dark_mode on|off              Windows' app colour mode
     process_running "chrome"      a program with that name is running
     result_has "text"             the step's own output contains the text
+    file_exists "C:\\path\\a.txt"   that file (or folder) exists
 """
 import time
 
 from nova import platform
 
 NAMES = {"window_open", "front_window", "page_has", "page_lacks", "fullscreen", "dark_mode", "process_running",
-         "result_has"}
+         "result_has", "file_exists"}
 NEEDS_ARG = NAMES - {"fullscreen"}
 INSTANT = {"result_has", "dark_mode"}        # nothing to wait for: the answer is known now
 
@@ -113,6 +114,12 @@ def process_running(arg, ctx):
         if q in (p.info.get("name") or "").lower():
             return True, f"{p.info['name']} is running"
     return False, "not running"
+
+
+def file_exists(arg, ctx):
+    from pathlib import Path
+    p = Path(str(arg).strip().strip('"')).expanduser()
+    return p.exists(), f"{p} {'exists' if p.exists() else 'is missing'}"
 
 
 def result_has(arg, ctx):

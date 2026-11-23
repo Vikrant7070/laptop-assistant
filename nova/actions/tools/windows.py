@@ -255,16 +255,47 @@ def _type_into_focus(text):
     return "paste"
 
 
+# The task exam (2026-11-23) caught the small brain focusing a Command Prompt and typing "ren ..." + Enter with
+# type_text / press_keys: a shell command run without the always-ask approval run_in_terminal enforces (AGENTS.md
+# section 6). Keys never go into a terminal window; commands go through run_in_terminal, which asks first.
+TERMINAL_PROCS = {"cmd", "powershell", "pwsh", "windowsterminal", "conhost", "openconsole", "wt", "bash", "wsl",
+                  "mintty"}
+TERMINAL_TITLE_RE = re.compile(r"\b(command prompt|powershell|windows terminal|terminal|cmd\.exe|nova terminal)\b", re.I)
+NO_TERMINAL_KEYS = ("Not done - that is a terminal window: typing or pressing keys there would run commands without "
+                    "the user's OK. To run a command use run_in_terminal (it asks the user first); for files use "
+                    "move_or_rename, create_folder or write_text_file.")
+
+
+def _is_terminal_name(name):
+    n = str(name or "").strip().lower().removesuffix(".exe")
+    return n in TERMINAL_PROCS or bool(TERMINAL_TITLE_RE.search(n))
+
+
+def _terminal_in_front():
+    """The window keys would go to is a terminal (its program, or its title)."""
+    hwnd = platform.current().foreground()
+    if not hwnd:
+        return False
+    for h, title, proc in _windows():
+        if h == hwnd:
+            return str(proc or "").lower().removesuffix(".exe") in TERMINAL_PROCS or bool(TERMINAL_TITLE_RE.search(title or ""))
+    return False                # a window that isn't in the list (a dialog, the desktop): not a terminal we know of
+
+
 @tool("Type text into an app that is already open; into_window = that app's name, e.g. 'notepad' "
       "(it is brought to the front first). If the app isn't in the open windows list, call open_app first.",
       friendly="Typed text", risky="Type on your keyboard", core=True, props={"text": common.S, "into_window": common.S},
       required=["text"])
 def type_text(text, into_window=None):
+    if into_window and _is_terminal_name(into_window):
+        return NO_TERMINAL_KEYS
     if into_window:
         msg = window_action(into_window, "focus")
         if msg.startswith("No open"):
             return msg
         time.sleep(0.4)
+    if _terminal_in_front():
+        return NO_TERMINAL_KEYS
     if forms._focused_is_password():
         return forms.NO_SECRETS
     pointing = _point_at_focus("Typing…")
@@ -280,6 +311,8 @@ def type_text(text, into_window=None):
       "use it to open or switch apps (alt+tab, ctrl+n): use open_app or window_action focus.",
       friendly="Pressed keys", risky="Press keys", core=True, props={"keys": common.S}, required=["keys"])
 def press_keys(keys):
+    if _terminal_in_front():
+        return NO_TERMINAL_KEYS
     platform.current().press(keys)
     return f"Pressed {keys}."
 

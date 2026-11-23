@@ -135,7 +135,8 @@ def claimed(out, verdict=None):
         return "not done"
     if verdict is not None and verdict.get("verdict") is False:
         return "not done"            # the Judge's check failed and she was told so
-    return "not done" if NOT_DONE_RE.search(out.get("reply") or "") else "done"
+    reply = (out.get("reply") or "").replace("\u2019", "'").replace("\u2018", "'")   # the brain writes "can’t"
+    return "not done" if NOT_DONE_RE.search(reply) else "done"
 
 
 def outcome(task, claim, checks_ok):
