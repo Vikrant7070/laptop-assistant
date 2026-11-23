@@ -51,7 +51,8 @@ def _cards():
 
 
 def task_row(card):
-    done = sum(r["state"] == "done" for r in card["runs"])
+    done = (sum(st["state"] == "done" for st in card["plan"]) if card["plan"]     # plan steps done, when there is a plan
+            else sum(r["state"] == "done" for r in card["runs"]))
     return {"id": "t:" + card["id"], "kind": "laptop", "when": card["started"], "goal": card["goal"],
             "who": card.get("brain") or "Nova", "status": card["status"], "why": card["why"],
             "steps_done": done, "steps_total": len(card["plan"]) or None,

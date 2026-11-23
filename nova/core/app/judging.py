@@ -9,6 +9,7 @@ from nova.brain import llm
 from nova.actions import judge
 from nova.actions import tools
 from nova import protocol, task_state
+from nova.actions import readback
 
 
 def settle(tool_name, quick=False):
@@ -155,6 +156,18 @@ def final_judge(task, text, activity, model):
     conversation.task_log("VERDICT " + json.dumps(task["verdict"], ensure_ascii=False))
 
 
+def readback_verdict(task):
+    """She says she's finished: a read-back that failed (and wasn't put right later) means it isn't done, whatever
+    the brain or the screen look said. Feeds the usual path: one more go with the failing check, then the plain
+    "I don't think I finished that - <what>"."""
+    card = task_state.of(task)
+    bad = task_state.failing(card)
+    if not bad or (task.get("done") is False and task.get("verdict_source") == "checks"):
+        return                                # nothing failed, or the Judge's own check already said why
+    task.update(done=False, verdict_source="checks", screen="Read back by code: " + "; ".join(bad), fail_plain=bad[0])
+    conversation.task_log("READ BACK says not done: " + "; ".join(bad))
+
+
 def execute(calls, approved, activity, model):
     outs = []
     card = task_state.of(session.state.get("task"))
@@ -165,6 +178,10 @@ def execute(calls, approved, activity, model):
             out = conversation._execute_one(c, approved, activity, model)
             c = session.state.pop("ran_as", None) or c   # the call that really ran (web_research may become a background job)
             task_state.finish(card, out, not skillrun._failed(out), c["name"], rid)   # no-op if check_step did
+            if card is not None and not skillrun._failed(out):     # 4c: code reads the result back, never her "done"
+                rb = readback.read_back(c["name"], c.get("args") or {}, out)
+                task_state.set_check(card, rid, rb)
+                out += readback.note(rb)
         except conversation.Stopped:      # every call still gets a result, so the history stays valid for the next request
             out = "The user pressed Stop before this step finished. It was not done (or only partly)."
             task_state.leave_open(card, rid)   # half-done: safe resume (4-pre b) checks it before anything redoes it

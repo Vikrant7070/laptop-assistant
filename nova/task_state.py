@@ -323,9 +323,50 @@ def strip(card, runs=6):
             "source": card["source"], "started": card["started"], "updated": card["updated"],
             "done": sum(r["state"] == "done" for r in card["runs"]), "actions": list(acts),
             "plan": [{"text": st["text"], "state": st["state"], "result": st["result"]} for st in card["plan"]],
-            "runs": [{"tool": r["tool"], "hint": r["hint"], "state": r["state"], "result": r["result"]}
-                     for r in card["runs"][-runs:]],
+            "runs": [{"tool": r["tool"], "hint": r["hint"], "state": r["state"], "result": r["result"],
+                      "check": r.get("check")} for r in card["runs"][-runs:]],
+            "left": left(card), "not_checked": not_checked(card) and card["status"] == "done",
             "read_only": bool(card.get("read_only"))}
+
+
+# ------------------------------------------------------------------ read-back checks (4c)
+
+def set_check(card, rid, rb):
+    """The read-back of run `rid` (nova/actions/readback.py): passed / failed / skipped, why, what it checked."""
+    if card is None or rb is None:
+        return
+    run = next((r for r in card["runs"] if r.get("id") == rid), None)
+    if run is not None:
+        run["check"] = {"state": rb["state"], "why": clean(rb["why"], 120), "target": clean(rb.get("target"), 200)}
+        if rb["state"] == "failed" and run.get("step") is not None:     # the plan step isn't done either
+            card["plan"][run["step"]].update(state="failed", result=run["check"]["why"])
+        _touch(card)
+
+
+def failing(card):
+    """What is still not true: the newest read-back per thing checked, where that one failed (a later step that put
+    it right replaces an earlier failure)."""
+    last = {}
+    for r in (card or {}).get("runs", []):
+        c = r.get("check")
+        if c:
+            last[c.get("target") or f"{r['tool']}#{r['id']}"] = c
+    return [c["why"] for c in last.values() if c["state"] == "failed"]
+
+
+def not_checked(card):
+    """Steps changed things, and not one of them could be read back."""
+    cs = [r["check"] for r in (card or {}).get("runs", []) if r.get("check")]
+    return bool(cs) and all(c["state"] == "skipped" for c in cs)
+
+
+def left(card):
+    """The "couldn't finish" list: plan steps that never got done, and what the read-backs say is still not true."""
+    steps = [(i, st) for i, st in enumerate((card or {}).get("plan", [])) if st["state"] not in ("done", "skipped")]
+    out = [f"step {i + 1}: {st['text']}" + (f" ({st['result']})" if st["state"] == "failed" and st["result"] else "")
+           for i, st in steps]
+    said = {st["result"] for _, st in steps}
+    return out + [w for w in failing(card) if w not in said]             # each problem once
 
 
 # ------------------------------------------------------------------ what the brain sees
@@ -349,6 +390,8 @@ def render(card, limit=MAX_CHARS):
         tail.append("STARTED, NOT CONFIRMED: " + "; ".join(f"{r['tool']} {r['hint']}".strip() for r in unconfirmed[-2:]))
     if failed:
         tail.append("FAILED: " + "; ".join(_run_line(r) for r in failed))
+    if failing(card):
+        tail.append("NOT TRUE YET (read back by code): " + "; ".join(failing(card)[-3:]))
     i = current(card)
     if i is not None:
         tail.append(f"NOW: step {i + 1} - {card['plan'][i]['text']}")
