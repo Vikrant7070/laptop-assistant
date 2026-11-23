@@ -140,3 +140,26 @@ def test_brain_mode_is_saved_from_the_brain_tab(client):
     client.post("/api/setup", json={"brain_mode": "everything_everywhere"})
     assert app.settings()["brain_mode"] == "cloud_first"               # unknown values are ignored
     assert app.brains.ready_info()["brain_mode"] == "cloud_first"
+
+
+def test_a_climb_at_answer_time_never_sends_a_history_ending_with_her_own_reply(brain):
+    # Exam 2026-11-23: Gemini answered 400 "Requests ending with a model turn are not supported".
+    fake, _ = brain([("", [("look_up", {"q": "x"})]), ("Sorry, I can't do that.", []), ("Done it.", [])])
+    last_roles = []
+
+    def call(model, messages, tools_, **kw):
+        last_roles.append((model, messages[-1]["role"]))
+        return fake(model, messages, tools_, **kw)
+    app.llm.chat = call
+    app.answer("find the thing for me")
+    assert last_roles[-1] == (CLOUD, "user")
+
+
+def test_a_failed_cloud_call_after_a_climb_hands_back_to_the_local_brain(brain):
+    # Exam 2026-11-23: the cloud failed, the local fallback got the cloud-sized prompt and Ollama refused it.
+    models, _ = recorded(brain, [("", [("look_up", {"q": "x"})]), ("Sorry, I can't do that.", []),
+                                 (app.llm.OllamaError("Cloud error 400: nope"), []), ("I did what I could.", [])])
+    out, status = app.answer("find the thing for me")
+    assert status == 200 and models == [local(), local(), CLOUD, local()]
+    assert out["reply"] == "I did what I could."
+    assert "CLOUD BRAIN NOT USED (cloud:google:gemini-3.8-flash)" in log()

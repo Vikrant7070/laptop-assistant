@@ -596,16 +596,17 @@ def _agent_loop(activity):
         # If the cloud fails on a request the local router would hand to the coder or the planner, don't let the
         # everyday brain answer it: give up this turn and run it again on that brain (no local answer to throw away).
         local_route = local_route_for(task, s) if cloud.parse(model) else None
+        climbed = bool(task and task.get("climbed") and cloud.parse(model))   # brains.py: on the cloud because stuck
         t0, direct = time.time(), (task.pop("direct", None) if task and turns == 1 else None)
         try:
             answer_only = bool(task and task.get("answer_only") and model == task.get("model"))
             stored, text, calls = skillrun.direct_call(model, direct) if direct else interruptible(llm.chat, model, msgs, [] if answer_only else prompts.active_tools(model),
                                                 think=s["think"] or (level != "low" and (bool(cloud.parse(model)) or s.get("reasoning", "auto") != "auto")), reasoning=level,   # auto never makes the local brain think: 30-45 s per step on a 6 GB GPU
                                                 on_text=unless_stopped(stream.feed if stream else None),
-                                                fallback=None if local_route else s["model"], on_think=unless_stopped(reasoning.feed),
+                                                fallback=None if local_route or climbed else s["model"], on_think=unless_stopped(reasoning.feed),
                                                 keep_alive=router.BORROW_KEEP if model != s["model"] and not cloud.parse(model) else None)
         except llm.OllamaError as e:
-            if not local_route:
+            if not (local_route or climbed):         # a climbed task's history is cloud-sized: rerun the turn locally, trimmed
                 raise
             reasoning.flush()
             task["model"], task["route"] = s["model"], local_route
@@ -614,7 +615,7 @@ def _agent_loop(activity):
                 activity.append("Used the local brain")
             task_log(f"CLOUD BRAIN NOT USED ({model}): {e} -> local route '{local_route}' now")
             session.think("☁️ The cloud brain didn't answer, so I'm handing this to my local "
-                  + ("coding brain." if local_route == "code" else "deep-thinking brain to plan it."))
+                  + ("brain to finish." if climbed else "coding brain." if local_route == "code" else "deep-thinking brain to plan it."))
             continue
         reasoning.flush()
         used = s["model"] if llm.LAST["fallback"] else model

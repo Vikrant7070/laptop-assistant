@@ -26,7 +26,7 @@ import time
 
 from nova.brain import cloud, llm, router, usage
 from nova.avatar import body as body_module
-from nova import intents, task_state
+from nova import intents, protocol, task_state
 
 
 MODES = ("cloud_first", "local_first")
@@ -71,6 +71,11 @@ def climb(task, why):
     did = "; ".join(task.get("did", [])[-8:]) or "no steps yet"
     task["facts"] = (task.get("facts", "") + f"\n\nHANDED OVER TO YOU: the local brain got stuck on this task ({why}). "
                      f"Steps it did: {did}. Check what is already done, then finish the task: {task.get('goal', '')}")
+    msgs = session.state.get("messages") or []
+    if msgs and msgs[-1].get("role") == "assistant" and not msgs[-1].get("tool_calls"):
+        # Her last answer ends the history; Gemini refuses a request that ends with the model's own turn (400).
+        msgs.append({"role": "user", "content": protocol.note(
+            "The local brain stopped here without finishing. You are the cloud brain now: finish the task.")})
     conversation.task_log(f"CLIMB -> {target}: {why}")
     session.think(f"☁️ My local brain is stuck ({why}) → asking {name} in the cloud.")
     return True
