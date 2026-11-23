@@ -10,6 +10,27 @@ ROOT = Path(__file__).resolve().parent.parent   # the project folder (nova/ live
 # Where Nova keeps settings, notes, knowledge and keys. NOVA_DATA points it elsewhere (the tests use a temp folder).
 DATA = Path(os.environ.get("NOVA_DATA") or ROOT / "data")
 
+# ── The user's real folders ──
+# The small brain guessed C:\Users\Vikrant\Downloads from the user's name (the real one is C:\Users\vikra\Downloads),
+# went round in circles and gave up (2026-11-23). The brains are now told the real paths. Desktop and Documents may
+# be moved into OneDrive, so Windows is asked (platform known_folder) instead of assuming <home>\<name>.
+_folders = {}
+
+
+def user_folders():
+    """{"Home", "Desktop", "Documents", "Downloads"} -> the real paths on this laptop (asked once, then kept)."""
+    if not _folders:
+        from nova import platform
+        _folders["Home"] = str(Path.home())
+        for name in ("Desktop", "Documents", "Downloads"):
+            _folders[name] = platform.current().known_folder(name) or str(Path.home() / name)
+    return dict(_folders)
+
+
+def folders_line():
+    """One line for a prompt: the real folders, so no brain guesses a path from the user's name."""
+    return "; ".join(f"{k} = {v}" for k, v in user_folders().items())
+
 # ── Reactions that Nova's 3D body can perform ──
 REACTIONS = (
     "laugh", "dance", "spin", "clap", "surprised", "sad", "confused", "nod", "shake",

@@ -134,6 +134,9 @@ class Desktop(Protocol):
     def user_display_name(self) -> str:
         """The account's display name ("" if unknown)."""
 
+    def known_folder(self, name: str) -> str | None:
+        """The real path of "Desktop", "Documents" or "Downloads" (may be in OneDrive); None if unknown."""
+
     def memory_commit(self) -> tuple | None:
         """(used, limit) bytes of RAM + pagefile programs have claimed; None if unknown."""
 

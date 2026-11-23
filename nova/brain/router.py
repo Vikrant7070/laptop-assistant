@@ -20,7 +20,7 @@ from nova.brain import llm
 
 import json
 
-from nova import store
+from nova import shared, store
 
 # config/model_routing.json (in the project, so git keeps it) holds every knob below: written with these defaults when
 # missing, then yours to edit by hand or in the Model dialog - changes apply on the next request, no restart.
@@ -180,7 +180,8 @@ def make_plan(s, goal, on_think=None):
     except Exception:
         names = "any of Nova's tools"
     try:
-        _, text, _ = llm.chat(m, [{"role": "user", "content": PLAN_PROMPT.format(goal=goal[:1500], tools=names)}], [],
+        _, text, _ = llm.chat(m, [{"role": "user", "content": PLAN_PROMPT.format(goal=goal[:1500], tools=names,
+                                                                                    folders=shared.folders_line())}], [],
                               think=True, num_predict=PLAN_PREDICT, on_think=on_think, keep_alive=BORROW_KEEP,
                               own_sampling=True)
     except Exception as e:

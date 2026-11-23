@@ -215,6 +215,11 @@ class FakeDesktop:
     def user_display_name(self):
         return self.display_name
 
+    folders = {}                            # {"Downloads": r"D:\Dl"}; a name not here -> None (the <home> fallback)
+
+    def known_folder(self, name):
+        return self.folders.get(name)
+
     def memory_commit(self):
         return self.memory
 
