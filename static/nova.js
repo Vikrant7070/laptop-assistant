@@ -344,10 +344,64 @@ let st = null;
 const KEY_LINKS = {google: "https://aistudio.google.com/app/apikey", openai: "https://platform.openai.com/api-keys",
                    anthropic: "https://platform.claude.com/settings/keys"};
 const PRIVACY = "Our chat (and window titles) goes to this company. Screenshots and camera photos never do - they stay on the local model.";
-function fillCloud(ids, sel) {
-  put($("#cloudModel"), ids.length ? ids.map(m => html`<option ${m === sel ? "selected" : ""}>${m}</option>`)
+let cloudKinds = {};      // model -> "free" | "paid" | "" (config/cloud_free.json)
+const KIND_LABEL = {free: "  · Free", paid: "  · 💲 Paid"};
+function fillCloud(ids, sel, kinds) {
+  if (kinds) cloudKinds = kinds;
+  put($("#cloudModel"), ids.length ? ids.map(m => html`<option value="${m}" ${m === sel ? "selected" : ""}>${m}${KIND_LABEL[cloudKinds[m]] || ""}</option>`)
     : html`<option value="">Save a key to see the models</option>`);
+  $("#cloudModel").dataset.was = $("#cloudModel").value;
+  loadUsage($("#provider").value);
 }
+$("#cloudModel").onchange = () => {
+  const sel = $("#cloudModel"), m = sel.value;
+  if (cloudKinds[m] === "paid" && !confirm(`${m} costs money (it has no free uses). Use it anyway?`)) { sel.value = sel.dataset.was || ""; return; }
+  sel.dataset.was = m; loadUsage($("#provider").value);
+};
+
+/* ---------------- free cloud uses (nova/brain/usage.py) ---------------- */
+function untilText(secs) {
+  secs = Math.max(0, Math.round(secs)); const h = Math.floor(secs / 3600), m = Math.ceil(secs % 3600 / 60);
+  return h ? `${h} h ${m} m` : `${m} m`;
+}
+const clock = t => new Date(t * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+function usageLine(r, u) {
+  const out = r.out_until ? html` · <b style="color:#e06c6c">used up → local brain until ${clock(r.out_until)}</b>` : "";
+  const count = r.left != null ? `${r.left} of ${r.rpd} left today` : `${r.used} used today (daily limit not known yet)`;
+  const pct = r.rpd ? Math.max(0, Math.min(100, 100 * (r.left ?? 0) / r.rpd)) : null;
+  const colour = r.out_until || pct === 0 ? "#e06c6c" : pct != null && pct < 20 ? "#e0a84c" : "#5fbf7f";
+  return html`<div style="margin:4px 0"><b>${r.model}</b>${KIND_LABEL[r.kind] || ""} — ${count}${r.rpm ? ` · ${r.rpm}/min` : ""} · resets in ${untilText(u.reset_at - u.now)}${out}
+    ${pct != null ? html`<div class="bar" style="margin-top:3px"><i style="width:${pct}%;background:${colour}"></i></div>` : ""}</div>`;
+}
+async function loadUsage(p) {
+  try {
+    const u = await (await fetch("/api/cloud/usage" + (p && p !== "ollama" ? "?provider=" + p : ""))).json();
+    showChip(u);
+    if (!p || p === "ollama" || $("#provider").value !== p) return;
+    const rows = u.models.filter(r => r.provider === p), mine = rows.find(r => r.model === $("#cloudModel").value);
+    put($("#cloudUsage"), html`${rows.map(r => usageLine(r, u))}
+      ${mine ? html`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">Free limits for ${mine.model}:
+        <input id="limRpd" type="number" min="0" placeholder="per day" value="${mine.rpd ?? ""}" style="width:90px">
+        <input id="limRpm" type="number" min="0" placeholder="per minute" value="${mine.rpm ?? ""}" style="width:90px">
+        <button id="saveLim" type="button" style="width:auto;padding:4px 10px">Save</button>
+        <a href="${u.studio}" target="_blank">See your exact limits in AI Studio</a></div>` : ""}`);
+    const save = $("#saveLim");
+    if (save) save.onclick = async () => {
+      const num = id => $(id).value === "" ? null : Math.max(0, Math.floor(+$(id).value));
+      try { await api("/api/cloud/limits", {provider: p, model: mine.model, rpd: num("#limRpd"), rpm: num("#limRpm")}); loadUsage(p); }
+      catch (e) { $("#keyErr").textContent = e.message; }
+    };
+  } catch {}
+}
+function showChip(u) {
+  const chip = $("#cloudChip"), r = u && u.active && u.models.find(x => x.chosen);
+  chip.hidden = !r;
+  if (!r) return;
+  chip.textContent = r.out_until ? `☁️ out → local until ${clock(r.out_until)}` : r.left != null ? `☁️ ${r.left} left` : `☁️ ${r.used} used`;
+  chip.style.color = r.out_until || r.left === 0 ? "#e06c6c" : r.left != null && r.rpd && r.left < r.rpd * 0.2 ? "#e0a84c" : "";
+  chip.title = `${r.model}: ${r.left != null ? `${r.left} of ${r.rpd} free uses left today` : `${r.used} uses today, daily limit not known yet`}. Resets in ${untilText(u.reset_at - u.now)}. Click for details.`;
+}
+$("#cloudChip").onclick = async () => openSetup(await loadStatus());
 function keyPlaceholder(p) {
   $("#apiKey").value = "";
   $("#apiKey").placeholder = st.keys[p] ? "Key saved ✓ (paste a new one to replace it)" : `Paste your ${st.providers[p]} API key`;
@@ -359,7 +413,7 @@ async function loadCloudModels(p, sel) {
     const j = await (await fetch("/api/cloud/models?provider=" + p)).json();
     if (j.error) throw new Error(j.error);
     if ($("#provider").value !== p) return;
-    fillCloud(sel && !j.models.includes(sel) ? [sel, ...j.models] : j.models, sel || j.suggested);
+    fillCloud(sel && !j.models.includes(sel) ? [sel, ...j.models] : j.models, sel || j.suggested, j.kinds);
     $("#cloudNote").textContent = PRIVACY;
   } catch (e) { if ($("#provider").value === p) $("#cloudNote").textContent = e.message; }
 }
@@ -386,7 +440,7 @@ $("#saveKey").onclick = async () => {
     const j = await api("/api/cloud/key", {provider: p, key});
     st.keys[p] = true; keyPlaceholder(p);
     const want = st.cloud_models[p] || st.cloud_defaults[p];
-    fillCloud(j.models, want && j.models.includes(want) ? want : j.suggested);
+    fillCloud(j.models, want && j.models.includes(want) ? want : j.suggested, j.kinds);
     $("#cloudNote").textContent = "✓ Key works. " + PRIVACY;
   } catch (e) { $("#cloudNote").textContent = ""; $("#keyErr").textContent = e.message; }
   $("#saveKey").disabled = false;
@@ -617,6 +671,7 @@ async function loadStatus() {
   $("#voiceBtn").classList.toggle("on", voiceOn); $("#handsBtn").classList.toggle("on", handsFree); earsLabel(); showEars();
   if (s.voice_name) $("#voiceBtn").title = "Nova's voice: " + s.voice_name;
   $("#keyBtn").title = "Brain: " + (s.brain || "").replace(/^cloud:/, "") + (s.brain !== s.model ? `  (backup: ${s.model})` : "");
+  loadUsage();
   put($("#mem"), s.memories.length ? s.memories.map(m => html`<li>${m}</li>`) : html`<li>Nothing yet - tell me about yourself!</li>`);
   return s;
 }
@@ -635,7 +690,7 @@ let polling = false;
 function startPolling() {
   if (polling) return; polling = true;
   pollVoice(); pollThoughts();
-  setInterval(pollVoice, 1000); setInterval(pollThoughts, 600); setInterval(pulse, 15000); setInterval(loadTask, 2000);
+  setInterval(pollVoice, 1000); setInterval(pollThoughts, 600); setInterval(pulse, 15000); setInterval(loadTask, 2000); setInterval(loadUsage, 30000);
 }
 function listen() {
   if (!window.EventSource) return startPolling();
