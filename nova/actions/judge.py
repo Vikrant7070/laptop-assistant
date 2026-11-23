@@ -36,6 +36,10 @@ _DARK_OFF = re.compile(r"\b(?:(?:turn|switch|put)\s+off|disable)\s+(?:the\s+)?da
                        r"|\b(?:go\s+)?back\s+to\s+(?:the\s+)?light\s*(?:mode|theme)\b"
                        r"|" + _THEME_TO + r"light\b", re.I)
 _FULL = re.compile(r"\b(?:in\s+)?full\s?-?screen\b", re.I)
+# "save it as C:\notes\a.txt": the file must exist afterwards (task exam 2026-11-23: she typed the path into the note
+# itself and said "File saved").
+_SAVE_AS = re.compile(r"^save\s+(?:it|this|that|the\s+(?:file|note|document))?\s*as\s+[\"']?"
+                      r"(?P<path>(?:[A-Za-z]:[\\/]|~[\\/])[^\"']+?)[\"']?$", re.I)
 _FILLER = {"my", "the", "a", "an", "app", "application", "program", "folder", "website", "site", "page", "window",
            "for", "me", "please", "now", "up"}
 # A part that starts with one of these is its own action, not more things to open ("open notepad and type hi").
@@ -67,6 +71,9 @@ def _target(words):
 def clause_check(clause):
     """One part of a goal -> a list of checks for it (empty if code has no check for this shape)."""
     c = clause.strip(" .!?")
+    m = _SAVE_AS.match(c)
+    if m:
+        return [{"check": "file_exists", "arg": m.group("path").strip()}]
     if _DARK_OFF.search(c):
         return [{"check": "dark_mode", "arg": "off"}]
     if _DARK_ON.search(c):

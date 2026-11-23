@@ -127,6 +127,8 @@ def organize_folder(folder="downloads"):
 @tool("Create a folder.", friendly="Created a folder", props={"path": common.S}, required=["path"])
 def create_folder(path):
     p = common._resolve(path)
+    if p.is_dir():          # "Created" for a folder that was already there hid a wrong path (task exam 2026-11-23)
+        return f"Nothing created: {p} was already there. If you meant a new folder inside it, give its full path."
     p.mkdir(parents=True, exist_ok=True)
     return f"Created {p}"
 

@@ -95,6 +95,30 @@ def _app_path_exe(target):
     return None
 
 
+# Windows 11 keeps a few .exe launchers whose real app is a Store app: calc.exe starts the Calculator app through the
+# ms-calculator: protocol. If the app was removed, the stub starts, opens nothing, and open_app said "Opened" (task
+# exam 2026-11-23: "open the calculator" failed every time on this laptop - the Calculator app isn't installed).
+STUB_APPS = {"calc": ("ms-calculator", "the Windows Calculator app", "Microsoft Store: Windows Calculator")}
+
+
+def _protocol_registered(name):
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, name):
+            return True
+    except OSError:
+        return False
+
+
+def _stub_missing(target):
+    """The Store app behind a launcher stub isn't installed -> words for the brain, or ""."""
+    stub = STUB_APPS.get(str(target).lower().removesuffix(".exe"))
+    if not stub or _protocol_registered(stub[0]):
+        return ""
+    return (f"Couldn't open it: {stub[1]} isn't installed on this laptop (only its launcher is). Tell the user, "
+            f"and ask whether to install it ({stub[2]}).")
+
+
 @tool("Open an app installed on the laptop (anything in the Start menu), e.g. notepad, calculator, chrome, settings, vscode, spotify, task manager. If it fails, check with find_app.",
       friendly="Opened an app", core=True, props={"name": common.S}, required=["name"])
 def open_app(name):
@@ -102,6 +126,9 @@ def open_app(name):
     target = APPS.get(key, str(name).strip())
     if not target or re.search(r'[&|<>^"%\r\n]', target):
         return f"Couldn't open {name}: that isn't an app name."
+    missing = _stub_missing(target)
+    if missing:
+        return missing
     try:
         exe = shutil.which(target)
         if exe and exe.lower().endswith(".exe"):
