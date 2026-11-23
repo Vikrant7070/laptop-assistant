@@ -26,7 +26,7 @@ function meta(r) {
           r.steps_total ? `${r.steps_done} of ${n(r.steps_total, "step")}` : r.steps_done ? n(r.steps_done, "step") : "",
           r.files ? n(r.files, "file") + " changed" : "", r.sources ? n(r.sources, "source") : "",
           r.cost ? `$${(+r.cost).toFixed(2)}` : "", took(r.secs),
-          r.verdict === true ? "✓ checks passed" : r.verdict === false ? "✗ a check failed" : "",
+          r.verdict === true ? "✓ checks passed" : r.verdict === false ? "✗ a check failed" : r.not_checked ? "done, not checked" : "",
           r.why && r.status !== "running" ? `why: ${r.why}` : ""].filter(Boolean).join(" · ");
 }
 function row(r) {
@@ -59,6 +59,9 @@ function jobBody(d) {
     ${d.files_list.length ? html`<p class="k">Files changed${d.committed ? " (committed)" : " (not committed)"}:</p><ul>${d.files_list.map(f => html`<li>${f}</li>`)}</ul>` : ""}
     ${d.source_list.length ? html`<p class="k">Sources:</p><ul>${d.source_list.map(s => html`<li>${s}</li>`)}</ul>` : ""}
     ${d.result ? html`<p><span class="k">Result:</span> ${d.result}</p>` : ""}
+    ${(d.checks || []).length ? html`<p class="k">Checks${d.not_checked ? " (done, not checked)" : ""}:</p><ul>${d.checks.map(c =>
+        html`<li class="${c.state}">${CHECK[c.state] || "·"} ${c.name}: ${c.state}${c.state === "passed" ? "" : " - " + c.why}${c.state === "passed" && c.why ? html`<small>${c.why}</small>` : ""}</li>`)}</ul>` : ""}
+    ${(d.left || []).length ? html`<p class="k">Couldn't finish: ${d.left.join("; ")}</p>` : ""}
     ${d.why ? html`<p><span class="k">Why it ended:</span> ${d.why}</p>` : ""}
     ${d.actions.length ? html`<div class="acts">${d.actions.map(a => a.do === "chat"
         ? html`<button data-chat="${a.say}" title="Opens the chat with this filled in - she asks before doing it">${a.label}</button>`

@@ -1,4 +1,4 @@
-Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a and 4b merged; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
+Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks) on its branch; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
 
 # Nova as a manager — plan
 
@@ -827,6 +827,34 @@ worker, checked by reading the result back, and remembered.
 - Live check (2026-11-23) on a separate copy with saved tasks carrying passed / skipped / failed read-backs: `/tasks`
   showed ✓ / – / ✗ "read back: …" under each step, the failed plan step ❌, and "Couldn't finish: step 2: Rename it
   to final.txt (final.txt is missing)". No console errors.
+
+**4c-2 as built (2026-11-23, branch `claude/manager-4c-2`): checks on worker jobs, and "skipped, with why".**
+`nova/actions/jobchecks.py`, called by `workers.start` (coding) and `workers.research` when a job ends.
+- Coding job, when it changed files:
+  - files: every changed file is inside the folder the job was given (a subfolder job that touched files elsewhere in
+    the project fails, naming them). Git sees only the project, so changes *outside* the project are 4c-3's guard.
+  - tests: the command comes from the project's files - `pyproject.toml` / `setup.py` / `setup.cfg` / `pytest.ini` /
+    `tox.ini` → pytest (the project's `.venv` / `venv` Python first, else `pytest` on PATH); `package.json` with a real
+    test script → `npm` / `pnpm` / `yarn test` by lock file; `Cargo.toml` → `cargo test`; `go.mod` → `go test ./...`.
+    Looked for in the job's folder, then up to the git root. Run with the worker's safety environment (no push, no gh
+    sign-in), `CI=1`, no `.pytest_cache` / `__pycache__` left behind, a 5-minute limit (longer → failed, stopped), and
+    the job's Stop stops it.
+  - Nothing is installed to make tests run: no command → "tests: skipped - no test command found"; also skipped, with
+    why: pytest / npm / cargo / go not installed, no `node_modules`, npm's default "no test specified", pytest found
+    no tests. A failure keeps the end of the output (`detail`) for 4c-3's send-back.
+- Research job: at least 2 sources *cited* in the report (`job["cited"]`, the [n] marks really used; fewer when the
+  user asked for fewer pages), and the report file exists with size > 0 - a "saved" report that isn't there fails.
+- The record gets `checks` (name, passed / failed / skipped, why), `verdict` (passed / failed / "not checked" when
+  every check was skipped) and `left` ("couldn't finish": failed checks, then the worker's own "Left to do: …" line -
+  the brief rules now ask every coding worker to end with that line).
+- The report stays one line: "… changed 1 file: README.md. Checks: files passed; tests: skipped - no test command
+  found. Nothing is committed - …", or "But a check failed - tests: pytest -q: 1 failed (test_x)." before the
+  decision.
+- `/tasks`: a job row shows ✓ checks passed / ✗ a check failed / "done, not checked"; the job's detail lists each check
+  (✓ / – / ✗ with why) and "Couldn't finish: …". Older records show no checks.
+- Not built yet (4c-3): the send-back once to the same worker with the failing check, then telling the user; retry
+  limits (rounds, time, money) with Continue on the card; undoing a worker's changes outside its folder or to its
+  brief. A failed check today is reported plainly and the job stays "done" with ✗.
 
 **4d — Watch progress: notice stuck and looping tasks**
 - The task card gets two lists kept by code:
