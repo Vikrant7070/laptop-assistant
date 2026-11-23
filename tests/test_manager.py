@@ -12,7 +12,7 @@ from nova.core import app
 def started(monkeypatch):
     """workers.start / workers.research recorded instead of run."""
     calls = []
-    monkeypatch.setattr(workers, "start", lambda brief, folder, worker="auto", size="small", start_job=None:
+    monkeypatch.setattr(workers, "start", lambda brief, folder, worker="auto", size="small", start_job=None, meta=None:
                         calls.append(("start", brief, folder, worker, size)) or f"Started background job #7 ({worker}).")
     monkeypatch.setattr(workers, "research", lambda topic, focus="", **k:
                         calls.append(("research", topic, focus)) or "Started background job #8 (research).")

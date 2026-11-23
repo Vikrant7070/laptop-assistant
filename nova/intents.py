@@ -141,6 +141,7 @@ RESEARCH_THEN_BUILD = re.compile(
     r"\b(research|look up|find out|compare)\b.{3,120}?\b(then|and then|after that)\b.{0,40}?"
     r"\b(add|build|use|put|implement|make|create|code)\b", re.I)
 WEBSITE = re.compile(r"\b(web ?site|site|web ?page|landing page|home ?page|portfolio|blog)\b", re.I)
+README = re.compile(r"\breadme\b", re.I)               # a README job: its own type in the job history (4b)
 BIG_JOB = re.compile(r"\b(new feature|multi-?file|whole|entire|from scratch|full)\b", re.I)
 NEW_OR_EXISTING = re.compile(r"\b(new|from scratch|existing|my (current|existing)|in (my|the) (project|repo))\b", re.I)
 STACK_NAMED = re.compile(r"\b(python|react|vue|angular|svelte|node(\.?js)?|typescript|javascript|html|flask|django|"

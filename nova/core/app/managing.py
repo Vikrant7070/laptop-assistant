@@ -11,6 +11,8 @@ the brief card: "Go (OpenCode, free)" / "Go (Claude Code, paid, up to $1.00)" ·
 change?" adds a line to the brief, and the brief comes back). The go-ahead setting (⚙ Workers → Manager:
 always / paid / never) decides whether the brief waits for Go; the default is always. A dropped card ends the job.
 """
+import re
+
 from nova import protocol, task_state
 from nova.actions import manager, workers
 from nova.log import log_exception
@@ -65,13 +67,22 @@ def next_step(job):
     job["brief"] = text
     if not manager.needs_go(job, mode()):
         return launch(job)
+    return _go_card(job, "Here's the brief. Start?", "Wrote the brief")
+
+
+def _go_card(job, ask_text, activity):
+    """The brief's card: Go (worker, cost) · Use the other worker instead · Change it, with why this worker."""
+    choices = [("go", manager.go_label(job))]
+    if manager.switch_label(job):
+        choices.append(("other", manager.switch_label(job)))
+    choices.append(("change", "Change it"))
     card = asking.make("manager", [asking.question(
-        "go", "Here's the brief. Start?", "yesno", choices=[("go", manager.go_label(job)), ("change", "Change it")],
-        why="Nothing starts until you say go.")], task=job["task"], data={"job": job["id"], "key": "go"})
-    out = asking.ask(card, "Wrote the brief")
-    out["brief"] = text
+        "go", ask_text, "one", choices=choices, why=job.get("reason", "") + " Nothing starts until you say go.")],
+        task=job["task"], data={"job": job["id"], "key": "go"})
+    out = asking.ask(card, activity)
+    out["brief"] = job["brief"]
     if session.state.get("remote"):            # the phone has no folded brief: it goes in the message
-        out["reply"] = text + "\n\n" + out["reply"]
+        out["reply"] = job["brief"] + "\n\n" + out["reply"]
     return out
 
 
@@ -85,6 +96,14 @@ def _answered(qcard, answers):
     if key == "go":
         if a["value"] == "go":
             return launch(job)
+        if a["value"] == "other" and manager.other_worker(job["worker"]):
+            job["worker"] = manager.other_worker(job["worker"])
+            job["reason"] = f"You picked {workers.NAMES[job['worker']]}."
+            return launch(job)
+        if a["value"] == "drop":
+            session.state.pop("handoff", None)
+            _end_task(job, "stopped", "you dropped it")
+            return _said("Okay, I dropped it.", "Dropped the job")
         job["queue"].insert(0, {"key": "change", "text": "What should I change in the brief?", "kind": "text",
                                 "why": "I'll add it to the brief and show it again."})
         return next_step(job)
@@ -106,29 +125,104 @@ def _dropped(qcard):
         resume.save({"card": card})
 
 
+def _said(line, activity):
+    return {"reply": line, "say": line, "activity": [activity], "by_code": True}
+
+
+def _for_user(said):
+    """workers.start / research answer the brain ("... Tell the user in one short sentence ..."): the user gets the
+    first part only."""
+    return re.split(r"\s+(?:Tell the user|Don't do the job)", str(said).strip())[0].strip()
+
+
+def _end_task(job, status, why):
+    card = resume._find(job["task"]) if job.get("task") else None
+    if card is not None:
+        task_state.mark(card, status, why)
+        resume.save({"card": card})
+
+
 def launch(job):
-    """Start the worker with the brief. The task that asked for it ends as "handed to the worker"."""
+    """Start the worker with the brief. Research -> coding starts the research first (the coding brief comes back
+    with what it found, after_job). The task that asked for it ends as "handed to the worker"."""
     session.state.pop("handoff", None)
+    chain = job["kind"] == "research_coding" and not job.get("found")
+    meta = {"job_type": "research" if chain else job["type"], "manager_job": job["id"]}
+    if job["kind"] == "research_coding":
+        meta["chain_step"] = "1 of 2" if chain else "2 of 2"
     try:
-        if job["kind"] == "research":
+        if chain:
+            said = workers.research(manager.research_topic(job["request"]), meta=meta)
+            m = re.search(r"#(\d+)", str(said))
+            if m:
+                session.state.setdefault("chains", {})[int(m.group(1))] = job
+        elif job["kind"] == "research":
             focus = (job["answers"].get("focus") or {}).get("value") or ""
-            said = workers.research(job["request"], focus=focus)
+            said = workers.research(job["request"], focus=focus, meta=meta)
         else:
-            said = workers.start(job["brief"], manager.folder_of(job), job["worker"], job["size"])
+            said = workers.start(job["brief"], manager.folder_of(job), job["worker"], job["size"], meta=meta)
     except Exception as e:
         log_exception("manager: starting the worker")
         said = f"Not started: {e}"
-    conversation.task_log(f"MANAGER: launched {job['worker']}: {str(said)[:200]}")
-    card = resume._find(job["task"]) if job["task"] else None
-    if card is not None:
-        started = not str(said).startswith("Not started")
-        task_state.mark(card, "done" if started else "failed", "handed to the worker" if started else str(said)[:120])
-        resume.save({"card": card})
-    line = str(said).strip()
-    return {"reply": line, "say": line, "activity": ["Handed the job to a worker"], "by_code": True}
+    conversation.task_log(f"MANAGER: launched {'research (chain)' if chain else job['worker']}: {str(said)[:200]}")
+    started = not str(said).startswith("Not started")
+    _end_task(job, "done" if started else "failed", ("handed to the research worker first" if chain else
+                                                      "handed to the worker") if started else str(said)[:120])
+    line = _for_user(said) + (" When it's done I'll show you the coding brief with what it found." if chain and started else "")
+    return _said(line, "Handed the job to a worker")
+
+
+# ------------------------------------------------------------------ 4b: research -> coding, the second step
+
+FOUND_CHARS = 1500
+
+
+def after_job(job):
+    """integrations.job_done, for every finished background job: the research step of a chain is done -> the coding
+    brief with what it found (and its Go card), or what to do when the research failed. Never raises."""
+    try:
+        mjob = session.state.get("chains", {}).pop(job.get("id"), None)
+        if mjob is None:
+            return None
+        rec = next((r for r in reversed(workers.load_jobs()) if r.get("job") == job.get("id")
+                    and r.get("manager_job") == mjob["id"]), None)
+        session.state["handoff"] = mjob
+        if job.get("status") != "done":
+            mjob["reason"] = "The research step didn't work."
+            card = asking.make("manager", [asking.question(
+                "go", f"The research didn't work ({str(job.get('error') or job.get('status'))[:120]}). "
+                "Start the coding without it?", "yesno", choices=[("go", "Start coding without it"), ("drop", "Drop it")])],
+                task=mjob["task"], data={"job": mjob["id"], "key": "go"})
+            mjob["found"] = "(the research step failed - nothing found)"
+            mjob["brief"] = manager.brief(mjob)
+            return _deliver(asking.ask(card, "Research failed"))
+        found = workers.report(rec=rec) if rec else str(job.get("result") or "")
+        sources = [s if isinstance(s, str) else (s.get("url") or "") for s in (job.get("sources") or [])][:5]
+        mjob["found"] = (found[:FOUND_CHARS] + ("\nSources: " + ", ".join(s for s in sources if s) if sources else "")).strip()
+        mjob["brief"] = manager.brief(mjob)
+        if not manager.needs_go(mjob, mode()):
+            return _deliver(launch(mjob))
+        return _deliver(_go_card(mjob, "Research done. Here's the coding brief with what it found. Start?",
+                                 "Research done - wrote the coding brief"))
+    except Exception:
+        log_exception("manager: the research -> coding chain")
+        return None
+
+
+def _deliver(out):
+    """A card asked outside a request (a job just finished): the chat, her voice, and the phone when the user is away
+    (it is 'blocked, waiting for you' - Telegram gets it with its buttons)."""
+    voice_io.push_event({**out, "kind": "job"})
+    voice_io.announce(out.get("say") or out.get("reply") or "")
+    if integrations.user_away() and out.get("question"):
+        try:
+            integrations.phone.reply(out)
+        except Exception:
+            log_exception("manager: sending the card to the phone")
+    return out
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import asking, conversation, resume, session  # noqa: E402
+from nova.core.app import asking, conversation, integrations, resume, session, voice_io  # noqa: E402
 asking.handler("manager", _answered, _dropped)
 manager.HAND_OFF = from_tool

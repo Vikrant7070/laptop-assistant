@@ -413,3 +413,9 @@ def test_settings_page_has_the_workers_tab():
     js = (static / "nova.js").read_text(encoding="utf-8")
     assert 'data-tab="workers"' in page and 'data-pane="workers"' in page
     assert "loadWorkers();" in js and "function showWorkers" in js and "innerHTML" not in js.split("function showWorkers")[1][:3000]
+
+
+def test_the_manager_s_meta_is_kept_on_the_record(repo, fake_worker):
+    run_job(repo, meta={"job_type": "readme", "manager_job": "m1", "chain_step": "2 of 2"})
+    rec = workers.load_jobs()[-1]
+    assert (rec["job_type"], rec["manager_job"], rec["chain_step"]) == ("readme", "m1", "2 of 2")

@@ -526,7 +526,7 @@ def check_start(brief, folder, worker):
     return "", root
 
 
-def start(brief, folder, worker="auto", size="small", start_job=None):
+def start(brief, folder, worker="auto", size="small", start_job=None, meta=None):
     """Start a coding job in the background. start_job = coworker.start (passed in so tests can run it inline).
     Returns a sentence for the brain."""
     from nova.actions import coworker
@@ -551,6 +551,7 @@ def start(brief, folder, worker="auto", size="small", start_job=None):
         rec = {"key": key, "job": job["id"], "worker": w, "model": "", "brief": str(brief)[:2000], "folder": root,
                "status": "queued" if _lines[norm][0] is not ticket else "running", "started": job["started"],
                "finished": None, "cost": 0.0, "files": [], "result": "", "note": "", "log": str(store.current().job_logs / f"{key}.log")}
+        rec.update(meta or {})              # the manager's job type / job id / chain step (4b)
         _save_record(rec)
         before = None
         try:
@@ -747,7 +748,7 @@ def _research_running():
     return [j for j in coworker.running() if j["kind"] == "research"]
 
 
-def research(topic, focus="", kind="general", max_sources=None, start_job=None):
+def research(topic, focus="", kind="general", max_sources=None, start_job=None, meta=None):
     """Start a research job (coworker.research does the reading and writing), recorded in the job history like a
     coding job. max_sources: what the user asked for, else ⚙ Workers' number. Returns a sentence for the brain."""
     from nova.actions import coworker
@@ -770,6 +771,7 @@ def research(topic, focus="", kind="general", max_sources=None, start_job=None):
                    "folder": "", "status": "running", "started": job["started"], "finished": None, "cost": 0.0,
                    "files": [], "result": "", "note": "", "log": "", "path": "", "sources": [],
                    "max_sources": n}
+            rec.update(meta or {})
             _save_record(rec)
             try:
                 work(job)

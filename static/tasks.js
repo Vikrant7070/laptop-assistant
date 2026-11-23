@@ -20,7 +20,8 @@ function when(t) {
 const n = (k, word) => `${k} ${word}${k === 1 ? "" : "s"}`;
 function took(s) { return s == null ? "" : s >= 3600 ? `${(s / 3600).toFixed(1)} h` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`; }
 function meta(r) {
-  return [KIND[r.kind], r.who !== "Research" && r.who,
+  return [KIND[r.kind], r.who !== "Research" && r.who, r.type && r.type !== "research" && r.type,
+          r.chain && `step ${r.chain} (research → coding)`,
           r.steps_total ? `${r.steps_done} of ${n(r.steps_total, "step")}` : r.steps_done ? n(r.steps_done, "step") : "",
           r.files ? n(r.files, "file") + " changed" : "", r.sources ? n(r.sources, "source") : "",
           r.cost ? `$${(+r.cost).toFixed(2)}` : "", took(r.secs),

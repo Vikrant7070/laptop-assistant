@@ -62,6 +62,7 @@ def job_done(job):
         voice_io.push_event({"reply": line, "kind": "job"})
         voice_io.announce(line)
         tell_away(line + _phone_hint(job, failed=True) + TASKS_LINE)
+        managing.after_job(job)              # a manager chain's research step: what to do now
         return
     voice_io.wake_body()
     if offer["job"] and offer["job"] is not job and time.time() < offer["until"]:
@@ -72,6 +73,7 @@ def job_done(job):
     voice_io.announce("✅ " + line, spoken=line)
     tell_away("✅ " + job["result"] + (_phone_hint(job) or " It's on the laptop for when you're back.") + TASKS_LINE)
     body.react_later("happy")
+    managing.after_job(job)                  # a manager chain's research step: the coding brief comes next
     if config.settings()["wake"] and not voice_io.convo["on"] and voice_io.silent_ok():     # listen for the "yes"
         voice_io.listen_state["single"] = True
         runtime.spawn("integrations.silent_loop", voice_io.silent_loop)
@@ -750,4 +752,4 @@ def mcp_set():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import asking, background, body, config, conversation, session, voice_io  # noqa: E402
+from nova.core.app import asking, background, body, config, conversation, managing, session, voice_io  # noqa: E402

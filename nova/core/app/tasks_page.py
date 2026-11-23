@@ -70,7 +70,7 @@ def job_row(rec):
             "steps_done": None, "steps_total": None, "files": len(rec.get("files") or []),
             "sources": len(rec.get("sources") or []), "cost": rec.get("cost") or 0,
             "secs": round(float(finished) - started, 1) if finished else None, "verdict": None,
-            "can_continue": False}
+            "can_continue": False, "type": rec.get("job_type") or "", "chain": rec.get("chain_step") or ""}
 
 
 def rows(status=None, kind=None, limit=LIMIT):

@@ -3,7 +3,10 @@
 Code does the managing; the small local brain only fills gaps. Pure code here - no app parts, no brain calls:
 
     triage(text)            -> "research" / "coding" / "research_coding" / "laptop" (fixed word rules, nova/intents)
-    plan(request, kind)     -> the job dict: kind, website?, size, worker, the questions still to ask
+    plan(request, kind)     -> the job dict: kind, website?, size, type, worker (+ why), the questions still to ask
+    choose(job)             -> 4b: the worker from the job history - the cheapest one that has done this type of job
+                               before; Claude Code for big / new jobs or after OpenCode failed it twice (only
+                               suggested: the Go card is where the user says yes)
     questions(job)          -> fixed lists, each question with a fact key and its one-line reason; one is skipped when
                                the request already answers it or the user answered it before (facts); at most
                                MAX_QUESTIONS per job
@@ -56,13 +59,79 @@ def plan(request, kind):
     job = {"id": f"m{time.time():.6f}", "request": " ".join(str(request).split())[:500],     # the user's own words
            "kind": kind, "website": website, "new": new, "size": size, "answers": {}, "changes": [],
            "folder": _path_in(request), "asked": 0}
-    job["worker"] = "research" if kind == "research" else workers.pick_worker("auto", size)
+    job["type"] = job_type(job)
+    job["worker"], job["reason"] = choose(job)
     every = questions(job, limit=None)
     job["queue"] = every[:MAX_QUESTIONS]
     for q in every[MAX_QUESTIONS:]:              # past the limit: not asked - her guess goes in the brief, marked
         if q.get("guess") not in (None, "", []):
             job["answers"][q["key"]] = {"value": q["guess"], "how": "unasked"}
     return job
+
+
+# ------------------------------------------------------------------ 4b: which worker, from the job history
+
+JOB_TYPES = ("readme", "small fix", "feature", "new site", "new app", "research")
+PLURAL = {"readme": "README jobs", "small fix": "small fixes", "feature": "features", "new site": "new sites",
+          "new app": "new apps", "research": "research jobs"}
+RECENT = 5                   # the tries that count for "most recent tries worked"
+
+
+def job_type(job):
+    if job["kind"] == "research":
+        return "research"
+    if job["new"]:
+        return "new site" if job["website"] else "new app"
+    if intents.README.search(job["request"]):
+        return "readme"
+    return "feature" if job["size"] == "big" else "small fix"
+
+
+def track_record(jtype, recs=None):
+    """{worker: {"tried", "worked", "committed", "last": [worked?, ...] newest first}} over the RECENT newest
+    records of this job type. Worked = finished and changed files; committed = the user accepted it."""
+    out = {}
+    for r in reversed(recs if recs is not None else workers.load_jobs()):
+        if r.get("job_type") != jtype or r.get("status") not in ("done", "needs-user", "failed"):
+            continue
+        h = out.setdefault(r.get("worker"), {"tried": 0, "worked": 0, "committed": 0, "last": []})
+        if h["tried"] >= RECENT:
+            continue
+        ok = r.get("status") in ("done", "needs-user") and bool(r.get("files"))
+        h["tried"] += 1
+        h["worked"] += ok
+        h["committed"] += bool(r.get("committed"))
+        h["last"].append(ok)
+    return out
+
+
+def choose(job, recs=None):
+    """(worker, why) for this job. Never escalates by itself: Claude Code after OpenCode's failures is a suggestion
+    the Go card shows (with its cost), and the other worker is one tap away."""
+    if job["kind"] == "research":
+        return "research", "Research is free and reads the web for you."
+    t = job["type"]
+    if t in ("new site", "new app", "feature"):
+        return "claude", f"A {t} is a big job, so the strongest worker gets it."
+    h = track_record(t, recs).get("opencode")
+    if not h:
+        return "opencode", f"A {t} - the free worker first (it hasn't done one before)."
+    done = f"OpenCode did {h['worked']} of {h['tried']} {PLURAL[t]}" + (f" ({h['committed']} committed)" if h["committed"] else "")
+    if h["last"][:2] == [False, False]:
+        return "claude", f"{done}, and the last 2 failed - Claude Code might do better."
+    if (h["worked"] + h["committed"]) * 2 >= h["tried"] + h["committed"]:      # a commit counts double
+        return "opencode", done + "."
+    return "opencode", done + " - still the free one first; you can switch."
+
+
+def other_worker(worker):
+    return {"opencode": "claude", "claude": "opencode"}.get(worker)
+
+
+def research_topic(request):
+    """'research the best chart library, then add it' -> 'the best chart library'."""
+    m = re.match(r"\W*(?:research|look up|find out|compare)\s+(.+?)[,;]?\s+(?:and then|then|after that)\b", request, re.I)
+    return (m.group(1) if m else request).strip()
 
 
 def _secret(text):
@@ -235,8 +304,11 @@ def brief(job):
     if job["kind"] != "research":
         guessed = (job["answers"].get("folder") or {}).get("how") == "skip"
         parts.append(f"FOLDER: {folder or '(not given)'}" + ("  (my guess - the user skipped this)" if guessed else ""))
-    if job["kind"] == "research_coding":
-        parts.append("NOTE: the request starts with research; look it up from what you know, then build it.")
+    if job["kind"] == "research_coding" and job.get("found"):
+        parts.append("WHAT THE RESEARCH FOUND (use it):\n" + job["found"])
+    elif job["kind"] == "research_coding":
+        parts.insert(0, f"STEPS: 1. Research: {research_topic(job['request'])} (the research worker). "
+                        "2. Coding: the rest of this brief, with what the research found added.")
     parts.append("DONE MEANS:\n" + "\n".join(done))
     parts.append("MUST NOT: commit, push, publish, deploy, delete files or pay for anything - the user decides "
                  "after looking at the changes.")
@@ -248,12 +320,22 @@ def folder_of(job):
     return (a["value"] if a and a.get("value") else "") or job["folder"]
 
 
-def go_label(job):
-    w = job["worker"]
+def worker_label(w):
     if w == "claude":
         budget = workers.config()["claude"].get("budget_usd") or 1.0
-        return f"Go (Claude Code, paid, up to ${float(budget):.2f})"
-    return f"Go ({WORKER_LABEL.get(w, w)})"
+        return f"Claude Code, paid, up to ${float(budget):.2f}"
+    return WORKER_LABEL.get(w, w)
+
+
+def go_label(job):
+    if job["kind"] == "research_coding" and not job.get("found"):
+        return f"Go (research first, then {worker_label(job['worker'])})"
+    return f"Go ({worker_label(job['worker'])})"
+
+
+def switch_label(job):
+    alt = other_worker(job["worker"])
+    return f"Use {workers.NAMES[alt].split(' +')[0]} instead ({worker_label(alt)})" if alt else ""
 
 
 def needs_go(job, mode):
