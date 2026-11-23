@@ -674,6 +674,38 @@ questions, brief, answer facts) and `nova/core/app/managing.py` (the flow).
   - It also found three things, fixed: the brief came after its card; the stack question cut by the limit
     left no stack in the brief; your Nova preferences ("Likes: …") were in the worker's brief.
 
+**4b as built (2026-11-23, branch `feat/manager-4b`):** worker choice from the job history, and research → coding.
+- Every manager job has a type (`readme`, `small fix`, `feature`, `new site`, `new app`, `research`), saved on its
+  job record with the manager's job id (`workers.start` / `research` take `meta`). `/tasks` shows the type, and
+  "step 1 of 2 (research → coding)" for a chain.
+- `manager.choose` reads the newest 5 records of that type per worker:
+  - big or new (new site / app, feature) → Claude Code;
+  - small → OpenCode, with "OpenCode did N of M small fixes (K committed)" (a commit counts double);
+  - OpenCode's last 2 of this type failed → Claude Code is *suggested*.
+  - It never switches by itself: the Go card shows why (its reason line) and has a third button, "Use the other
+    worker instead (its cost)".
+- Research → coding: the brief starts with "STEPS: 1. Research: <topic> 2. Coding: …". One Go ("Go (research
+  first, then …)") starts the research worker.
+  - When the research finishes, `integrations.job_done` → `managing.after_job`. The coding brief gets "WHAT THE
+    RESEARCH FOUND" (the report, up to 1500 characters, plus sources) and a second card: "Research done. Here's the
+    coding brief with what it found. Start?" (the go-ahead setting applies: always / paid / never).
+  - That card goes to the chat and her voice, and to Telegram with its buttons when the user is away (blocked,
+    waiting).
+  - A failed research step asks "Start coding without it" / "Drop it".
+  - The chain lives in memory only: a restart ends the research job anyway.
+- Fixed on the way: 4a's Go answered with the worker's sentence for the brain ("… Tell the user in one short
+  sentence …"); the user now gets only the first part.
+- Live check (2026-11-23) on a separate copy with 3 past OpenCode small fixes (1 worked and was committed, the last
+  2 failed):
+  - "fix the bug in my project at C:\code\shop" went straight to the brief card (stack already answered, folder in
+    the request);
+  - the card showed "OpenCode did 1 of 3 small fixes (1 committed), and the last 2 failed - Claude Code might do
+    better", with Go (Claude Code, paid, up to $1.00) · Use OpenCode instead (OpenCode, free) · Change it;
+  - `/tasks` showed "small fix" on each job.
+  - Fixed: the strip squeezed its text into a thin column next to three buttons (the text now keeps 260 px and the
+    buttons wrap).
+  - The switch tap wasn't tried live (it starts a worker); the tests cover it.
+
 ## 7. Phase 5 — Judges for workers' results
 
 Quality comes from measurement, not from the user's habits or the worker's own claim:
