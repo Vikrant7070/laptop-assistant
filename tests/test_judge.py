@@ -24,6 +24,9 @@ from nova.core import app
     ("open notepad and type hello", [("window_open", "notepad")], False),     # only part of the goal is checkable
     ("open calculator and paint", [("window_open", "calculator"), ("window_open", "paint")], True),   # "open" carries
     ("open notepad, paint and type hi", [("window_open", "notepad"), ("window_open", "paint")], False),
+    ("open Calculator and work out 12+34", [("window_open", "calculator")], False),   # a sum, not a window (live)
+    ("open calculator and calculate 7*6", [("window_open", "calculator")], False),
+    ("open calculator, then solve 81/9", [("window_open", "calculator")], False),
     ("play some lofi music", [], False),
     ("open it", [], False),                                                   # too vague for a title check
     ("open a new tab", [], False),

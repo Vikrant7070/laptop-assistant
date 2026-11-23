@@ -52,7 +52,9 @@ _FILLER = {"my", "the", "a", "an", "app", "application", "program", "folder", "w
 # A part that starts with one of these is its own action, not more things to open ("open notepad and type hi").
 _VERBS = {"type", "write", "play", "search", "find", "send", "click", "close", "press", "scroll", "make", "turn",
           "switch", "put", "set", "go", "show", "tell", "read", "save", "copy", "paste", "delete", "move", "watch",
-          "listen", "check", "look", "maximize", "minimize", "resize", "enable", "disable", "use", "add", "create"}
+          "listen", "check", "look", "maximize", "minimize", "resize", "enable", "disable", "use", "add", "create",
+          # sums: "open calculator and work out 12+34" looked for a window called "work out 12+34" (live, 2026-11-23)
+          "work", "calculate", "compute", "solve", "multiply", "divide", "subtract", "convert", "enter", "do"}
 _VAGUE = {"it", "this", "that", "them", "something", "anything", "new", "file", "tab", "one"}
 
 
