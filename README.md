@@ -194,7 +194,7 @@ Nova notices when an app shows an **error box** (a Windows message box that says
 ## Smart switching between local models (⚙ Model)
 Nova's everyday brain is small and fast (`qwen3-vl:4b-instruct`). A bigger model is loaded only when a task needs it, once per task (a switch takes up to a minute or two on a 6 GB GPU):
 - **Coding** requests go to `qwen2.5-coder:7b`.
-- **Complex** requests first get a full plan from `deepseek-r1:8b` (it writes the plan; it does not use tools). The everyday brain follows the plan, or `qwen3:8b` does when the plan has more than 6 steps.
+- **Complex** requests first get a full plan from `qwen3.5:4b` (it thinks, then writes the plan; it does not use tools; about a minute). The everyday brain follows the plan, or `qwen3:8b` does when the plan has more than 6 steps and is installed. Run `ollama pull qwen3.5:4b` once; if it isn't installed, the everyday brain works without a plan.
 - The everyday brain can also ask for a switch itself with the `escalate` tool. The next request starts on the everyday brain again.
 - Choose the models in the ⚙ Model dialog. All settings and the trigger words are in `config/model_routing.json` (kept in git, applied on the next request). Set `"auto_route": false` to switch it off. Cloud brains are never switched.
 

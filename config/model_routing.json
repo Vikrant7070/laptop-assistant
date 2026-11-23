@@ -15,7 +15,7 @@
   },
   "auto_route": true,
   "coder_model": "qwen2.5-coder:7b",
-  "deep_model": "deepseek-r1:8b",
+  "deep_model": "qwen3.5:4b",
   "deep_runs": false,
   "heavy_model": "qwen3:8b",
   "heavy_steps": 6,

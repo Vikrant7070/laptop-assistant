@@ -5,7 +5,7 @@ time, so a bigger brain is loaded only for a task that needs it (loading takes u
 
   code  -> the coding model takes over the task (qwen2.5-coder:7b) until it ends.
   long  -> a plan with more than heavy_steps steps is carried out by qwen3:8b (better with tools) instead.
-  deep  -> the deep-reasoning model writes a full plan WITHOUT tools (deepseek-r1:8b); the everyday brain then
+  deep  -> the deep-reasoning model writes a full plan WITHOUT tools (qwen3.5:4b, thinking); the everyday brain then
            carries the plan out step by step with the tools. (Setting "deep_runs": true lets a tool-capable deep
            model do the steps itself.)
 
@@ -47,7 +47,7 @@ DEFAULTS = {
     },
     "auto_route": True,
     "coder_model": "qwen2.5-coder:7b",
-    "deep_model": "deepseek-r1:8b",
+    "deep_model": "qwen3.5:4b",
     "deep_runs": False,
     "heavy_model": "qwen3:8b",
     "heavy_steps": 6,
@@ -96,6 +96,9 @@ def _load():
 
 
 BORROW_KEEP = "2m"      # a borrowed bigger model leaves the GPU soon after its task, so the everyday model can come back
+# The planner's token budget counts its thinking too. At 900 (the old value) deepseek-r1:8b finished 1 plan of 5 and
+# qwen3.5:4b none: the thinking used it all up (measured 2026-11-23). qwen3.5 needed up to ~3800, deepseek ~1600.
+PLAN_PREDICT = 4000
 
 ROUTING_KEYS = ("auto_route", "coder_model", "deep_model", "heavy_model", "heavy_steps", "deep_runs")
 
@@ -178,7 +181,8 @@ def make_plan(s, goal, on_think=None):
         names = "any of Nova's tools"
     try:
         _, text, _ = llm.chat(m, [{"role": "user", "content": PLAN_PROMPT.format(goal=goal[:1500], tools=names)}], [],
-                              think=True, num_predict=900, on_think=on_think, keep_alive=BORROW_KEEP)
+                              think=True, num_predict=PLAN_PREDICT, on_think=on_think, keep_alive=BORROW_KEEP,
+                              own_sampling=True)
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
     text = (text or "").strip()
