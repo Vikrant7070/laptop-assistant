@@ -45,8 +45,27 @@ def test_find_app_missing_asks_before_installing(monkeypatch):
     assert "NOT installed" in out and "Zoom.Zoom" in out and "ask" in out.lower()
 
 
-def test_find_app_finds_windows_basics():
-    assert "is installed" in tools.find_app("notepad", search_store=False)
+def test_find_app_finds_windows_basics(monkeypatch):
+    # hermetic: no real PowerShell (a cold Get-StartApps timed out on CI, PR #60) and no real registry
+    monkeypatch.setattr(tools.apps.shutil, "which", lambda t: r"C:\Windows\System32\notepad.exe" if "notepad" in t else None)
+    monkeypatch.setattr(tools.apps, "_start_menu_match", lambda n: None)
+    monkeypatch.setattr(tools.apps, "_installed_names", lambda n: [])
+    out = tools.find_app("notepad", search_store=False)
+    assert "is installed" in out and "notepad.exe" in out
+
+
+def test_slow_start_list_never_breaks_find_app(monkeypatch, tmp_path):
+    def slow(*a, **kw):
+        raise tools.apps.subprocess.TimeoutExpired(a[0], 20)
+    monkeypatch.setattr(tools.apps.subprocess, "run", slow)
+    for var in ("ProgramData", "APPDATA"):
+        monkeypatch.setenv(var, str(tmp_path))
+    folder = tmp_path / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    folder.mkdir(parents=True)
+    (folder / "Notion.lnk").write_text("")
+    monkeypatch.setattr(tools.apps, "_START_CACHE", {"at": 0.0, "apps": {}})
+    assert tools.apps._start_menu_apps() == {"notion": str(folder / "Notion.lnk")}   # the shortcut still counts
+    assert tools.apps._START_CACHE["at"] == 0.0                                       # not cached: retried next time
 
 
 def test_research_skills_run_in_the_background(monkeypatch):

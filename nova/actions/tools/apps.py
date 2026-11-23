@@ -15,6 +15,7 @@ import psutil
 
 from nova.actions.registry import tool
 from nova.actions.tools import common, forms, system, windows
+from nova.log import log_exception
 
 
 APPS = {
@@ -61,6 +62,9 @@ def _start_menu_apps():
                 apps.setdefault(n, "shell:AppsFolder\\" + aid)
     except (ValueError, TypeError, AttributeError):
         pass
+    except (subprocess.TimeoutExpired, OSError):   # a slow/cold PowerShell: the shortcut files above still count,
+        log_exception("apps.start_menu_apps Get-StartApps")
+        return apps                                # but don't cache a list without the Store apps; try again next time
     _START_CACHE.update(at=time.time(), apps=apps)
     return apps
 
