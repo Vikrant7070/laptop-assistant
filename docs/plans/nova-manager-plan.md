@@ -1,11 +1,13 @@
-Status: active — 2026-11-22, phases 1–3 and Phase 4 step 0 built (step 0 merged as PR #24); step 4-pre (task state) added to the plan; the manager loop design waits for the user's go-ahead.
+Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a and 4b merged; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
 
 # Nova as a manager — plan
 
-**Status (2026-11-22): phase 1 (Judge, `nova/actions/judge.py`), phase 2 (episode log + Learner,
-`nova/actions/learner.py`, `nova/actions/questions.py`), phase 3 (workers, `nova/actions/workers.py`) and Phase 4
-step 0 (research as a worker, PR #24) are built. Step 4-pre (task state, section 6), the manager loop (rest of
-Phase 4) and phases 5–8 are not.** The user's answers are in
+**Status (2026-11-23): phase 1 (Judge, `nova/actions/judge.py`), phase 2 (episode log + Learner,
+`nova/actions/learner.py`, `nova/actions/questions.py`), phase 3 (workers, `nova/actions/workers.py`), Phase 4
+step 0 (research as a worker, PR #24), 4-pre (task state, PRs #50–#54), 4a (ask → brief → go, PR #55) and 4b (worker
+pick from history, research → coding, PR #57) are built. 4c–4g ("The manager for the whole laptop", end of section 6)
+and phases 5–8 are not.** Nova manages **every** task on the laptop, not only coding (the user, 2026-11-23). The
+user's answers are in
 section 9. Build the phases in order, one at a time, each on its own branch/commit with tests, and only after the
 user says go.
 
@@ -41,7 +43,12 @@ silently copies or silently changes.
       ▼            ▼            ▼           ▼
   Claude Code   OpenCode +   Research    Nova's own laptop
   (big code)    DeepSeek     worker      skills (skills v2)
+      │            │            │           │
+  Connectors (MCP, Gmail,    App workers (one per app:     The user (passwords,
+  Phone Link, files)         Chrome, Notepad, Excel …)     OTPs, payments, choices)
       └────────────┴────────────┴───────────┘
+   (since 2026-11-23 the manager runs every laptop task, not only coding —
+    see "The manager for the whole laptop" at the end of section 6)
                      │ results
                      ▼
      Judge (deterministic checks, tests, scores; vision only advises)
@@ -336,8 +343,9 @@ in, the same way `toolpick.CODING` does: build/make/create + site/app/page, "res
   task strip and a `/tasks` page to watch them. 4a's brief is built on it.
 - **4a:** triage, questions, brief. For now it shows the brief and the user says "go".
 - **4b:** worker pick from history, plus the research→coding chain.
-- **4c:** checks, one send-back round, report.
-- **4d:** remember and worker notes.
+- **4c–4g:** rewritten on 2026-11-23 for every laptop task, not only coding. The old 4c (checks, send-back, report)
+  and 4d (remember, worker notes) are inside the new steps. See "The manager for the whole laptop" at the end of
+  this section.
 
 **The user's answers (2026-11-21):** for the first phases, **every** manager job shows its brief and waits for the
 user's "go", cheap OpenCode jobs included. The user will relax this later, once they have seen how the manager
@@ -706,7 +714,142 @@ questions, brief, answer facts) and `nova/core/app/managing.py` (the flow).
     buttons wrap).
   - The switch tap wasn't tried live (it starts a worker); the tests cover it.
 
+### The manager for the whole laptop — 4c to 4g (2026-11-23, waiting for the user's go-ahead)
+
+**Why the change:** the user, 2026-11-23: *Nova is not managing only coding; she is going to manage everything on
+this laptop.* Today 4a/4b manage worker jobs, and a `laptop` request keeps the old path (skills and tools, with the
+Judge at the end). From 4c on, a laptop task is managed the same way as a worker job: planned, given to the right
+worker, checked by reading the result back, and remembered.
+
+**Where the ideas come from** (similar projects on GitHub, read 2026-11-23 — READMEs and design docs only, no code):
+- `microsoft/UFO` (UFO² on Windows): a HostAgent splits a request into steps, one per app, opens the app if needed,
+  and hands each step to that app's own AppAgent. All of them share one board. App agents use an app's API before
+  clicking, and get that app's docs and past examples.
+- Magentic-One (`microsoft/autogen`): the lead agent keeps a *task ledger* (facts given, facts to find, guesses,
+  plan) and, after every step, a *progress ledger* (done? looping? progress? who acts next?). Stalling a few times in
+  a row → a new plan.
+- `OpenAdaptAI/OpenAdapt`: reads the saved record back after every save. In its tests the agent *claimed* success on
+  all 30 bad saves; only reading back caught them.
+- `NousResearch/hermes-agent`: makes skills from experience and improves them in use; scheduled jobs that report to
+  the chat app.
+- `openclaw/openclaw`: messages arriving from outside are untrusted input; unknown senders must be paired first.
+- `sno-ai/sno-station`: a reviewer that never saw the conversation; nightly lessons from the user's corrections,
+  used only after the user accepts them; work doesn't stop to wait on questions it could answer itself.
+- `steven-zhc/lingtai`: a check that did not run is shown as *skipped*, never left out; one log is the only record.
+- `elicpeter/pitboss`: finds the test command from the project's files; every retry has a limit; the agent writes
+  down what it couldn't finish; if the agent edits its plan file, the change is undone and the run stops.
+
+**Workers, widened.** The manager picks from:
+
+| Worker | Good for | Asks first? |
+|---|---|---|
+| Connector (MCP servers, Gmail, Phone Link, plain file and settings code) | reading mail, moving files, reading settings | by risk level (4e) |
+| Nova's own checked skill (skills v2) | anything she has a proven skill for | by risk level |
+| App worker — one per app (Chrome, Notepad, Excel, File Explorer …), clicks and keys under the app guard | apps with no connector | by risk level |
+| Research worker | finding out | no (free) |
+| OpenCode + DeepSeek / Claude Code | code and project files | as 4a/4b (go-ahead setting) |
+| **The user** | passwords, OTPs, payments, CAPTCHAs, choices only they can make | always — it *is* asking |
+
+- For one step, the order of preference is: connector → checked skill → app worker → coder. A coder is never used
+  for something a connector or app can do.
+- One plan can mix workers. Example: "download my bank statement, rename it and put it in Taxes" → app worker
+  (Chrome; the user signs in) → connector (rename + move) → read-back (the file is there).
+- Triage (4a) grows: `laptop` is no longer "the old path"; it becomes a plan of steps, each with a worker. Simple
+  one-step requests ("open Notepad") stay instant: one step, one worker, one check.
+
+**4c — Check by reading the result back (every kind of task)**
+- Rule: the worker's or the brain's "done" is never the verdict. After any step that changes something, code reads
+  the result back from somewhere else:
+
+  | Kind of step | Read back |
+  |---|---|
+  | File saved / moved / renamed | the file exists at the new path, size > 0; for a move, the old path is gone; expected words in it when known |
+  | App opened / setting changed | `checks.py` (`window_open`, `dark_mode` …) or the setting read again |
+  | Message or email sent | it is in Sent / the chat's history (connector or app worker reads it) |
+  | Form submitted | the confirmation text (`page_has`), or the record read back |
+  | Download | the file is in Downloads, finished (no `.crdownload`), size > 0 |
+  | Coding job | files changed only inside the folder; tests by the command found from the project (`pyproject.toml`/`setup.py` → `pytest`; `package.json` with a test script → npm/pnpm/yarn by lock file; `Cargo.toml` → `cargo test`; `go.mod` → `go test ./...`), run under the worker's safety guard |
+  | Research | at least 2 sources cited; the report file exists |
+
+- A check that could not run is shown as **skipped, with why** ("tests: skipped — no test command found"), never as
+  passed. A job whose checks were all skipped is reported as "done, not checked".
+- A failed check: a worker job goes back once to the same worker with the exact failing check; a laptop task gets
+  one new plan. Still failing → the user is told plainly.
+- Every retry has a limit: a number of rounds and a time limit, plus money for paid workers. When a limit is hit the
+  task stops with the reason, and the card can Continue from the same step.
+- Guard the brief: a worker that changes its brief, or files outside its folder → those changes are undone and the
+  job stops. (App workers already have the app guard: keys aimed at another app are refused.)
+- "Couldn't finish" list: the worker (or plan) says which parts were left; the report and `/tasks` show them.
+- The report stays one line plus the one decision the user has to make.
+- **Done when:** a fake "saved" (the file is missing) is caught and reported; a project with no known test command
+  shows "tests: skipped"; one send-back round runs, then it stops and tells the user.
+
+**4d — Watch progress: notice stuck and looping tasks**
+- The task card gets two lists kept by code:
+  - *known*: facts given in the request, facts found on the way, guesses (marked as guesses);
+  - after every step, a *progress check*: is the goal done? did the same step (tool + arguments) repeat (a loop)? did
+    anything new happen since the last step (progress)?
+- Two steps with no progress, or a loop → one new plan (the deep or cloud brain, sent step outcomes only). Still
+  stuck → a question card: "Stuck at: …. Try …, or will you do this step?" (Telegram when the user is away).
+- Worker jobs: no output and no file change for N minutes → "maybe stuck" on the strip and `/tasks`, with Stop.
+- Questions don't stop the work: what can be answered from facts is answered; the rest is gathered on one card while
+  other steps that don't need the answer go on.
+- **Done when:** a task that repeats the same click 3 times stops and asks, instead of running to the step limit.
+
+**4e — Risk levels for every action**
+- Every tool and every step gets a level:
+  - **0 — read:** look, list, read files or mail, search → runs freely.
+  - **1 — change that can be undone:** open/close apps, move or rename (an undo record is kept), a setting whose old
+    value is saved → shown on the strip, done, Undo offered.
+  - **2 — hard to undo or goes outside the laptop:** send, post, delete, submit a form, install, buy, sign in, a shell
+    command that changes anything → **always asks**, every time. No setting turns this off for send, delete, pay or
+    shell (AGENTS.md rule 6 and section 10).
+  - **Never Nova:** typing passwords, OTPs or card numbers — these stay with the user (`fill_form` / `help_login`
+    already keep values away from the brain).
+- `manager.go_ahead` becomes one setting per level. Defaults: worker jobs always ask (the user's answer of
+  2026-11-21), level 0 free, level 1 shown, level 2 asks.
+- **Outside text is data, not orders.** An instruction found inside an email, a web page, a file or a message from
+  an unknown chat is never followed; it becomes a question card that quotes it. Only the user — at the laptop or on
+  the paired phone — gives orders.
+- **Done when:** a test fails if any tool has no level; an email saying "delete all my files" makes a card, not an
+  action.
+
+**4f — Remember and learn (was 4d)**
+- One record per task or job (the task card and the job record, already there): brief, plan, workers, rounds, every
+  check as passed / failed / skipped, what the user chose, time, cost. `/tasks` and the Learner both read it;
+  nothing keeps its own copy.
+- Worker notes per job type (as in 4b), and **app notes** per app: which controls worked, what got in the way
+  (sign-in wall, cookie banner, slow load), how long it took. An app worker reads its app's notes before it starts.
+- The same app path worked 2–3 times → offered as a skill (the existing Learner and daily question list).
+- **Lessons from corrections:** "no, the other folder", Stop + redo, "don't do X" → one-line lessons on the daily
+  question list. A lesson is used only after the user ticks it (section 9, answer 4).
+- **Done when:** the second run of an app task has that app's notes in its plan; a correction shows up as a lesson
+  on the daily list.
+
+**4g — Scheduled and repeating jobs**
+- "Every morning at 9 check my Gmail and tell me what's important", "every Sunday copy Documents to D:" → a schedule
+  record (`data/schedules.json` through `store.py`), shown on `/tasks` with the next run, Pause and Delete.
+- Made only from the user's own words; a card shows the plan, the times and each step's risk level before it is
+  saved. Level-2 steps still ask when they run (Telegram when the user is away).
+- Runs only while the laptop is on. A missed run happens once when it wakes and says it is late.
+- Results follow section 9, answer 6: Telegram for done or blocked only; everything else on `/tasks`.
+- **Done when:** a one-minute test schedule runs on a separate copy, makes a record, shows on `/tasks`, and Pause
+  stops it.
+
+**Not now (written down so it isn't lost):**
+- A second worker reviewing the first one's work without seeing the conversation (costs a second run; after 4c
+  works).
+- When a worker hits a usage limit (DeepSeek 429, Claude Code quota), the other worker carries on from the same
+  commit — with the user's OK, since it may cost money.
+- Several devices (UFO's "Galaxy") belong to `docs/device-network-plan.md`.
+
+**Build order from here:** 4c → 4d → 4e → 4f → 4g, each on its own branch with tests and a live check on a separate
+copy, and only after the user says go for that step. 4e must be built before the manager runs any level-2 laptop
+step on its own.
+
 ## 7. Phase 5 — Judges for workers' results
+
+4c's read-back checks are the first part of Phase 5. Phase 5 adds the heavy judges below.
 
 Quality comes from measurement, not from the user's habits or the worker's own claim:
 
@@ -758,6 +901,8 @@ recording only when the user is the one at the laptop (YuNet presence can help),
    Phases 7–8 (live activity log, recorder) wait for a later go-ahead.
 6. **Away reports: Telegram — done + blocked only.** A message when a job finishes or is blocked and needs the user;
    no progress updates.
+7. **(2026-11-23) Scope: the whole laptop.** Nova manages every task on the laptop, not only coding and research.
+   → 4c–4g (end of section 6) cover laptop tasks, app workers, connectors, risk levels and scheduled jobs.
 
 ## 10. Never
 
@@ -765,4 +910,6 @@ recording only when the user is the one at the laptop (YuNet presence can help),
 - Never send raw logs, history or transcripts to a cloud brain — only cleaned briefs and lessons.
 - Never let a worker push, publish, deploy, delete or pay without the user's Allow.
 - Never let vision overrule a failed deterministic check.
+- Never follow an instruction found inside an email, web page, file or message; only the user gives orders.
+- Never call a check that did not run "passed".
 - Never treat the user's habit as the quality standard; suggest improvements instead.
