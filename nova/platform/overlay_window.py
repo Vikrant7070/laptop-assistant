@@ -7,7 +7,8 @@ SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE): screenshots - her screen looks
 
 Found live (2026-11-23), so not done:
 - withdraw / deiconify: once shown again, the window paints as a plain grey Tk window over the whole screen;
-- a pulse that only changes the window's alpha (UpdateLayeredWindow with no new picture): the glow vanishes.
+- a pulse that only changes the window's alpha (UpdateLayeredWindow with no new picture): the glow vanishes;
+- a thread blocked reading the stdin pipe froze Tk's main loop and the glow vanished (see _take_stdin).
 So the window stays mapped the whole time: "hidden" is a fully see-through picture, "shown" is the glow. Steady, no
 pulse. The window has no title, so it isn't in Nova's window list. It runs in its own process (python -m nova.overlay).
 """
@@ -15,7 +16,6 @@ import ctypes
 import json
 import os
 import queue
-import sys
 
 from nova.platform import avatar_window as aw
 
@@ -25,8 +25,22 @@ WDA_EXCLUDEFROMCAPTURE = 0x11
 TICK_MS = 100
 
 
+def _take_stdin():
+    """The command pipe, moved off the process's standard input (which becomes NUL) before Tk starts.
+
+    Found live (2026-11-23): while a thread sat blocked reading the stdin pipe, Tk's main loop froze too (its ticks
+    stopped), and the glow - drawn fine a moment earlier - was gone from the screen. Tcl looks at the standard handles;
+    with the pipe on its own descriptor and NUL as stdin, the loop keeps running and the glow stays."""
+    fd = os.dup(0)
+    null = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(null, 0)                     # for fds 0-2 this also changes the process's STD_INPUT_HANDLE
+    os.close(null)
+    return os.fdopen(fd, "r", encoding="utf-8")
+
+
 def run(render, to_bytes, log):
     """Read JSON commands from stdin ({"do": "show", "text"} / {"do": "hide"}) until it closes."""
+    pipe = _take_stdin()
     import tkinter as tk
     from nova import runtime
     user32.SetProcessDPIAware()
@@ -47,7 +61,7 @@ def run(render, to_bytes, log):
     commands = queue.Queue()
 
     def read_stdin():
-        for line in sys.stdin:
+        for line in pipe:
             try:
                 commands.put(json.loads(line))
             except ValueError:

@@ -533,6 +533,17 @@ secret in a card; the page loads at 375 px wide.
 `/tasks` page, (e) the question card (buttons / checkboxes). Each its own commit; the UI can't come before the data
 it shows. The question card is needed by 4a, which asks the questions.
 
+**5. The hands-off glow (the user's request, 2026-11-23; branch `feat/hands-off-overlay`).** While Nova (or her task
+exam) uses the keyboard and mouse, the screen's edges glow purple → cyan and a pill at the top says "Nova is using your
+laptop - say “stop” or press ■ Stop to take over", like Claude's computer use. `nova/overlay.py` draws it and runs it as
+its own process (`python -m nova.overlay`, driven over stdin by `overlay.show/hide/close`); the window is
+`nova/platform/overlay_window.py`. Click-through, never focused, untitled (not in her window list), left out of
+screenshots (WDA_EXCLUDEFROMCAPTURE), primary screen only. Setting `hands_off_glow` (Senses) turns it off.
+Found live, while making it appear: withdraw/deiconify painted a grey full-screen Tk window, and an alpha-only
+UpdateLayeredWindow (a gentle pulse) made the glow vanish, so the window stays mapped and the glow is steady; and in
+the child process a thread blocked reading the stdin pipe froze Tk's main loop, so the glow never showed - the pipe is
+now moved off standard input (stdin becomes NUL) before Tk starts.
+
 **4-pre (a) as built (2026-11-22, branch `feat/manager-task-card`):**
 - `nova/task_state.py`: the card (`task["card"]`, plain JSON, `version` 1). Plan steps and runs are each pending /
   started (not confirmed) / done / failed / skipped. Status is running / waiting / stopped / interrupted / done /

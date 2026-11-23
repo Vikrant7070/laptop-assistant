@@ -15,7 +15,8 @@ The window never gets in the way:
   so it can't take her typing or confuse the checks that read the front window;
 - no title, so it isn't in the window list (platform.windows skips untitled windows);
 - left out of screenshots (SetWindowDisplayAffinity WDA_EXCLUDEFROMCAPTURE), so her screen looks don't see it;
-- always on top, drawn with per-pixel alpha (UpdateLayeredWindow), pulsing gently.
+- always on top, drawn with per-pixel alpha (UpdateLayeredWindow), steady (a pulse was tried and dropped: see
+  nova/platform/overlay_window.py).
 Only the primary screen glows.
 """
 import json
@@ -53,7 +54,7 @@ def render(width, height, text):
             font = ImageFont.load_default()
         box = draw.textbbox((0, 0), text, font=font)
         tw, th = box[2] - box[0], box[3] - box[1]
-        pw, ph = tw + 56, th + 24
+        pw, ph = tw + 66, th + 24
         x0, y0 = (width - pw) // 2, GLOW + 6
         draw.rounded_rectangle([x0, y0, x0 + pw, y0 + ph], radius=ph // 2, fill=(21, 24, 41, 235),
                                outline=COLORS[0] + (255,), width=2)
