@@ -89,6 +89,7 @@ class Settings:
     skill_screen_checks: bool = False
     skill_teach: bool = True
     barge_in: bool = True
+    hands_off_glow: bool = True          # the screen's edges glow while she uses the keyboard and mouse (nova/overlay.py)
     character: str = characters.DEFAULT
     phone_banners_hidden: bool = False   # Nova hid Phone Link's own pop-ups, so she turns them back on
     schema: int = SCHEMA

@@ -76,6 +76,7 @@ def status():
                    reaction_sounds=s.get("reaction_sounds", True), power_ok=s.get("power_ok", False),
                    presence=s.get("presence", False), presence_lock=s.get("presence_lock", False),
                    error_help=s.get("error_help", True), barge_in=s.get("barge_in", True), away=presence.state["away"],
+                   hands_off_glow=s.get("hands_off_glow", True),
                    presence_note=presence.state["note"], presence_checks=presence.state["checks"],
                    autostart=host.STARTUP_LNK.exists(), character=characters.get(s.get("character"))["id"],
                    characters=characters.choices(),
@@ -154,7 +155,7 @@ def setup():
     except (TypeError, ValueError):
         pass
     voice_io.apply_listening(s)
-    for k in ("presence", "presence_lock", "error_help", "notif_sleep", "deep_sleep", "email_cloud", "phone_calls", "phone_notes_cloud", "phone_quiet", "barge_in"):
+    for k in ("presence", "presence_lock", "error_help", "notif_sleep", "deep_sleep", "email_cloud", "phone_calls", "phone_notes_cloud", "phone_quiet", "barge_in", "hands_off_glow"):
         if k in body:
             s[k] = body[k] is True
     config.save_settings(s)
