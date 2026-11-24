@@ -28,6 +28,8 @@ from nova import shared, store
 DEFAULTS = {
     "_help": {
         "auto_route": "false = never switch brains; everything stays on the everyday model (settings.json 'model').",
+        "cloud_after_failed_checks": "Local first, cloud when stuck: this many steps read back as NOT done hands the task to the cloud brain.",
+        "cloud_after_turns": "Local first, cloud when stuck: after this many brain turns without finishing, the cloud brain takes over.",
         "coder_model": "Takes over a coding task. Must be installed and able to call tools.",
         "deep_model": "Writes a full plan (no tools) for a complex task.",
         "deep_runs": "true = the deep model also carries out its own plan, but only if a test shows it really calls tools.",
@@ -46,6 +48,8 @@ DEFAULTS = {
                         "Each new request starts back on the everyday model.",
     },
     "auto_route": True,
+    "cloud_after_failed_checks": 2,
+    "cloud_after_turns": 18,
     "coder_model": "qwen2.5-coder:7b",
     "deep_model": "qwen3.5:4b",
     "deep_runs": False,

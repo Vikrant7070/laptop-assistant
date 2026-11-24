@@ -70,6 +70,12 @@ def after_step(task, calls):
                "Reach the goal a different way, or tell the user in one sentence what is blocking you.")}
 
 
+def fresh(task):
+    """Another brain took the task over (local first -> cloud, nova/core/app/brains.py): its progress counts afresh."""
+    if task is not None:
+        progress.reset(_holder(task))
+
+
 def stuck(task, words):
     """Stop and ask. -> the reply dict with the question card."""
     card = task_state.of(task)

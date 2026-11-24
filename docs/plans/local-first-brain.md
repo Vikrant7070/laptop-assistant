@@ -1,4 +1,4 @@
-Status: Part A built 2026-11-23 (`nova/brain/usage.py`, tests/test_cloud_usage.py); Part B not started.
+Status: Part A merged 2026-11-23 (PR #63). Part B merged 2026-11-24 (PR #68). Free ladder added 2026-11-24 (section C).
 
 # ☁️ Local first, cloud when stuck — and a free-uses meter (plan)
 
@@ -102,6 +102,17 @@ easy to add in one place.
 
 ## Part B — local first, cloud when stuck
 
+### As built (Part B)
+- `brain_mode` = `cloud_first` (default, today's behaviour) | `local_first`. It only matters when a cloud provider with
+  a key is chosen; provider "Local model" stays local only. The Brain tab shows the choice under the cloud model.
+- In `local_first`, `config.brain()` is the local model, so every request and every side job starts local.
+  `brains.climb()` puts one task on the cloud model; the agent loop restarts its turn and repeat counters then.
+- Stuck signs built: asked in the request, `escalate(kind="cloud")`, planner gave no plan, read-back failures
+  (`cloud_after_failed_checks`, 2), the same step 3 times, `cloud_after_turns` (18) turns, the Judge's "not done"
+  after one push, "I can't" on a task that used tools. **Not built:** unreadable tool calls (no clean signal yet).
+- Mail tasks never climb unless "let the cloud read my mail" is on. Free uses used up → stays local, says so once.
+- The "free uses are finished" notice is a 💭 log line (it carries the time they come back), not spoken.
+
 ### B1. A new choice in the Brain tab
 "How should I use the cloud brain?"
 - **Local only** — never the cloud.
@@ -175,3 +186,35 @@ Add a line to `docs/OWNERS.md` when each part starts (not now: both open branche
 1. Are the "stuck" numbers in B3 right, or should she climb sooner / later?
 2. In "local first", should side jobs (B5) never use the cloud, or use it only while there are many uses left?
 3. The "running low" line: 10 % left — OK?
+
+---
+
+## C — the free ladder (added 2026-11-24, user's wish)
+
+Google gives each free model its own limits, so when one runs out the others still have uses left.
+- `config/cloud_free.json` → `google.ladder`: the free models, strongest first. Edit the order freely. With the free
+  limits from the user's AI Studio rate-limit page (2026-11-24, also in the file's `limits`):
+
+  | Rung | Model | Per day | Per minute |
+  |---|---|---|---|
+  | 1 | gemini-4-hydrogen | 20 | 5 |
+  | 2 | gemini-3.8-flash | 20 | 5 |
+  | 3 | gemini-3.6-flash | 20 | 5 |
+  | 4 | gemini-3-flash-preview | 20 | 5 |
+  | 5 | gemini-2.5-flash | 20 | 5 |
+  | 6 | gemini-3.5-flash-lite | 500 | 15 |
+  | 7 | gemini-3.1-flash-lite | 500 | 15 |
+  | 8 | gemini-2.5-flash-lite | 20 | 10 |
+
+  About 1,120 free calls a day in all. Gemma 4 (14,400 a day) is left out: its 16K tokens a minute fits about one
+  Nova request a minute.
+- When the chosen model is on the ladder and the Brain tab's **🪜 Free ladder** switch is on (default), every cloud call
+  goes to the strongest rung with uses left (`usage.route`). A 429 marks that rung out (as before) and `cloud.chat`
+  tries the next rung in the same call. Only when every rung is out does she use the local brain
+  (`usage.unavailable`: "All my free Google models are used up ... until HH:MM"). Other errors (503, no internet) don't
+  move down the ladder.
+- Each rung keeps its own count and learned limits in the meter; the Brain tab numbers them and marks the one in use;
+  the header chip shows that one. `task_log.txt` gets `FREE LADDER ...` lines when another rung answers.
+- Thought signatures: each stored tool call remembers the model that wrote it (`by`); a different rung gets the "skip"
+  signature, so switching models mid-task doesn't break Gemini's signature check.
+- Switch off (or pick a model not on the ladder, e.g. a paid one) to use only the chosen model.
