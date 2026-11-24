@@ -3,6 +3,7 @@
     "what": "Which cloud models are free and their free limits, for the free-uses meter (nova/brain/usage.py). Edit freely.",
     "free / paid": "Model names (wildcards * allowed). Free = usable without billing; paid = costs money, the Brain tab asks first.",
     "ladder": "Free models from strongest to weakest. With the Brain tab's 'Free ladder' on and one of them chosen, Nova uses the strongest one that still has free uses left and moves to the next when Google says its limit is used up. Exact model names only.",
+    "light_from": "The rung light jobs (one-shot answers, facts, summaries) start at, so the 20-a-day models at the top are kept for hard work (coach, take-over). Light jobs still move down past a used-up rung but never climb above this one. Leave it out and every job starts at the top.",
     "limits": "Free limits per model: rpd = requests per day, rpm = requests per minute. null = not known yet. Nova also learns them from Google's 'limit reached' answers, and the Brain tab lets you type the real numbers from https://aistudio.google.com/rate-limit (those win over this file).",
     "source": "Free models: Google AI Studio pricing page, checked 2026-11-23. Limits: the user's AI Studio rate-limit page, 2026-11-24 (free tier). Daily limits reset at midnight Pacific time."
   },
@@ -35,6 +36,7 @@
       "gemini-3.1-flash-lite",
       "gemini-2.5-flash-lite"
     ],
+    "light_from": "gemini-3.5-flash-lite",
     "limits": {
       "gemini-4-hydrogen": {
         "rpd": 20,
