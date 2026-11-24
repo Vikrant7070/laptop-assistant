@@ -11,3 +11,4 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 | Free ladder (strongest free Gemini first, next one when its limit is used up): `nova/brain/usage.py`, `nova/brain/cloud.py`, `config/cloud_free.json`, Brain tab switch. Local first (Part B) merged PR #68 | Claude session (free AI / cloud meter) | `feat/free-model-ladder` | 2026-11-24 |
 | Local first v2 L5 part 1: light/hard jobs on the free ladder (`usage.route(..., job=)`, `light_from` in `config/cloud_free.json`). Part 2 (wiring call sites) after L1+L4 merges | Claude session (lf2-l5-light-route) | `claude/lf2-l5-light-route-949be4` | 2026-11-24 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |
+| Barge-in echo fix (`nova/audio/voice/barge_in.py`, `tests/test_barge_in.py`) | Claude session (barge-in echo) | `claude/bargein-echo-4ec2d0` | 2026-11-24 |
