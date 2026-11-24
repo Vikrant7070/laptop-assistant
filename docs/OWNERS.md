@@ -6,6 +6,6 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 
 | Area (paths) | Owner (session, agent or person) | Branch | Since |
 |---|---|---|---|
-| Manager Phase 4: 4-pre, 4a, 4b, 4c-1 merged (PRs #50-#55, #57, #61). 4c-2 worker job checks (PR #67) and 4c-3 send-back + limits + brief guard in progress (`nova/actions/jobchecks.py`, `jobrounds.py`, the rounds in `workers.py`, `/tasks`); then 4d-4g, each after the user's go | Claude session (manager loop) | `claude/manager-4c-2`, `claude/manager-4c-3` | 2026-11-24 |
+| Manager Phase 4: 4-pre, 4a, 4b, 4c-1 merged (PRs #50-#55, #57, #61). 4c-2 (PR #67), 4c-3 (PR #69); 4d-1 progress watch in progress (`nova/progress.py`, `nova/core/app/watching.py`, the hook in `conversation.py`, `jobrounds.Quiet`); then 4d-2, 4e-4g, each after the user's go | Claude session (manager loop) | `claude/manager-4c-2`, `-4c-3`, `-4d` | 2026-11-24 |
 | Improvement roadmap Phase 1: R10 voice state machine (`nova/core/app/voice_machine.py`, the shadow calls in `voice_io.py`); R14, R15, R11, R13, R12 merged | Claude session (roadmap structure) | `feat/r10-voice-state` | 2026-11-22 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |

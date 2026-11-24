@@ -5,10 +5,16 @@
                            (rounds, time for the whole job, money for Claude Code - jobchecks.limit_hit)
     send_back_words(rec)   what the report says about it
     can_continue(rec)      a job a limit stopped before its send-back: "try job #n again" continues it (workers.retry)
+    Quiet(folder)          4d: a run with no output and no file change for QUIET_MIN minutes is "maybe stuck" (the
+                           chat is told; /tasks shows it with Stop…); it clears when the worker moves again
 
 workers.start runs the rounds; this module is the deciding, kept apart so workers.py stays readable.
 """
+import os
+import time
+
 from nova.actions import jobchecks
+from nova.log import log_exception
 
 
 def check_round(w, rec, job, root, asked, check, out, conf, sent_back, brief):
@@ -62,3 +68,56 @@ def can_continue(rec):
     """A coding job a limit stopped before its send-back round, not yet continued."""
     return (rec.get("status") == "limit" and bool(rec.get("send_back")) and not rec.get("continued")
             and rec.get("worker") in ("opencode", "claude"))
+
+
+# ------------------------------------------------------------------ 4d: a worker that has gone quiet
+
+QUIET_MIN = 10               # no output and no file change for this long -> "maybe stuck"
+QUIET_EVERY = 30             # seconds between looks (a git status each time)
+
+
+class Quiet:
+    """Watches one worker run: run_once calls heard() for every output line and check(job) while it waits."""
+
+    def __init__(self, folder):
+        self.folder, self.last, self.looked, self.files = folder, time.time(), 0.0, None
+
+    def heard(self):
+        self.last = time.time()
+
+    def _files(self):
+        from nova.actions import workers
+        names = sorted(workers._changed(self.folder))
+        stamps = []
+        for n in names[:200]:
+            try:
+                stamps.append(os.path.getmtime(os.path.join(self.folder, n)))
+            except OSError:
+                stamps.append(0.0)
+        return names, stamps
+
+    def check(self, job, now=None):
+        now = now or time.time()
+        if now - self.looked < QUIET_EVERY:
+            return
+        self.looked = now
+        if now - self.last < QUIET_MIN * 60:
+            job.pop("maybe_stuck", None)
+            return
+        try:
+            files = self._files()
+        except Exception as e:
+            log_exception("jobrounds: looking at a quiet worker's files", e)
+            return
+        if files != self.files:                 # the files moved on: it's working, just quietly
+            first, self.files = self.files is None, files
+            if not first:
+                self.last = now
+                job.pop("maybe_stuck", None)
+                return
+        if not job.get("maybe_stuck"):
+            from nova.actions import coworker
+            mins = max(1, round((now - self.last) / 60))
+            job["maybe_stuck"] = f"no output and no file change for {mins} min"
+            coworker._note(f"⚠️ Job #{job['id']} may be stuck: {job['maybe_stuck']}. Say 'stop job #{job['id']}' "
+                           "to stop it, or let it carry on.")

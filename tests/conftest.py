@@ -107,6 +107,8 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(checks, "evaluate", lambda *a, **k: (True, "ok (test)"))
     # the Judge's "which checks prove this?" brain call would eat a scripted FakeBrain answer: none fit by default
     monkeypatch.setattr(app.judging, "ask_for_checks", lambda goal, windows, model: "NONE")
+    # 4d's one new plan for a stuck task asks the deep brain: none in tests unless a test gives one
+    monkeypatch.setattr(app.watching, "make_plan", lambda goal: (None, "no planner in tests"))
     # Phone Link's banner switch lives in the real registry: tests only record what would have been asked
     app.banner_calls = []
     monkeypatch.setattr(app.notifications, "phone_banners", lambda show, **k: (app.banner_calls.append(show), 1)[1])

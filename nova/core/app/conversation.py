@@ -547,6 +547,7 @@ def _agent_loop(activity):
     nudged = did_something = claim_nudged = False
     last_calls = last_outs = None        # the same tool call, with the same result, again and again = stuck in a loop
     same_calls = 0
+    loose = {}          # 4d's progress record when the request has no task
     unsaid = []      # reply text that has not been spoken yet (text spoken while it was being written isn't here)
 
     def result(reply, **extra):
@@ -726,11 +727,9 @@ def _agent_loop(activity):
             # Told to stop repeating and did it again: end here rather than spending the whole step budget on it.
             session.state["messages"].extend(llm.tool_result_message(model, c, "Not run - same as before.") for c in calls)
             task_log(f"STUCK: {calls[0]['name']} called {same_calls} times in a row with the same arguments")
-            task_state.mark(task_state.of(task), "stuck", f"{calls[0]['name']} {same_calls} times with the same arguments")
-            session.think("🔁 I keep doing the same step and getting nowhere - stopping here.")
-            line = "I kept repeating the same step without getting anywhere, so I stopped. Can you tell me a bit more?"
-            unsaid.append(line)
-            return result((" ".join(spoken) + " " + line).strip())
+            asked = watching.stuck(task, f"did the same step ({calls[0]['name']}) {same_calls} times with nothing new")
+            unsaid.append(asked["reply"])
+            return result((" ".join(spoken) + " " + asked["reply"]).strip(), question=asked["question"])
         if any(session.is_risky(c) for c in calls):
             session.state["pending"] = calls
             task_state.mark(task_state.of(task), "waiting", "an approval")
@@ -760,12 +759,12 @@ def _agent_loop(activity):
         outs = json.dumps([str(o).split(protocol.CHECK_NOTE_START)[0] for o in session.state.get("last_outs") or []])
         same = sig == last_calls and outs == last_outs and not repeatable
         same_calls, last_calls, last_outs = (same_calls + 1 if same else 1), sig, outs
-        if same_calls == REPEAT_LIMIT and not repeatable:
-            session.think("🔁 I've done that same step a few times now - time to use what I've got.")
-            session.state["messages"].append({"role": "user", "content":
-                protocol.note(f"You have now called {calls[0]['name']} {same_calls} times in a row with "
-                              "the same arguments, and it won't give anything new. Don't call it again. Answer the user now with "
-                              "what you already know, or do a different step if one is really needed.")})
+        watch = watching.after_step(task if task is not None else loose, calls)
+        if watch and watch.get("stop"):              # 4d: still stuck after the new plan - she stops and asks
+            unsaid.append(watch["stop"]["reply"])
+            return result((" ".join(spoken) + " " + watch["stop"]["reply"]).strip(), question=watch["stop"]["question"])
+        if watch:                                    # 4d: stuck once - one new plan, or told to use what she has
+            session.state["messages"].append({"role": "user", "content": protocol.note(watch["note"])})
     if task is not None:
         task["paused"] = True               # "keep going" now carries on with this task
         task_state.mark(task_state.of(task), "stopped", "time limit" if task.get("time_up") else "out of steps")
@@ -794,4 +793,4 @@ def ready_info():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, config, judging, learning, prompts, resume, session, skillrun, voice_io  # noqa: E402
+from nova.core.app import body, config, judging, learning, prompts, resume, session, skillrun, voice_io, watching  # noqa: E402

@@ -1,4 +1,4 @@
-Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks, PR #67) and 4c-3 (send-back, limits, brief guard) on their branches; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
+Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks, PR #67), 4c-3 (send-back, limits, brief guard, PR #69) and 4d-1 (progress watch) on their branches; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
 
 # Nova as a manager — plan
 
@@ -896,6 +896,35 @@ worker, checked by reading the result back, and remembered.
 - Questions don't stop the work: what can be answered from facts is answered; the rest is gathered on one card while
   other steps that don't need the answer go on.
 - **Done when:** a task that repeats the same click 3 times stops and asks, instead of running to the step limit.
+
+**4d-1 as built (2026-11-24, branch `claude/manager-4d`, on top of 4c-3): the progress check, stuck → new plan →
+question, quiet workers.** `nova/progress.py` (pure rules), `nova/core/app/watching.py` (the app side).
+- After every batch of steps, code records the step (tool + arguments) and whether it brought anything new: new = this
+  exact step hasn't given this exact result before in the task, and it didn't fail. A different step that says "ok"
+  again is new (something else was done). Kept on the card as `progress` (short hashes, last 12 steps).
+  - Loop: the same step 3 times within the last 4, the last bringing nothing new. Clicks count (the old repeat stop
+    skipped them); scrolling, keys, volume, brightness and media don't.
+  - No progress: 3 steps in a row with nothing new. The plan said 2; 3 keeps "check the time and the laptop a few
+    times" from looking stuck.
+- First time stuck: one new plan from the deep brain, sent the goal, the one-line step outcomes and why it's stuck (no
+  raw results). It goes on the card (source "deep brain") and in a note to the brain: "You are stuck: you did the same
+  step (click_at x=10 y=20) 3 times with nothing new. Don't do that step again. Here is a new plan …". With no
+  planner, the note says to reach the goal another way or say what's blocking.
+- Still stuck - a second loop or stall, or the very same step again with nothing new - she stops and asks with a
+  question card: "Stuck at step 2 of 4 of “…”: I did the same step (…) 3 times with nothing new. Should I try a
+  different way, or will you do this step?" → Try a different way (the task carries on with fresh chances and "try a
+  DIFFERENT way" in front of the brain) / I'll do this step (stopped; "continue" picks it up) / Stop the task
+  (dropped). The card is on the chat, the strip, `/tasks`, and Telegram when the request came from the phone.
+  - The old "same call, same result" stop (non-repeatable tools, 4th call refused) now ends with the same card
+    instead of "I kept repeating the same step…"; its separate nudge is gone (4d's note replaces it).
+  - Done when: `test_a_task_that_repeats_the_same_click_stops_and_asks` - 3 clicks, one new plan, the 4th same click
+    → the card (not 24 steps).
+- Worker jobs: no output and no file change (git status + file times, looked at every 30 s) for 10 min → "maybe
+  stuck": a note in the chat ("⚠️ Job #n may be stuck: … Say 'stop job #n' to stop it, or let it carry on") and
+  "⚠ maybe stuck" on its `/tasks` row, which has a ■ Stop… button (opens the chat with "stop job #n"). It clears
+  when the worker writes output or changes a file. The live strip shows only the laptop task card, so it isn't there.
+- Not built yet (4d-2): the *known* list (facts given, found, guesses); answering questions from facts and gathering
+  the rest on one card while other steps go on. The new plan comes from the local deep brain only, not a cloud brain.
 
 **4e — Risk levels for every action**
 - Every tool and every step gets a level:
