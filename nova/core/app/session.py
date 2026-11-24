@@ -18,6 +18,7 @@ from nova.actions import recorder
 from nova.actions import workers
 from nova.actions import tools
 from nova.actions import shell_policy
+from nova.actions import risk
 from nova.core.app import eventbus
 
 
@@ -131,6 +132,12 @@ def is_risky(call):
         return coding_job_worker(call) == "claude" or bool(state.get("remote"))
     if name == "run_skill" and skill_needs_ok(args):    # it only sounds like that skill (or the brain picked it): ask
         return True
+    if risk.always_asks(name, args, s):                 # 4e: level 2 (delete, send, pay, install, sign in, power…)
+        return True                                     # asks every time, at every autonomy level
+    sk = skills.get(args.get("name", "")) if name == "run_skill" else None
+    if sk and sk["kind"] == "routine" and any(risk.always_asks(st["tool"], st.get("args"), s)
+                                              for st in sk["steps"] if "tool" in st):
+        return True                                     # ...and so does a routine with such a step
     if mcp.owns(name):                                  # 🔌 connector tools (mcp.py): ask unless known to be safe
         if mcp.is_safe(name):
             return False

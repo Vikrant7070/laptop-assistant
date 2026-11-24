@@ -561,6 +561,10 @@ def _agent_loop(activity):
             say = reply                     # e.g. the plain "Done!"
         return {"reply": reply, "activity": activity, "say": say, **extra}
 
+    def ask_back(asked, *said):         # 4d / 4e: a question card ends the turn, after whatever she said
+        unsaid.extend(t for t in said + (asked["reply"],) if t)
+        return result(" ".join(spoken + [t for t in said if t] + [asked["reply"]]).strip(), question=asked["question"])
+
     turns = 0
     while True:
         check_stop()
@@ -678,10 +682,8 @@ def _agent_loop(activity):
                 continue
             task_log(f"HALLUCINATED DONE: '{(text or '')[:120]}' with no tool called")
             text = "I haven't actually done that yet - tell me again and I'll do it properly."
-        asked = watching.gather(task) if not calls else None       # 4d: the questions she queued, on one card
-        if asked:
-            unsaid.extend(t for t in (protocol.strip_meta(text or ""), asked["reply"]) if t)
-            return result(" ".join(spoken + [protocol.strip_meta(text or ""), asked["reply"]]).strip(), question=asked["question"])
+        if not calls and (asked := watching.gather(task)):          # 4d: the questions she queued, on one card
+            return ask_back(asked, protocol.strip_meta(text or ""))
         if not calls and task and task["steps"] and (task.get("checks") or task["steps"] >= LOOK_FROM_STEP):
             # She says she's finished: the Judge decides (checks first, at most one advisory screen look).
             judging.final_judge(task, text, activity, model)
@@ -731,9 +733,9 @@ def _agent_loop(activity):
             # Told to stop repeating and did it again: end here rather than spending the whole step budget on it.
             session.state["messages"].extend(llm.tool_result_message(model, c, "Not run - same as before.") for c in calls)
             task_log(f"STUCK: {calls[0]['name']} called {same_calls} times in a row with the same arguments")
-            asked = watching.stuck(task, f"did the same step ({calls[0]['name']}) {same_calls} times with nothing new")
-            unsaid.append(asked["reply"])
-            return result((" ".join(spoken) + " " + asked["reply"]).strip(), question=asked["question"])
+            return ask_back(watching.stuck(task, f"did the same step ({calls[0]['name']}) {same_calls} times with nothing new"))
+        if held := watching.outside_order(task, calls, model):      # 4e: an order from outside text: asked, never done
+            return ask_back(held)
         if any(session.is_risky(c) for c in calls):
             session.state["pending"] = calls
             task_state.mark(task_state.of(task), "waiting", "an approval")
@@ -763,12 +765,8 @@ def _agent_loop(activity):
         outs = json.dumps([str(o).split(protocol.CHECK_NOTE_START)[0] for o in session.state.get("last_outs") or []])
         same = sig == last_calls and outs == last_outs and not repeatable
         same_calls, last_calls, last_outs = (same_calls + 1 if same else 1), sig, outs
-        watch = watching.after_step(task if task is not None else loose, calls)
-        if watch and watch.get("stop"):              # 4d: still stuck after the new plan - she stops and asks
-            unsaid.append(watch["stop"]["reply"])
-            return result((" ".join(spoken) + " " + watch["stop"]["reply"]).strip(), question=watch["stop"]["question"])
-        if watch:                                    # 4d: stuck once - one new plan, or told to use what she has
-            session.state["messages"].append({"role": "user", "content": protocol.note(watch["note"])})
+        if stuck := watching.after_step(task if task is not None else loose, calls):   # 4d: stuck after the new plan
+            return ask_back(stuck)
     if task is not None:
         task["paused"] = True               # "keep going" now carries on with this task
         task_state.mark(task_state.of(task), "stopped", "time limit" if task.get("time_up") else "out of steps")
