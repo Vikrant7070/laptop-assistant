@@ -822,7 +822,7 @@ worker, checked by reading the result back, and remembered.
 - Limits: the step limit as before, plus a time limit (`TASK_SECS` = 10 min): the task stops as "time limit", and
   Continue picks it up.
 - Not built (said plainly): the "one new plan" on failure is one more go for the brain with the failing check on its
-  card, not a fresh plan from the deep brain. Mail / messages / forms / downloads have no reader yet (skipped).
+  card, not a fresh plan from the deep brain. Mail / messages / forms / downloads have no reader yet (skipped) - filled in by 4c-4 below.
 - `/tasks`: plan steps counted against the plan (it showed "3 of 2 steps").
 - Live check (2026-11-23) on a separate copy with saved tasks carrying passed / skipped / failed read-backs: `/tasks`
   showed ✓ / – / ✗ "read back: …" under each step, the failed plan step ❌, and "Couldn't finish: step 2: Rename it
@@ -1009,6 +1009,42 @@ outside orders.** `nova/actions/risk.py` (the table and the rules), `session.is_
   each / trusted asks only before Wi-Fi off / full never), with Undo offered; level 2 always asks (only the power
   checkbox is an exception); worker jobs keep their ⚙ Workers → Manager setting. Chosen instead of a second
   per-level setting: with level 0 free and level 2 fixed, the autonomy choice already is the level-1 setting.
+
+**4c-4 read-back gaps as built (2026-11-24, branch `claude/manager-readback-gaps-6fe565`): downloads, sent mail and
+messages, form submits, the wallpaper.** `nova/actions/readback.py`; `judging.execute` now passes the step's start time.
+- Nova has no send / download / submit tool of her own: sends come from connector tools (`mcp_<server>_<tool>`),
+  `fill_form` never submits, and a browser download is a click. So the readers hang on those:
+  - **Download** (`check_download`): the file is there, finished (no `.crdownload` / `.part` / `.partial` /
+    `.download` / `.opdownload`, as the name or next to it), more than 0 bytes, and made after the step started.
+    Without a named file, the newest file in Downloads since the step started. A download still coming in gets 10 s,
+    then fails as "still downloading". Used for a connector tool with "download" in its name (the path from its args
+    or its own output) and for a click whose label says Download. No Downloads folder known → skipped.
+  - **Sent mail** (`sent_mail`): a connector tool with send / reply / forward in its name and "gmail" in it is read
+    back through the read-only Gmail connector: `in:sent after:<start - 60 s> to:<address> subject:"<subject>"`
+    (6 s for it to show up). Found → passed; not found → failed. The body is never searched for. Gmail not connected,
+    or no recipient and no subject → skipped with why.
+  - **Messages:** Telegram (a bot can't read its chat history), Phone Link / SMS / WhatsApp, and any other connector's
+    send are skipped with why. Nova's own Telegram replies to the user aren't tool steps.
+  - **Form submitted** (`form_submit`): a click whose label is Submit / Send / Sign up / Register / Place order / Pay /
+    Book / Apply / Subscribe / Post looks for a confirmation on the page (`page_has`: "thank you", "submitted",
+    "received", "confirmed", "success", "message sent", "order number", ...; 4 s). None → failed; no window →
+    skipped. Only those words are looked for, never a field's value.
+  - `fill_form` stays skipped (it fills but never submits; the values stay private); `help_login`, `draft_email`
+    and `click_at` skipped with why; any other click "no read-back for this click".
+  - **Wallpaper:** `set_wallpaper` read back through the new `platform.wallpaper()` (SPI_GETDESKWALLPAPER).
+  - `type_text` unchanged: text that can't be seen is skipped, not failed.
+- **Undo** (`nova/actions/undo.py`): Wi-Fi on / off and the wallpaper keep their old value and go back to it (a
+  wallpaper whose old picture file is gone isn't put back; no record when there was no wallpaper).
+- Tests: `tests/test_readback.py` (a `.crdownload` fails, a missing / empty / old file fails, a download click finds
+  the new file, a mail found in Sent passes and one not found fails, Telegram / other connectors skipped with why, a
+  form with no confirmation fails, fill_form skipped, wallpaper, the start time reaches the reader in a task) and
+  `tests/test_undo.py` (Wi-Fi, wallpaper).
+- Read-only check on the real laptop (no copy of Nova needed, nothing changed): Downloads found, its newest file of
+  the week passed, "no new file" since now failed, the wallpaper and the Wi-Fi state read back.
+- Not built: reading back a sent message anywhere but Gmail (Telegram, Phone Link, other mail connectors); a form
+  submitted with Enter (`press_keys` stays skipped); opening an app by a click (the click has no app name to look
+  for); confirmation words are English only and could match a page that already said "thanks" before the submit.
+  No live send / submit was tried (never on the real accounts).
 
 **4f — Remember and learn (was 4d)**
 - One record per task or job (the task card and the job record, already there): brief, plan, workers, rounds, every
