@@ -39,6 +39,7 @@ from pathlib import Path
 from nova import runtime
 from nova import db
 from nova import store
+from nova.actions import jobchecks
 from nova.log import log_exception
 
 KEEP_JOBS = 200
@@ -73,7 +74,8 @@ CLAUDE_DENY = ["Bash(git commit:*)", "Bash(git push:*)", "Bash(git reset:*)", "B
                "Bash(Invoke-WebRequest:*)", "WebFetch"]
 BRIEF_RULES = ("\n\nRules for this job (from Nova, the user's assistant): work only inside this folder. Do NOT commit, "
                "push, publish, deploy, delete files or pay for anything - Nova shows the user your changes and they "
-               "decide. When you finish, reply with a short summary of what you changed and anything left to do.")
+               "decide. When you finish, reply with a short summary of what you changed, then one line "
+               "'Left to do: ...' naming anything you didn't finish ('Left to do: nothing' when it's all done).")
 FREE_LIMIT = re.compile(r"free[- ]?(usage )?limit|rate.?limit|429|quota", re.I)
 
 
@@ -543,6 +545,7 @@ def start(brief, folder, worker="auto", size="small", start_job=None, meta=None)
         ahead = [t for t in _lines.get(norm, [])]
         _lines.setdefault(norm, []).append(ticket)
     title = re.sub(r"\s+", " ", str(brief)).strip()[:70]
+    asked = os.path.abspath(os.path.expandvars(os.path.expanduser(str(folder).strip().strip('"'))))
 
     def work(job):
         ticket["job"] = job["id"]
@@ -600,10 +603,14 @@ def start(brief, folder, worker="auto", size="small", start_job=None, meta=None)
                                  f"{_short(out['text'])}" + (f" {check['note']}" if check["note"] else ""))
                 return
             rec["status"] = "needs-user" if out.get("denied") else "done"
+            job["step"] = "checking its work (files, tests)"
+            checks = jobchecks.coding(root, asked, check["files"], _guard_env(), coworker.checkpoint)
+            rec.update(checks=checks, verdict=jobchecks.verdict(checks), left=jobchecks.left(checks, out["text"]))
             n = len(check["files"])
             names = ", ".join(check["files"][:4]) + (f" and {n - 4} more" if n > 4 else "")
             job["result"] = (f"{NAMES[w]} finished the job '{title}' and changed {n} file{'s' if n != 1 else ''}: "
-                             f"{names}. Nothing is committed - say 'commit it' when you've had a look."
+                             f"{names}." + (f" {jobchecks.summary(checks)}" if checks else "")
+                             + " Nothing is committed - say 'commit it' when you've had a look."
                              + (f" {check['note']}" if check["note"] else "")
                              + (f" It wasn't allowed to: {', '.join(out['denied'][:3])}." if out.get("denied") else ""))
         except coworker.Stopped:
@@ -775,8 +782,11 @@ def research(topic, focus="", kind="general", max_sources=None, start_job=None, 
             _save_record(rec)
             try:
                 work(job)
+                checks = jobchecks.research(job, n)
+                job["result"] = f"{job.get('result') or ''} {jobchecks.summary(checks)}".strip()
                 rec.update(status="done", result=str(job.get("result") or "")[:2000], path=job.get("path") or "",
-                           sources=list(job.get("sources") or []))
+                           sources=list(job.get("sources") or []), checks=checks, verdict=jobchecks.verdict(checks),
+                           left=jobchecks.left(checks))
             except coworker.Stopped:
                 rec["status"] = "stopped"
                 raise

@@ -31,6 +31,8 @@ JOB_STATUS = {"queued": "running", "running": "running", "checking": "running", 
 FILTERS = {"running": ("running",), "waiting": ("waiting",), "stopped": ("stopped", "interrupted", "stuck", "dropped"),
            "done": ("done",), "failed": ("failed",)}
 KINDS = {"laptop": ("laptop",), "workers": ("coding", "research")}
+# A job record's check verdict (4c-2, nova/actions/jobchecks.py) -> the row's ✓ / ✗ (None: not checked / no checks).
+JOB_VERDICT = {"passed": True, "failed": False}
 
 
 def _clean(text, n=200):
@@ -70,7 +72,8 @@ def job_row(rec):
             "status": JOB_STATUS.get(rec.get("status"), rec.get("status") or ""), "why": _clean(rec.get("note"), 160),
             "steps_done": None, "steps_total": None, "files": len(rec.get("files") or []),
             "sources": len(rec.get("sources") or []), "cost": rec.get("cost") or 0,
-            "secs": round(float(finished) - started, 1) if finished else None, "verdict": None,
+            "secs": round(float(finished) - started, 1) if finished else None,
+            "verdict": JOB_VERDICT.get(rec.get("verdict") or ""), "not_checked": rec.get("verdict") == "not checked",
             "can_continue": False, "type": rec.get("job_type") or "", "chain": rec.get("chain_step") or ""}
 
 
@@ -126,7 +129,10 @@ def detail(rid):
                 "result": _clean(rec.get("result"), 2000), "files_list": [str(f) for f in rec.get("files") or []][:50],
                 "source_list": [_clean(s if isinstance(s, str) else s.get("url") or s.get("title"), 200)
                                 for s in rec.get("sources") or []][:10],
-                "committed": bool(rec.get("committed")), "finished": rec.get("finished"), "actions": actions}
+                "committed": bool(rec.get("committed")), "finished": rec.get("finished"), "actions": actions,
+                "checks": [{"name": _clean(c.get("name"), 20), "state": c.get("state"), "why": _clean(c.get("why"), 200)}
+                           for c in rec.get("checks") or [] if isinstance(c, dict)][:10],
+                "left": [_clean(x, 200) for x in rec.get("left") or []][:10]}
     return None
 
 
