@@ -10,6 +10,7 @@ from nova.actions import judge
 from nova.actions import tools
 from nova import protocol, task_state
 from nova.actions import readback
+from nova.actions import undo
 
 
 def settle(tool_name, quick=False):
@@ -174,8 +175,10 @@ def execute(calls, approved, activity, model):
     for c in calls:
         session.state.pop("ran_as", None)
         rid = task_state.start(card, c)   # the card: started, not confirmed - until the tool has really run
+        snap = undo.before(c)             # 4e: a level-1 step that can be undone keeps what was there
         try:
             out = conversation._execute_one(c, approved, activity, model)
+            undo.after(c, out, not skillrun._failed(out), snap, card["id"] if card is not None else "")
             c = session.state.pop("ran_as", None) or c   # the call that really ran (web_research may become a background job)
             task_state.finish(card, out, not skillrun._failed(out), c["name"], rid)   # no-op if check_step did
             if card is not None and not skillrun._failed(out):     # 4c: code reads the result back, never her "done"

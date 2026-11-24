@@ -18,7 +18,7 @@ import time
 from flask import jsonify, request, send_from_directory
 
 from nova import db, task_state
-from nova.actions import jobrounds, workers
+from nova.actions import jobrounds, undo, workers
 from nova.core.app import api, resume, session
 from nova.log import log_exception
 
@@ -120,7 +120,8 @@ def detail(rid):
         if card is None:
             return None
         return {**task_row(card), "card": task_state.strip(card, runs=task_state.MAX_RUNS),
-                "verdict_source": card.get("verdict_source", ""), "checks": card.get("checks") or []}
+                "verdict_source": card.get("verdict_source", ""), "checks": card.get("checks") or [],
+                "undo": [undo.describe(r) for r in undo.records(card["id"])][-10:]}
     if rid.startswith("j:"):
         rec = _job(rid[2:])
         if rec is None:

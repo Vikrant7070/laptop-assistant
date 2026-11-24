@@ -1,4 +1,4 @@
-Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks, PR #67), 4c-3 (send-back, limits, brief guard, PR #69) 4d-1 (progress watch, PR #70), 4d-2 (known list, questions, PR #73) and 4e-1 (risk levels) on their branches; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
+Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks, PR #67), 4c-3 (send-back, limits, brief guard, PR #69) 4c-2 to 4e-1 merged (PRs #67-#74, 2026-11-24); 4e-2 (undo, settings by level) on its branch; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
 
 # Nova as a manager — plan
 
@@ -992,6 +992,23 @@ outside orders.** `nova/actions/risk.py` (the table and the rules), `session.is_
 - Not built yet (4e-2): Undo for level 1 (an undo record for moves / renames, the old value of a setting) and the
   strip showing level-1 steps with Undo; `manager.go_ahead` as one setting per level (⚙ Workers). Orders are found by
   wording only, and a "from an unknown chat" source (Telegram pairing) is 4g's.
+
+**4e-2 as built (2026-11-24, branch `claude/manager-4e-2`): Undo for level 1, the settings by level.**
+`nova/actions/undo.py`, called around every step in `judging.execute`; tool `undo_last_change`.
+- Before a step that can be undone, code keeps what is there; when the step really ran, an undo record goes to
+  `data/undo.json` (the last 50, each with its task's id). A record is used once.
+  - move / rename → moved back (no record when something was at the new place before: putting it back could lose it);
+    copy → the copy to the Recycle Bin; new folder → the Recycle Bin, only while still empty; `write_text_file` → the
+    old text put back (kept in `data/undo/`, files up to 5 MB) or a new file to the Recycle Bin; dark mode and
+    brightness → their old value; volume → the same steps the other way.
+  - Nothing is deleted for good. Opening apps, clicks, typing, Wi-Fi and the wallpaper have no undo yet.
+- "Undo that" / "undo change #3": `undo_last_change(which)` (level 1; 'latest', a number, or words). The live strip
+  shows the task's last 3 undoable changes as ↩ buttons (a tap sends "undo change #n", like Continue sends
+  "continue"); the Tasks page lists every change with its state and an "↩ Undo…" button that fills in the chat.
+- Settings (⚙ Access) now read by level: level 0 never asks; level 1 is the old autonomy choice (careful asks before
+  each / trusted asks only before Wi-Fi off / full never), with Undo offered; level 2 always asks (only the power
+  checkbox is an exception); worker jobs keep their ⚙ Workers → Manager setting. Chosen instead of a second
+  per-level setting: with level 0 free and level 2 fixed, the autonomy choice already is the level-1 setting.
 
 **4f — Remember and learn (was 4d)**
 - One record per task or job (the task card and the job record, already there): brief, plan, workers, rounds, every

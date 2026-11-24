@@ -215,10 +215,15 @@
 </div>
 <div class="pane" data-pane="access">
       <h3 style="margin-top:16px">How much should I ask first?</h3>
-      <label class="opt"><input type="radio" name="aut" value="careful"> <b>Careful</b> - ask before anything that changes things (typing, files, windows, installs, commands)</label>
-      <label class="opt"><input type="radio" name="aut" value="trusted"> <b>Trusted</b> - just do it; ask only before shutdown, uninstalling, emptying the bin or admin commands</label>
-      <label class="opt"><input type="radio" name="aut" value="full"> <b>Full access</b> - never ask <span style="color:var(--warn)">(a small local model can misunderstand - use with care)</span></label>
-      <label class="mood" style="display:block;margin-top:10px"><input type="checkbox" id="powerOk"> ⏻ Shut down / restart when I ask, without asking first (she closes all windows and clears notifications, then shuts down in 30 s - say "cancel shutdown" to stop)</label>
+      <p class="mood" style="margin:4px 0 8px">Every action has a level (manager plan 4e).</p>
+      <p class="mood" style="margin:4px 0"><b>Level 0 - reading, looking, searching:</b> never asks.</p>
+      <p class="mood" style="margin:8px 0 2px"><b>Level 1 - changes that can be undone</b> (opening and closing apps, clicks, typing, moving or writing files, settings). ↩ Undo is offered on the task strip and the Tasks page:</p>
+      <label class="opt"><input type="radio" name="aut" value="careful"> <b>Careful</b> - ask before each of these</label>
+      <label class="opt"><input type="radio" name="aut" value="trusted"> <b>Trusted</b> - just do them; ask only before turning Wi-Fi off</label>
+      <label class="opt"><input type="radio" name="aut" value="full"> <b>Full access</b> - never ask for these <span style="color:var(--warn)">(a small local model can misunderstand - use with care)</span></label>
+      <p class="mood" style="margin:10px 0 2px"><b>Level 2 - hard to undo, or leaves the laptop</b> (delete, send, pay, install, sign in, a command that changes things, shut down): <b>always asks</b>, whatever is chosen above. No setting turns this off for delete, send, pay or commands.</p>
+      <p class="mood" style="margin:4px 0">Worker jobs (coding, research): set in ⚙ Workers → Manager. Text from outside (an email, a page, a file) is never an order: she asks you about it.</p>
+      <label class="mood" style="display:block;margin-top:10px"><input type="checkbox" id="powerOk"> ⏻ Shut down / restart when I ask, without asking first - the one level-2 exception (she closes all windows and clears notifications, then shuts down in 30 s - say "cancel shutdown" to stop)</label>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="autostart"> Start Nova with Windows (in the tray)</label>
 </div>
 <div class="pane" data-pane="senses">

@@ -43,7 +43,7 @@ LEVELS = {
         "draft_email", "add_note", "set_reminder", "remember_fact", "forget_fact", "update_profile",
         "learn_lesson", "save_skill", "edit_skill", "undo_skill_change", "save_task_as_skill", "delete_skill",
         "run_skill", "start_watching", "stop_watching", "change_look", "new_move", "forget_move", "go_to_sleep",
-        "show_finished_work", "stop_background_job", "start_coding_job", "retry_coding_job",
+        "show_finished_work", "stop_background_job", "start_coding_job", "retry_coding_job", "undo_last_change",
         "kill_process"), CHANGE),      # closing a program, like closing its window (the plan: open/close apps)
     # 2 - hard to undo, or leaves the laptop
     **dict.fromkeys((
