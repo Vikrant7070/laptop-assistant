@@ -27,8 +27,8 @@ carry on.
 
 | Task | Plan section | Branch | State | Port | Taken by |
 |---|---|---|---|---|---|
-| Barge-in: her own echo no longer counts as the user | improvement-roadmap R10; manager plan 4-pre rule 4 | `claude/bargein-echo-4ec2d0` | **PR #78**, CI green, reviewed — waiting for the user's merge OK | — | done |
-| 4c-4 read-back gaps: downloads, sent Gmail, form submits, wallpaper; Wi-Fi + wallpaper undo | 6, "4c-4 … as built" | `claude/manager-readback-gaps-6fe565` | **PR #79**, CI green, reviewed — waiting for the user's merge OK | 5095 | done |
+| Barge-in: her own echo no longer counts as the user | improvement-roadmap R10; manager plan 4-pre rule 4 | `claude/bargein-echo-4ec2d0` | **merged** (PR #78) | — | done |
+| 4c-4 read-back gaps: downloads, sent Gmail, form submits, wallpaper; Wi-Fi + wallpaper undo | 6, "4c-4 … as built" | `claude/manager-readback-gaps-6fe565` | **merged** (PR #79) | 5095 | done |
 | Phase 6: read Chrome / PowerShell / Claude Code history into unconfirmed facts (opt-in per source) | 8 + 9 answer 5 | `claude/manager-phase6-8b25a2` | **PR #80**, CI green, **conflicts with master** — merge `origin/master` in and fix | 5096 | **open** |
 | 4f: one record per task/job, app notes, skill offers, lessons from corrections | 6, "4f" | `claude/manager-4f-c45edf` | WIP pushed (8f5b1aa). The session said its first full test run passed (2058); the final `check.cmd` didn't finish. New: `nova/actions/appnotes.py`, `nova/actions/lessons.py`, `tests/test_remember_learn.py` | 5099 | **open** |
 | 4g: scheduled and repeating jobs (`data/schedules.json`, `/tasks` Pause / Delete, confirm card, missed run once) | 6, "4g" | `claude/manager-4g-7b7ac5` | WIP pushed (d92e4ec), early: `nova/schedules.py`, `nova/core/app/scheduling.py`, `static/schedules.js`, tests. No plan-doc note yet | 5098 | **open** |
@@ -39,7 +39,7 @@ carry on.
 
 ## Merge order (fewest shared files first)
 
-#78 → #79 → Phase 6 → Phase 5 → 4f → leftovers → Phase 7 → Phase 8 (reads Phase 7's routines) → 4g.
+(#78 and #79 merged) → Phase 6 → Phase 5 → 4f → leftovers → Phase 7 → Phase 8 (reads Phase 7's routines) → 4g.
 After each merge, the next branch merges `origin/master` and re-runs `check.cmd` before its own merge.
 Files most branches touch, so expect conflicts there: `nova/actions/risk.py` (LEVELS), `nova/actions/tools/__init__.py`,
 `nova/core/app/background.py`, `static/index.html`, `static/tasks.*`, `nova/core/app/tasks_page.py`,
