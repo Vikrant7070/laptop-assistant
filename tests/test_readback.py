@@ -1,5 +1,7 @@
 """4c (the whole laptop): every step that changes something is checked by reading the result back."""
 import json
+import os
+import time
 
 import pytest
 
@@ -178,3 +180,142 @@ def test_the_judge_checks_make_folder_and_rename_goals():
 def test_the_exam_counts_a_paused_task_as_not_done():
     from nova import exam
     assert exam.claimed({"reply": "(That was a lot of steps, so I paused here. Say “keep going” and I'll carry on.)"}) == "not done"
+
+
+# --- 4c-4: downloads, sent mail and messages, forms, the wallpaper ---------------------------------------------
+
+@pytest.fixture
+def no_waiting(monkeypatch):
+    for name in ("DOWNLOAD_WAIT", "SENT_WAIT", "FORM_WAIT", "POLL"):
+        monkeypatch.setattr(readback, name, 0)
+
+
+def test_a_download_that_is_still_crdownload_fails_and_a_finished_one_passes(tmp_path, no_waiting):
+    started = time.time()
+    part = tmp_path / "report.pdf.crdownload"
+    part.write_bytes(b"half")
+    rb = readback.check_download(str(tmp_path / "report.pdf"), started=started)
+    assert rb["state"] == "failed" and rb["why"] == "report.pdf is still downloading (not finished)"
+    assert readback.check_download(str(part), started=started)["state"] == "failed"
+    part.rename(tmp_path / "report.pdf")
+    rb = readback.check_download(str(tmp_path / "report.pdf"), started=started)
+    assert rb["state"] == "passed" and rb["why"] == "report.pdf is downloaded (4 bytes)"
+
+
+def test_a_missing_empty_or_old_download_fails(tmp_path, no_waiting):
+    assert readback.check_download(str(tmp_path / "gone.zip"))["why"] == "gone.zip is missing"
+    (tmp_path / "empty.zip").write_bytes(b"")
+    assert readback.check_download(str(tmp_path / "empty.zip"))["why"] == "empty.zip is empty (0 bytes)"
+    old = tmp_path / "old.zip"
+    old.write_bytes(b"x")
+    os.utime(old, (time.time() - 3600, time.time() - 3600))
+    rb = readback.check_download(str(old), started=time.time() + 3600)      # ctime too: the step "started" later
+    assert rb["state"] == "failed" and "there before this step" in rb["why"]
+
+
+def test_a_download_click_looks_for_a_new_finished_file_in_downloads(desktop, tmp_path, no_waiting):
+    desktop.folders = {"Downloads": str(tmp_path)}
+    started = time.time()
+    click = {"name": "Download PDF", "window": "Chrome"}
+    assert readback.read_back("click_element", click, "Clicked", started)["why"] == f"no new file in {tmp_path.name}"
+    (tmp_path / "Unconfirmed 1234.crdownload").write_bytes(b"x")
+    assert readback.read_back("click_element", click, "Clicked", started)["why"] == \
+        "Unconfirmed 1234.crdownload is still downloading (not finished)"
+    (tmp_path / "Unconfirmed 1234.crdownload").rename(tmp_path / "invoice.pdf")
+    assert readback.read_back("click_element", click, "Clicked", started)["state"] == "passed"
+    desktop.folders = {}
+    assert readback.read_back("click_element", click, "Clicked", started)["why"] == "couldn't find the Downloads folder"
+
+
+def test_a_connectors_download_reads_the_file_it_names(tmp_path, no_waiting):
+    f = tmp_path / "data.csv"
+    f.write_text("a,b", encoding="utf-8")
+    assert readback.read_back("mcp_drive_download_file", {"file_id": "1"}, f"Saved to {f}", time.time())["state"] == "passed"
+    assert readback.read_back("mcp_drive_download_file", {"path": str(tmp_path / "no.csv")}, "", time.time())["state"] == "failed"
+    assert readback.read_back("mcp_drive_list_downloads", {}, "", time.time())["why"] == "no read-back for this step yet"
+    assert readback.read_back("mcp_gmail_get_sent_messages", {}, "")["why"] == "no read-back for this step yet"
+
+
+@pytest.fixture
+def sent_box(monkeypatch):
+    """Gmail's Sent folder, faked: a search finds the mails whose subject is in the query."""
+    from nova.actions import gmail
+    sent, queries = [], []
+    monkeypatch.setattr(gmail, "connected", lambda: True)
+
+    def search(query="", count=5):
+        queries.append(query)
+        return [m for m in sent if f'subject:"{m["subject"]}"' in query][:count]
+    monkeypatch.setattr(gmail, "search", search)
+    return sent, queries
+
+
+def test_a_sent_email_found_in_sent_passes_and_one_not_found_fails(sent_box, no_waiting):
+    sent, queries = sent_box
+    args = {"to": "Sam <sam@example.com>", "subject": "Lunch on Friday", "body": "See you there"}
+    rb = readback.read_back("mcp_gmail_send_email", args, "Sent.", 1_800_000_000)
+    assert rb == {"state": "failed", "why": "'Lunch on Friday' isn't in Gmail's Sent", "target": "sent mail"}
+    assert queries[-1] == 'in:sent after:1799999940 to:sam@example.com subject:"Lunch on Friday"'
+    sent.append({"subject": "Lunch on Friday"})
+    rb = readback.read_back("mcp_gmail_send_email", args, "Sent.", 1_800_000_000)
+    assert rb["state"] == "passed" and rb["why"] == "it is in Sent: 'Lunch on Friday'"
+    assert "See you there" not in " ".join(queries)                      # the body is never searched for
+
+
+def test_sent_messages_without_a_reader_are_skipped_with_why(monkeypatch, no_waiting):
+    from nova.actions import gmail
+    monkeypatch.setattr(gmail, "connected", lambda: False)
+    assert readback.read_back("mcp_gmail_send_email", {"to": "a@b.co"}, "")["why"] == \
+        "Gmail isn't connected here, so Sent can't be read back"
+    assert readback.read_back("mcp_telegram_send_message", {"text": "hi"}, "")["why"] == \
+        "Telegram doesn't let a bot read its chat history back"
+    assert readback.read_back("mcp_phonelink_send_sms", {"text": "hi"}, "")["state"] == "skipped"
+    assert readback.read_back("mcp_slack_post_message", {"text": "hi"}, "")["why"] == "no read-back for this step yet"
+    assert readback.read_back("mcp_outlook_send_mail", {"to": "a@b.co"}, "")["why"] == \
+        "this connector has no way to read what it sent"
+
+
+def test_a_form_with_no_confirmation_text_fails(real_checks, monkeypatch, no_waiting):
+    page = {"text": "Contact us. Name Email Message Submit"}
+    looked = []
+
+    def page_has(arg, ctx):
+        looked.append(arg)
+        return arg in page["text"].lower(), "the page"
+    monkeypatch.setattr(checks, "_page_has", page_has)
+    submit = {"name": "Submit", "window": "Contact - Chrome"}
+    rb = readback.read_back("click_element", submit, "Clicked 'Submit'.")
+    assert rb["state"] == "failed" and rb["why"].startswith("no confirmation on the page after clicking 'Submit'")
+    page["text"] = "Thank you! We'll be in touch."
+    assert readback.read_back("click_element", submit, "Clicked 'Submit'.")["why"] == \
+        "the page says 'thank you' after clicking 'Submit'"
+    assert set(looked) <= set(readback.CONFIRMED)                     # only the confirmation words, never a value
+    monkeypatch.setattr(checks, "_page_has", lambda arg, ctx: (False, "no window"))
+    assert readback.read_back("click_element", submit, "")["why"] == "couldn't see the page after the click"
+
+
+def test_fill_form_and_other_clicks_are_skipped_with_why():
+    rb = readback.read_back("fill_form", {"window": "Chrome"}, "Filled 3 box(es). I did NOT submit it.")
+    assert rb["state"] == "skipped" and "never submits" in rb["why"] and "private" in rb["why"]
+    assert readback.read_back("click_element", {"name": "Next page"}, "")["why"].startswith("no read-back for this click")
+    assert readback.read_back("click_at", {"x": 1, "y": 2}, "")["state"] == "skipped"
+    assert readback.read_back("draft_email", {"about": "x"}, "")["state"] == "skipped"
+
+
+def test_the_wallpaper_is_read_back(desktop, tmp_path):
+    pic = tmp_path / "sea.jpg"
+    desktop.wall = str(tmp_path / "old.jpg")
+    assert readback.read_back("set_wallpaper", {"image_path": str(pic)}, "")["why"] == "the wallpaper is still old.jpg"
+    desktop.wall = str(pic)
+    assert readback.read_back("set_wallpaper", {"image_path": str(pic)}, "")["state"] == "passed"
+    desktop.wall = None
+    assert readback.read_back("set_wallpaper", {"image_path": str(pic)}, "")["state"] == "skipped"
+
+
+def test_a_step_in_a_task_is_read_back_with_its_start_time(brain, full, tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(readback, "read_back", lambda tool, args, out, started=None: seen.append(started))
+    before = time.time()
+    brain([("", [("create_folder", {"path": str(tmp_path / "x")})]), ("Made it.", [])])
+    app.answer(f"make a folder x in {tmp_path}")
+    assert seen and before <= seen[0] <= time.time()

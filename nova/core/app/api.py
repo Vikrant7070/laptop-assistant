@@ -5,6 +5,7 @@ import time
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 
+from nova import brainstats, db, task_state
 from nova.avatar import body as body_module
 from nova.brain import cloud
 from nova.brain import usage
@@ -13,6 +14,7 @@ from nova.brain import llm
 from nova.actions import presence
 from nova.brain import router
 from nova.actions import tools
+from nova.log import log_exception
 from nova.shared import host_allowed
 from nova.core.app import config
 
@@ -250,5 +252,23 @@ def cloud_ladder():
     return jsonify(usage.snapshot(provider, name))
 
 
+@app.get("/api/brain/stats")
+def brain_stats():
+    """Local first v2, L6: the Brain tab's daily line and 7-day total, and every climbed task (nova/brainstats.py)."""
+    now = time.time()
+    since = now - (brainstats.DAYS + 1) * 86400
+    try:
+        cards = db.load_tasks(since=since, limit=5000)
+        cur = task_state.of(session.state.get("task"))
+        if cur is not None:                     # the task in memory may be newer than its saved copy
+            cards = [cur] + [c for c in cards if c.get("id") != cur.get("id")]
+        climbs = brainstats.climbs_from_events(db.find_events("log", since=since, like="CLIMB ->", limit=5000))
+        calls = sum(r["used"] for r in usage.snapshot(now=now)["models"])
+    except Exception:
+        log_exception("brain stats: reading task cards")
+        return jsonify(error="Couldn't read the task records."), 500
+    return jsonify(brainstats.count(cards, climbs, calls, now))
+
+
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import brains, conversation, host, integrations, prompts, voice_io  # noqa: E402
+from nova.core.app import brains, conversation, host, integrations, prompts, session, voice_io  # noqa: E402
