@@ -1,5 +1,5 @@
-Status: plan, written 2026-11-24, reviewed the same day (order changed, safety details added — see "Review changes"
-at the end). Nothing built yet. Waits for the user's go-ahead per step.
+Status: being built. L3, L5 part 1 and L6 are merged (2026-11-24). L1+L4, L5 part 2 and L2 are open; see
+"Status and hand-off" below. Any session, local or cloud, can pick up an open task from there.
 
 # 💻→☁️ Local first, v2: climb sooner, learn from every rescue, spend free uses wisely (plan)
 
@@ -9,7 +9,69 @@ merged). The user asked on 2026-11-24 to make the local-first approach better, a
 **Goal:** the local brain does more on its own every week; when it can't, Gemini helps **early**, with **as few free
 uses as possible**, and what Gemini showed is **kept** so the same task stays local next time.
 
-## Where we are (2026-11-24)
+## Status and hand-off (updated 2026-11-24)
+
+This section is how work on this plan is shared between sessions on the laptop and in the cloud. Keep it up to date in
+the same PR as the work: claim a task when you start it, mark it done when it merges.
+
+### Done
+
+| Step | PR | What landed |
+|---|---|---|
+| Plan review | #81 | Order L3 → L1+L4 → L2 (+L6) → L5; safety details; exam budget |
+| L3 check before "done" | #84 (carried #79, manager 4c-4) | Failed read-back after one more go → climb; Notepad/editor reader (save + read, or private copy); "file not found" = failed check; exam `page_text` keeps short documents' text. Exam on the laptop: `type-in-notepad` and `no-such-file` went from false "done" to success (`exam/results/2026-11-24-qwen3-vl-4b-instruct-l3-run2.md`) |
+| L5 part 1 | #82 | `usage.route(provider, name, job="hard"\|"light")`, `light_from` rung in `config/cloud_free.json`; nothing calls it with `light` yet |
+| L6 Brain tab line | #83 | `nova/brainstats.py`, `/api/brain/stats`, `static/brainstats.js`; reads optional L2 fields `rescued_by`, `hint_used`, `skill_offered` (0 until L2 writes them) |
+
+### Open tasks
+
+Check the "Can start when" column before you begin; if it isn't true on `origin/master`, don't start.
+
+| Task | Can start when | Claimed by |
+|---|---|---|
+| **T1 — L1 + L4** (climb sooner + coach first) | The manager "leftovers" work (4d: a stuck task's re-plan goes to the cloud first, `watching.replan` / `cloud_planner` in `nova/core/app/watching.py`) is on `master`. Check: `git grep -n cloud_planner origin/master -- nova/core/app/watching.py` finds it. On 2026-11-24 it was **only uncommitted on the laptop**, not on GitHub | — |
+| **T2 — L5 part 2** (wire light/hard into the calls) | T1 merged | — |
+| **T3 — L2** (learn from rescues) | T1 merged **and** the user has said whether L2 or manager 4f builds the rescue part (they overlap) | — |
+| **T4 — full 25-task exam** | Only the user starts it, on the laptop (it drives the real desktop) | the user |
+
+**T1 brief.** Build L1 and L4 as one PR (sections L1 and L4 above), **on top of** the 4d re-plan code, not beside it:
+L4's coach call *is* that re-plan, plus a hand-over note of step outcomes with private values replaced by `<hidden>`.
+One stuck detector only. Plain chat never climbs; once per task. The stuck numbers and the "waiting tools don't count"
+rule are in the L1 table. Use the suggested answers to the open questions (coach first for every climb she starts
+herself) and say so in the PR. Exam owed: `rename-file`, `windows-version`, and one task that should stay local.
+
+**T2 brief.** The call sites, listed in PR #82's *Not done*:
+1. `nova/brain/cloud.py` `chat()`: take `job="hard"`, pass it to `usage.route` and `usage.unavailable`.
+2. `nova/brain/llm.py` `chat()`: take `job`, pass it to `cloud.chat`.
+3. `nova/core/app/conversation.py`, the main turn's `llm.chat`:
+   - `light` for one-shot cloud questions ("ask Gemini what …", `answer_only`, facts);
+   - `hard` when climbed or for multi-step tasks.
+4. `nova/core/app/brains.py` `climb()` and the L4 coach call: `hard`, written out. `at_start` (`ASK_CLOUD`) picks light for
+   a question, hard for a task.
+5. `nova/core/app/integrations.py`, `write_text` and `phone_note`: `light`.
+6. `nova/core/app/learning.py`, the after-chat lesson review: `light`.
+7. `nova/brain/router.py` planner/probe: leave them alone if they never reach the cloud.
+
+Done when a "what is …" cloud question starts at Flash Lite and a stuck multi-step task at the top.
+
+**T3 brief.** Section L2 above, with the review's rules: a rescue needs passed read-backs (the Judge alone isn't
+enough); hint values are slots filled from the new request; risky steps are still asked every time. Write
+`rescued_by`, `hint_used` and `skill_offered` on the task record so L6's line counts them.
+
+### Rules for any session (local or cloud)
+
+- Follow `AGENTS.md`. Branch from fresh `origin/master`, one task = one branch = one PR, and the user merges.
+- Claim before you start: in your first commit, put your branch name in **Claimed by** above and add your line to
+  `docs/OWNERS.md`. Push that commit early so others see the claim. If a task is already claimed, pick another.
+- `python scripts/who_edits.py` only sees worktrees on the laptop. A cloud session can't see them, so check open PRs
+  (`gh pr list`) and the **Can start when** column instead.
+- The gate is `ruff` + `pytest` (`scripts\check.cmd` on Windows; CI runs `python -m ruff check .` and
+  `python -m pytest -q` on `windows-latest`). Tests are hermetic: no real keyboard, clipboard, voice, browser or cloud.
+- A cloud session can't run the task exam, the live Nova or anything on the real desktop. Say in the PR which exam
+  tasks are owed; the user runs them on the laptop.
+- When your PR merges: move the task to **Done** and clear your **Claimed by** and OWNERS line.
+
+## Where we were when the plan was written (2026-11-24, before L3/L5/L6)
 
 | What | Today |
 |---|---|
