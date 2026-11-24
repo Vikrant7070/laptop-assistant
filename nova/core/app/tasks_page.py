@@ -18,7 +18,7 @@ import time
 from flask import jsonify, request, send_from_directory
 
 from nova import db, task_state
-from nova.actions import workers
+from nova.actions import jobrounds, workers
 from nova.core.app import api, resume, session
 from nova.log import log_exception
 
@@ -26,7 +26,8 @@ LIMIT = 80
 
 # A job record's status -> the page's words (the same ones as the cards).
 JOB_STATUS = {"queued": "running", "running": "running", "checking": "running", "needs-user": "waiting",
-              "done": "done", "failed": "failed", "stopped": "stopped"}
+              "done": "done", "failed": "failed", "stopped": "stopped",
+              "limit": "stopped"}          # 4c-3: a limit stopped it before its send-back round
 # The page's filter -> the statuses it shows.
 FILTERS = {"running": ("running",), "waiting": ("waiting",), "stopped": ("stopped", "interrupted", "stuck", "dropped"),
            "done": ("done",), "failed": ("failed",)}
@@ -69,7 +70,7 @@ def job_row(rec):
     return {"id": "j:" + str(rec.get("key")), "kind": "research" if worker == "research" else "coding",
             "when": started, "goal": _clean(rec.get("brief"), 200), "job": rec.get("job"),
             "who": workers.NAMES.get(worker, worker) + (f" ({rec['model']})" if rec.get("model") else ""),
-            "status": JOB_STATUS.get(rec.get("status"), rec.get("status") or ""), "why": _clean(rec.get("note"), 160),
+            "status": JOB_STATUS.get(rec.get("status"), rec.get("status") or ""), "why": _clean(("limit reached - " + rec["limit"]) if rec.get("limit") else rec.get("note"), 160),
             "steps_done": None, "steps_total": None, "files": len(rec.get("files") or []),
             "sources": len(rec.get("sources") or []), "cost": rec.get("cost") or 0,
             "secs": round(float(finished) - started, 1) if finished else None,
@@ -122,7 +123,9 @@ def detail(rid):
                         {"do": "chat", "label": "Commit…", "say": f"commit coding job #{n}"}]
         if worker == "research" and status == "done":
             actions.append({"do": "report", "label": "Report"})
-        if status in ("failed", "stopped", "needs-user"):
+        if jobrounds.can_continue(rec):
+            actions.append({"do": "chat", "label": "▶ Continue…", "say": f"try job #{n} again"})
+        elif status in ("failed", "stopped", "needs-user"):
             actions.append({"do": "chat", "label": "Try again…",
                             "say": f"try research #{n} again" if worker == "research" else f"try job #{n} with Claude Code"})
         return {**row, "brief": _clean(rec.get("brief"), 2000), "folder": rec.get("folder") or "",
@@ -132,7 +135,8 @@ def detail(rid):
                 "committed": bool(rec.get("committed")), "finished": rec.get("finished"), "actions": actions,
                 "checks": [{"name": _clean(c.get("name"), 20), "state": c.get("state"), "why": _clean(c.get("why"), 200)}
                            for c in rec.get("checks") or [] if isinstance(c, dict)][:10],
-                "left": [_clean(x, 200) for x in rec.get("left") or []][:10]}
+                "left": [_clean(x, 200) for x in rec.get("left") or []][:10],
+                "sent_back": int(rec.get("sent_back") or 0), "guard": [_clean(x, 200) for x in rec.get("guard") or []][:10]}
     return None
 
 

@@ -39,7 +39,7 @@ from pathlib import Path
 from nova import runtime
 from nova import db
 from nova import store
-from nova.actions import jobchecks
+from nova.actions import jobchecks, jobrounds
 from nova.log import log_exception
 
 KEEP_JOBS = 200
@@ -551,7 +551,7 @@ def start(brief, folder, worker="auto", size="small", start_job=None, meta=None)
         ticket["job"] = job["id"]
         job.update(worker=w, path=root)
         key = f"{int(job['started'])}-{job['id']}"
-        rec = {"key": key, "job": job["id"], "worker": w, "model": "", "brief": str(brief)[:2000], "folder": root,
+        rec = {"key": key, "job": job["id"], "worker": w, "model": "", "brief": str(brief)[:2000], "folder": root, "asked": asked,
                "status": "queued" if _lines[norm][0] is not ticket else "running", "started": job["started"],
                "finished": None, "cost": 0.0, "files": [], "result": "", "note": "", "log": str(store.current().job_logs / f"{key}.log")}
         rec.update(meta or {})              # the manager's job type / job id / chain step (4b)
@@ -570,24 +570,29 @@ def start(brief, folder, worker="auto", size="small", start_job=None, meta=None)
                 rec.update(status="running", started=time.time())
                 _save_record(rec)
             before = snapshot(root)
+            carry = set(rec.get("carry_files") or [])      # a Continue (4c-3): the earlier job's files count as ours
+            before["dirty"] = [f for f in before["dirty"] if f not in carry]
             store.current().job_logs.mkdir(parents=True, exist_ok=True)
             models = ([conf[w].get("model")] + list(conf[w].get("fallback_models") or [])) if w == "opencode" \
                 else [conf[w].get("model") or ""]
-            out, used = None, ""
-            with open(rec["log"], "a", encoding="utf-8") as log:
-                for m in models:
-                    job["step"] = f"{NAMES[w]} is starting" + (f" ({m})" if m else "")
-                    out, used = run_once(w, str(brief) + BRIEF_RULES, root, m, conf, job, coworker.checkpoint, log), m
-                    if not out.get("limit"):
-                        break
-                    coworker._note(f"🧑‍💻 {m} is at its free limit - trying the next model.")
-            job["step"] = "checking what it changed"
-            rec["status"] = "checking"
-            _save_record(rec)
-            check = after_check(root, before)
-            rec.update(model=used, cost=out["cost"], files=check["files"], note=check["note"],
-                       result=out["text"][:2000])
-            job.update(path=root, files=check["files"], worker=w, cost=out["cost"], model=used)
+            sent_back, ask, cost = int(rec.get("sent_back") or 0), str(brief), 0.0
+            while True:                    # 4c-3: a failed check goes back once to the same worker, within limits
+                out, used = _run_models(w, ask, root, models, conf, job, rec["log"])
+                cost += float(out.get("cost") or 0)
+                job["step"] = "checking what it changed"
+                rec["status"] = "checking"
+                _save_record(rec)
+                check = after_check(root, before)
+                rec.update(model=used, cost=round(cost, 4), files=check["files"], note=check["note"],
+                           result=out["text"][:2000])
+                job.update(path=root, files=check["files"], worker=w, cost=cost, model=used)
+                _save_record(rec)
+                checks, stop = jobrounds.check_round(w, rec, job, root, asked, check, out, conf, sent_back, str(brief))
+                if not stop:
+                    break
+                sent_back += 1
+                rec["sent_back"] = sent_back
+                ask = jobchecks.send_back_brief(brief, checks)
             if w == "claude" and out["error"] and NOT_SIGNED_IN.search(out["error"]) and not check["files"]:
                 SIGNED_IN.update(at=time.time(), ok=False)
                 rec["status"] = "failed"
@@ -602,14 +607,12 @@ def start(brief, folder, worker="auto", size="small", start_job=None, meta=None)
                 job["result"] = (f"{NAMES[w]} finished, but it didn't change any files. It said: "
                                  f"{_short(out['text'])}" + (f" {check['note']}" if check["note"] else ""))
                 return
-            rec["status"] = "needs-user" if out.get("denied") else "done"
-            job["step"] = "checking its work (files, tests)"
-            checks = jobchecks.coding(root, asked, check["files"], _guard_env(), coworker.checkpoint)
-            rec.update(checks=checks, verdict=jobchecks.verdict(checks), left=jobchecks.left(checks, out["text"]))
+            rec["status"] = "needs-user" if out.get("denied") else ("limit" if rec.get("limit") else "done")
             n = len(check["files"])
             names = ", ".join(check["files"][:4]) + (f" and {n - 4} more" if n > 4 else "")
             job["result"] = (f"{NAMES[w]} finished the job '{title}' and changed {n} file{'s' if n != 1 else ''}: "
                              f"{names}." + (f" {jobchecks.summary(checks)}" if checks else "")
+                             + jobrounds.send_back_words(rec, job["id"])
                              + " Nothing is committed - say 'commit it' when you've had a look."
                              + (f" {check['note']}" if check["note"] else "")
                              + (f" It wasn't allowed to: {', '.join(out['denied'][:3])}." if out.get("denied") else ""))
@@ -645,6 +648,20 @@ def start(brief, folder, worker="auto", size="small", start_job=None, meta=None)
     return (f"Started background job #{job['id']}: {NAMES[w]}{extra} is working on '{title}' in {root}. Tell the user "
             "in one short sentence that it's running in the background and you'll tell them when it's done. "
             "Don't do the job yourself.")
+
+
+def _run_models(w, ask, root, models, conf, job, log_path):
+    """One round: the worker with this brief, trying the next free model when one is at its limit."""
+    from nova.actions import coworker
+    out, used = None, ""
+    with open(log_path, "a", encoding="utf-8") as log:
+        for m in models:
+            job["step"] = f"{NAMES[w]} is starting" + (f" ({m})" if m else "")
+            out, used = run_once(w, ask + BRIEF_RULES, root, m, conf, job, coworker.checkpoint, log), m
+            if not out.get("limit"):
+                break
+            coworker._note(f"🧑‍💻 {m} is at its free limit - trying the next model.")
+    return out, used
 
 
 def _leave_line(norm, ticket, job_id):
@@ -730,6 +747,8 @@ def retry_target(which="latest", worker=""):
     w = str(worker or "").strip().lower()
     if w in ("", "auto"):
         rec = last_record(which, need_files=False, kinds=None)
+        if rec and jobrounds.can_continue(rec):
+            return rec, rec["worker"]             # stopped by a limit (4c-3): Continue with the same worker
         return rec, ("research" if rec and rec.get("worker") == "research" else "claude")
     w = pick_worker(w)
     return last_record(which, need_files=False, kinds=("research",) if w == "research" else CODERS), w
@@ -745,6 +764,15 @@ def retry(which="latest", worker=""):
         return f"Job #{rec['job']} is still going - wait for it, or stop it first."
     if w == "research":
         return research(rec.get("topic") or rec["brief"], rec.get("focus", ""), rec.get("kind", "general"))
+    if jobrounds.can_continue(rec) and w == rec.get("worker"):
+        # Continue (4c-3): the send-back round the limit held back, as a new job; it won't be sent back again.
+        meta = {k: rec[k] for k in ("job_type", "manager_job") if rec.get(k)}
+        said = start(rec["send_back"], rec.get("asked") or rec["folder"], worker=w,
+                     meta={**meta, "continues": rec["job"], "carry_files": list(rec.get("files") or []), "sent_back": int(rec.get("sent_back") or 0) + 1})
+        if str(said).startswith(("Started", "Queued")):
+            rec["continued"] = True
+            _save_record(rec)
+        return said
     return start(rec["brief"], rec["folder"], worker=w)
 
 

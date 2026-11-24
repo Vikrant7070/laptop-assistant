@@ -1,4 +1,4 @@
-Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks) on its branch; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
+Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks, PR #67) and 4c-3 (send-back, limits, brief guard) on their branches; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
 
 # Nova as a manager — plan
 
@@ -855,6 +855,35 @@ worker, checked by reading the result back, and remembered.
 - Not built yet (4c-3): the send-back once to the same worker with the failing check, then telling the user; retry
   limits (rounds, time, money) with Continue on the card; undoing a worker's changes outside its folder or to its
   brief. A failed check today is reported plainly and the job stays "done" with ✗.
+
+**4c-3 as built (2026-11-24, branch `claude/manager-4c-3`, on top of 4c-2): send-back, limits, the brief guard.**
+`nova/actions/jobrounds.py` decides; `workers.start` runs the rounds; the rules are in `jobchecks.py`.
+- Send-back: a coding job whose check fails goes back **once** to the same worker, same folder, with the same brief
+  plus "Nova checked your work and this check failed: - tests: … " and the end of the failing output ("Don't change
+  the tests to make them pass"). The chat gets "🔁 Job #n: a check failed (…) - sending it back to … once."
+  - Fixed → "(A check failed at first; I sent it back once and it fixed it.)"
+  - Still failing → "I sent it back once with the failing check and it still fails - over to you: look at it, or try
+    it with another worker." The job ends as done with ✗; nothing more runs.
+  - The files are counted for the whole job (every round), and the record keeps `sent_back`.
+- Limits, checked before a send-back (settings in `workers.json` → `manager`): `send_backs` (default 1, 0 = off),
+  `job_min` (default 60, every round together), and money for Claude Code (one more round at its budget must stay
+  under the daily limit). Each run keeps its own time limit and Claude Code's `--max-budget-usd`.
+  - A time or money limit stops the job as `limit` with the reason ("time: the job has used its 60 minutes"), and the
+    report says "Say 'try job #n again' to continue". `/tasks` shows it stopped, "limit reached - …", and a
+    ▶ Continue… button that opens the chat with those words (the usual Allow / No asks first for Claude Code).
+  - Continue (`workers.retry` → `jobrounds.can_continue`): the held-back round runs as a new job with the send-back
+    brief, the same worker, the earlier job's files counted as its own; it is not sent back again. A job continues
+    once.
+- The brief guard: files a worker changed outside the job's folder (a job given a subfolder of the project) are
+  undone - files git knows are put back from HEAD, new ones are moved (never deleted) to
+  `data/jobs/<key>-undone/` - and the job stops as failed: "… changed files outside the job's folder (README.md). I
+  undid those changes and stopped the job." Its changes inside the folder are kept. `/tasks` lists what was undone.
+- Not built (said plainly):
+  - Research jobs aren't sent back: a failed research check is reported (4c-2) and "try again" runs it again.
+  - Changes outside the git project itself aren't watched by Nova: OpenCode's `external_directory` is denied and
+    Claude Code in `-p` mode can't get permission to edit outside its folder, but there is no disk snapshot.
+  - "Changes its brief": the brief is passed as an argument, not a file, so there is nothing to undo.
+  - A laptop task still gets "one more go" with the failing check (4c-1), not a fresh plan from the deep brain.
 
 **4d — Watch progress: notice stuck and looping tasks**
 - The task card gets two lists kept by code:

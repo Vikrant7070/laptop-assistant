@@ -62,6 +62,8 @@ function jobBody(d) {
     ${(d.checks || []).length ? html`<p class="k">Checks${d.not_checked ? " (done, not checked)" : ""}:</p><ul>${d.checks.map(c =>
         html`<li class="${c.state}">${CHECK[c.state] || "·"} ${c.name}: ${c.state}${c.state === "passed" ? "" : " - " + c.why}${c.state === "passed" && c.why ? html`<small>${c.why}</small>` : ""}</li>`)}</ul>` : ""}
     ${(d.left || []).length ? html`<p class="k">Couldn't finish: ${d.left.join("; ")}</p>` : ""}
+    ${d.sent_back ? html`<p class="k">Sent back to the worker once with the failing check.</p>` : ""}
+    ${(d.guard || []).length ? html`<p class="k">Undone (changed outside its folder): ${d.guard.join("; ")}</p>` : ""}
     ${d.why ? html`<p><span class="k">Why it ended:</span> ${d.why}</p>` : ""}
     ${d.actions.length ? html`<div class="acts">${d.actions.map(a => a.do === "chat"
         ? html`<button data-chat="${a.say}" title="Opens the chat with this filled in - she asks before doing it">${a.label}</button>`
