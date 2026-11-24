@@ -196,6 +196,29 @@ def _parse_code_call(src, tools):
     return tool["name"], args
 
 
+# qwen3-vl on the local brain writes its call in brackets: [open_path: "C:\\Users\\vikra\\Downloads"] or
+# [find_large_files: folder="C:\\...", min_mb=1] - and nothing ran (2026-11-24). Quoted values may hold "]".
+BRACKET_CALL_RE = re.compile(r"\[\s*([a-z_][a-z0-9_]*)\s*:\s*((?:\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\]\"'])*)\]",
+                             re.I)
+BRACKET_SKIP = {"react"}        # [react: "laugh"] is a stage direction, played by after_turn (shared.REACT_MARKER_RE)
+
+
+def _single_backslashes_doubled(s):
+    """C:\\Users -> C:\\\\Users, while an already-doubled \\\\ stays as it is."""
+    return s.replace("\\\\", "\0").replace("\\", "\\\\").replace("\0", "\\\\")
+
+
+def _parse_bracket_call(m, tools):
+    """A BRACKET_CALL_RE match for a real tool -> (name, args), read like a code call (same strict rules)."""
+    name, inner = m.group(1), m.group(2).strip()
+    if name in BRACKET_SKIP:
+        return None
+    found = _parse_code_call(f"{name}({inner})", tools)
+    if not found and "\\" in inner:     # "C:\Users\vikra" with single backslashes isn't valid Python: double them
+        found = _parse_code_call(f"{name}({_single_backslashes_doubled(inner)})", tools)
+    return found
+
+
 FENCE_RE = re.compile(r"^```[a-z]*\s*|\s*```$", re.I)
 
 
@@ -349,6 +372,13 @@ def chat(model, messages, tools, think=False, on_text=None, fallback=None, on_th
             if not found and names:     # ```python\nrun_in_terminal("python --version")\n``` - a call written as code
                 fence = PY_CALL_RE.search(text)
                 found = _parse_code_call(fence.group(1), tools) if fence else None
+            if not found and names:     # [find_large_files: folder="C:\\..."] - the first one that is a real tool
+                for fence in BRACKET_CALL_RE.finditer(text):
+                    found = _parse_bracket_call(fence, tools)
+                    if found:
+                        break
+                else:
+                    fence = None
             if found:           # a native model wrote its call as text: make it a real call
                 msg["tool_calls"] = [{"function": {"name": found[0], "arguments": found[1]}}]
                 text = text[:fence.start()].strip() if fence else ""

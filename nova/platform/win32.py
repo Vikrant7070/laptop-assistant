@@ -369,6 +369,11 @@ class Win32Desktop:
             return None
         return m.ullTotalPageFile - m.ullAvailPageFile, m.ullTotalPageFile
 
+    def wallpaper(self):
+        """SPI_GETDESKWALLPAPER: the wallpaper's path ("" for none); None if it can't be read."""
+        buf = ctypes.create_unicode_buffer(1024)
+        return buf.value if user32.SystemParametersInfoW(0x73, len(buf), buf, 0) else None
+
     def set_wallpaper(self, path):
         """SPI_SETDESKWALLPAPER, saved and broadcast. -> did Windows accept it?"""
         return bool(user32.SystemParametersInfoW(20, 0, str(path), 3))
