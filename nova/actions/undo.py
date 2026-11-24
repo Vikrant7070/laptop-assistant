@@ -12,6 +12,7 @@ What can be undone, and how:
     write_text_file  the old text is put back (kept in data/undo/), or a new file goes to the Recycle Bin
     set_dark_mode    back to the old colour mode          set_brightness   back to the old level
     set_volume       the same number of steps the other way (mute <-> unmute)
+    toggle_wifi      back to the old on / off             set_wallpaper    back to the old picture (if still there)
 Nothing is ever deleted for good: what is taken away goes to the Recycle Bin. A record is used once.
 """
 import os
@@ -26,7 +27,7 @@ from nova.log import log_exception
 KEEP = 50                    # records kept
 BACKUP_MAX = 5_000_000       # bytes: a bigger file's old text isn't kept (no undo for that write)
 UNDOABLE = ("move_or_rename", "copy_path", "create_folder", "write_text_file", "set_dark_mode", "set_brightness",
-            "set_volume")
+            "set_volume", "toggle_wifi", "set_wallpaper")
 OPPOSITE = {"up": "down", "down": "up", "mute": "unmute", "unmute": "mute"}
 _lock = threading.RLock()
 
@@ -109,6 +110,14 @@ def before(call):
         if name == "set_volume":
             act = str(args.get("action") or "")
             return {"action": OPPOSITE[act], "steps": args.get("steps", 5)} if act in OPPOSITE else None
+        if name == "toggle_wifi":
+            from nova.actions import readback
+            old = readback.wifi_on()
+            return None if old is None else {"on": old}
+        if name == "set_wallpaper":
+            from nova import platform
+            old = platform.current().wallpaper()
+            return {"image": old} if old else None          # no wallpaper before (or unreadable): nothing to go back to
     except Exception as e:
         log_exception("undo: before a step", e)
     return None
@@ -125,7 +134,9 @@ def after(call, out, ok, snap, task_id=""):
             "write_text_file": lambda: f"{'wrote the new file' if snap.get('new') else 'changed'} {snap['path']}",
             "set_dark_mode": lambda: f"turned dark mode {'on' if args.get('enabled') in (True, 'true', 'on', 1) else 'off'}",
             "set_brightness": lambda: f"set the brightness to {args.get('percent')}%",
-            "set_volume": lambda: f"turned the volume {args.get('action')}"}[name]()
+            "set_volume": lambda: f"turned the volume {args.get('action')}",
+            "toggle_wifi": lambda: f"turned Wi-Fi {'on' if args.get('on') in (True, 'true', 'on', 1) else 'off'}",
+            "set_wallpaper": lambda: f"set the wallpaper to {Path(str(args.get('image_path') or '')).name}"}[name]()
     if name in ("move_or_rename", "copy_path") and not (snap["clear"] and Path(snap["final"]).exists()):
         return None                      # something was at the new place before: putting it back could lose it
     if name == "create_folder" and not snap.get("new"):
@@ -195,6 +206,12 @@ def _put_back(rec):
         return True, tools.run_tool("set_brightness", {"percent": s["percent"]})
     if name == "set_volume":
         return True, tools.run_tool("set_volume", {"action": s["action"], "steps": s["steps"]})
+    if name == "toggle_wifi":
+        return True, tools.run_tool("toggle_wifi", {"on": s["on"]})
+    if name == "set_wallpaper":
+        if not Path(s["image"]).is_file():
+            return False, f"the old wallpaper ({Path(s['image']).name}) isn't there any more"
+        return True, tools.run_tool("set_wallpaper", {"image_path": s["image"]})
     return False, "I don't know how to undo that"
 
 
