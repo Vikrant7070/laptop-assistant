@@ -49,6 +49,8 @@ function taskBody(d) {
       : html`<p class="k">None.</p>`}
     ${c.left && c.left.length ? html`<p class="k">Couldn't finish: ${c.left.join("; ")}</p>` : ""}
     ${c.not_checked ? html`<p class="k">Done, not checked: no step could be read back.</p>` : ""}
+    ${(c.known || []).length ? html`<p class="k">Known:</p><ul>${c.known.map(k => html`<li>${k.key}: ${k.value} <small>${k.how === "guess" ? "a guess" : k.how}</small></li>`)}</ul>` : ""}
+    ${(c.asks || []).length ? html`<p class="k">Waiting for your answer: ${c.asks.map(a => a.text).join("; ")}</p>` : ""}
     ${d.checks.length ? html`<p class="k">The Judge's checks (${d.verdict_source || "checks"}): ${d.checks.join("; ")}</p>` : ""}
     <p class="k">Why it ended: ${d.status === "running" ? "still running" : d.status === "waiting" ? "waiting for you" + (d.why ? ": " + d.why : "")
       : d.why || (d.status === "done" ? "done" : WORD[d.status] || d.status)}${d.card.read_only ? " · saved by a newer Nova (read-only)" : ""}</p>`;

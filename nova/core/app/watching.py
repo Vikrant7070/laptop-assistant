@@ -8,8 +8,13 @@ new). The first time she's stuck the deep brain makes one new plan from the step
 next time she stops and asks. The card goes to the chat, the strip, /tasks and - when the request came from the
 phone - Telegram, like every question card. Answers: try a different way (the task carries on, with fresh chances),
 "I'll do this step" (it waits, stopped, for "continue"), or stop.
+
+    gather(task)            -> the questions she queued with ask_user (nova/known.py), all on one card, when she
+                               ends her turn - or None. Answers go on the card as given facts, are saved as the
+                               user's answers (unconfirmed facts, so the same question is answered next time), and
+                               the task carries on.
 """
-from nova import progress, task_state
+from nova import known, progress, task_state
 from nova.log import log_exception
 
 
@@ -118,8 +123,64 @@ def _dropped(qcard):
         resume.save({"card": card})
 
 
+# ------------------------------------------------------------------ questions gathered on one card
+
+def gather(task):
+    card = task_state.of(task)
+    asks = known.pending(card)
+    if not asks:
+        return None
+    pick = asks[:asking.MAX_QUESTIONS]
+    for a in pick:
+        a["state"] = "asked"
+    qs = [asking.question(a["key"], a["text"], "text", why=a["why"] or "This task needs it.") for a in pick]
+    resume.save({"card": card})
+    qcard = asking.make("gather", qs, title=f"For “{card['goal'][:80]}”:" if len(pick) > 1 else "", task=card["id"])
+    conversation.task_log(f"GATHERED {len(pick)} question(s) for the user: " + "; ".join(a["key"] for a in pick))
+    return asking.ask(qcard, "Asked you what the task needs")
+
+
+def _gathered(qcard, answers):
+    card = resume._find(qcard["task"])
+    if card is None:
+        return resume._out("I can't find that task any more.", "Task gone")
+    told = []
+    for key, a in answers.items():
+        value = a.get("value")
+        if a.get("how") == "skip" or value in (None, "", []):
+            for ask in card.get("asks") or []:
+                if ask["key"] == key:
+                    ask["state"] = "answered"            # skipped: not asked again in this task
+            told.append(f"{key}: the user skipped it - use your best guess and say so")
+            continue
+        value = value if isinstance(value, str) else ", ".join(map(str, value))
+        known.add(card, key, value, "given")
+        manager.remember(key, value)
+        told.append(f"{key} = {task_state.clean(value, 120)}")
+    task_state.mark(card, "stopped", "you answered")
+    out = resume.prepare(card)
+    nxt = session.state.get("resume_next")
+    if out is None and nxt is not None:
+        nxt.setdefault("extra", []).append("The user answered: " + "; ".join(told) + ". It is on the card (KNOWN).")
+    return out
+
+
+def _gather_dropped(qcard):
+    card = resume._find(qcard["task"]) if qcard["task"] else None
+    if card is None:
+        return
+    for ask in card.get("asks") or []:
+        if ask["state"] == "asked":
+            ask["state"] = "open"                        # asked again when the task carries on
+    if card["status"] == "waiting":
+        task_state.mark(card, "stopped", "you moved on")
+    resume.save({"card": card})
+
+
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.actions import tools  # noqa: E402
+from nova.actions import manager, tools  # noqa: E402
 from nova.brain import router  # noqa: E402
 from nova.core.app import asking, config, conversation, resume, session, skillrun  # noqa: E402
 asking.handler("stuck", _answered, _dropped)
+asking.handler("gather", _gathered, _gather_dropped)
+known.current_card = lambda: task_state.of(session.state.get("task"))
