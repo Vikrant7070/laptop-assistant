@@ -221,6 +221,9 @@ def describe_fact(f):
     if f.get("kind") == "answer":
         from nova.actions import manager
         return manager.describe_answer(f)
+    if f.get("kind") == "routine":
+        from nova.actions import activity
+        return activity.describe(f)
     good = sorted(f["good"], key=lambda h: -f["good"][h])
     bad = sorted((h for h in f["ignored"] if f["ignored"][h] > f["good"].get(h, 0)), key=lambda h: -f["ignored"][h])
     parts = []

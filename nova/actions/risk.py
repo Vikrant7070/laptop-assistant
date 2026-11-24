@@ -33,6 +33,7 @@ LEVELS = {
         "network_info", "preview_organize_folder", "recall_knowledge", "research_report", "show_coding_changes",
         "background_jobs", "web_research", "research_in_background", "wait_for_code", "more_tools", "escalate",
         "react", "ask_user", "note_fact", "hand_off_job", "scroll"), READ),
+    "activity_log": CHANGE,          # pause / resume / off only (switching it on is a ⚙ tick),
     # 1 - changes that can be undone, or that stay inside Nova
     **dict.fromkeys((
         "open_app", "open_path", "open_website", "open_settings_page", "window_action", "minimize_all_windows",

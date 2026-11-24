@@ -1114,6 +1114,41 @@ Each judge gives a pass/fail list Nova can quote back to the worker ("mobile lay
 Always: a pause switch with a visible indicator, a blocked-apps list, a "what Nova knows about me" page with delete,
 recording only when the user is the one at the laptop (YuNet presence can help), raw events auto-deleted.
 
+**Phase 7 as built (2026-11-24, branch `claude/manager-phase7-e77e40`): activity log level 1 + form profile.**
+- `nova/actions/activity.py`: OFF by default; one tick in ⚙ Settings → 🔒 Privacy turns it on. Every 3 s
+  (`Sampler.tick`, thread `background.activity_watch` in `nova/core/app/privacy.py`) it notes the app (process name),
+  the front window's title cleaned (a title with OTP / password / verification words becomes "(hidden)"; e-mails →
+  "(email)", 5+ digit runs → "#"), the site's host for browsers (address bar, read only when the title changes), and
+  start / end. Never keys, typed text, screenshots or the clipboard. Spans < 2 s are dropped; kept in its own
+  `<data>/activity.db` (not nova.db, so no migration clash); raw spans deleted after 30 days. Its settings are in
+  `<data>/activity.json` (`prefs()` / `save_prefs()`), not settings.json.
+- Records only while the user is here: presence (YuNet) when that is on, else unlocked + input in the last 5 min.
+  Never in a blocked app (password managers by default), a blocked site (banks, payment, password and ID sites by
+  default; a word or a domain + its sub-domains) or a private / incognito / InPrivate window - not even a "blocked"
+  row. A pause switch; the header chip (`static/privacy.js`) shows ● logging / ⏸ paused while it is on. The ⚙ view
+  lists what was recorded with 🗑 (one entry), 🚫 (never record this app / site + delete it) and "delete everything".
+  Voice: tool `activity_log` (pause / resume / off / status / routines; level 1) - it can't switch the log on.
+- Routines by plain code (`find_routines`): per day, steps ≥ 20 s merged, sequences of 2-4 different steps with gaps
+  ≤ 20 min; one seen on ≥ 3 days starting within a 90-minute window is a routine ("weekdays ~9 am: Gmail → Google
+  Calendar → VS Code"). Saved every 6 h as unconfirmed facts (kind "routine", `learner.describe_fact` says them; the
+  Knowledge page ✓ / delete). **For Phase 8:** `activity.routines(now=None)` → `[{key, text, steps, minute, window,
+  when, weekdays, days, last_day, due}]` - `due` is True when `now` is inside its window on one of its weekdays.
+- Form profile (`nova/actions/forms.py`): `form_details.json` is now DPAPI-encrypted (`platform.protect`; an old
+  plain file is encrypted on first read). `refuse()` blocks passwords / OTPs / card (Luhn) / bank / IFSC / Aadhaar /
+  PAN / passport, as a field name or a value - an error, even when asked. With the log on and "offer to save" ticked,
+  in a browser the focused box is looked at only if `forms.classify` says it is a profile detail (password boxes are
+  never read); when the page moves on, new valid values are offered ONCE with a question card naming labels only
+  ("Save your email and phone?"); Yes saves encrypted, No forgets; a hash stops the same value being asked again.
+  ⚙ Forms has "Forget all my details". `fill_form` unchanged: values typed locally, never in a brain message (test).
+- Measured CPU (2026-11-24, real desktop, throwaway data, log + form noticing on, 2 min): **0.22 % of one core**
+  (0.27 s CPU over 121 s, 40 ticks); worst tick 154 ms (the UI Automation address-bar read after a title change).
+- Tests: `tests/test_activity.py`, `tests/test_form_profile.py` (+ one changed case in `test_forms.py`: a password
+  field is now refused with an error, not silently dropped). Live check on a copy (port 5093): switch, chip, pause,
+  view, delete all.
+- Not built: the daily question list does not ask "is this routine right?" yet (the Knowledge page ✓ does); the
+  site host was checked live in Chrome only (Edge / Firefox use the recorder's address-bar names, untested); desktop-app forms are not noticed (browsers only, to
+  keep it cheap); no tray indicator (the chat header chip only).
+
 ## 9. The user's answers (2026-11-20)
 
 1. **Main work:** **coding / web development** and **research**. → First workers: Claude Code, OpenCode + DeepSeek,
