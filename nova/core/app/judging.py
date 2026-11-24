@@ -186,6 +186,10 @@ def execute(calls, approved, activity, model):
                 rb = readback.read_back(c["name"], c.get("args") or {}, out, started)
                 task_state.set_check(card, rid, rb)
                 out += readback.note(rb)
+                if not rb or rb["state"] != "failed":
+                    readback.found_after_all(card, c["name"], rid)
+            elif card is not None:        # L3: an error that says the file isn't there is a failed check too
+                task_state.set_check(card, rid, readback.missing(c["name"], c.get("args") or {}, out))
         except conversation.Stopped:      # every call still gets a result, so the history stays valid for the next request
             out = "The user pressed Stop before this step finished. It was not done (or only partly)."
             task_state.leave_open(card, rid)   # half-done: safe resume (4-pre b) checks it before anything redoes it

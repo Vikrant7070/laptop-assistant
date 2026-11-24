@@ -10,6 +10,9 @@ with no file.)
                                   `started` (time.time() before the step ran) tells a new download from an old file.
 
 A step this table has no read-back for is "skipped" with the reason - never left out, never counted as passed.
+A step whose result says what it worked on isn't there ("file not found") is "failed", a reading step too (L3 of
+docs/plans/local-first-v2.md). Typing into Notepad or another text editor is read back from the saved file, or from
+a private copy of the window's text.
 `target` names what was checked (a path, a window), so a later step that fixes the same thing replaces the verdict.
 """
 import re
@@ -151,9 +154,176 @@ def type_text(args, out):
         return _skipped("nothing was typed")
     win = str(args.get("into_window") or "")
     ok, seen = _check("page_has", text, {"window": win}, timeout=2.0)
+    if ok:
+        return _passed(seen, win)
     # Not seen isn't proof: some apps don't show their text to the screen reader (checks.py: a check that can't look
-    # is not evidence of failure). So it's skipped, with why, and the Judge's goal checks still decide.
-    return _passed(seen, win) if ok else _skipped(f"couldn't see the text in {win or 'the window in front'}", win)
+    # is not evidence of failure). A text editor is read another way (L3); anything else stays skipped, with why,
+    # and the Judge's goal checks still decide.
+    return editor_text(win, text) or _skipped(f"couldn't see the text in {win or 'the window in front'}", win)
+
+
+# ------------------------------------------------------------------ text editors (local first v2, L3)
+
+# Programs whose whole window is one text: a saved file is read after Ctrl+S, an untitled one copied with Ctrl+A, C.
+EDITORS = {"notepad": "Notepad", "notepad++": "Notepad++", "wordpad": "WordPad", "sublime_text": "Sublime Text"}
+UNTITLED_RE = re.compile(r"^(untitled|new( text)? document|new \d+)$", re.I)
+SAVE_WAIT = 2.0              # seconds Ctrl+S gets to reach the disk
+COPY_WAIT = 1.5              # seconds Ctrl+C gets to fill the clipboard
+
+
+def _editor_app(title, proc):
+    p = str(proc or "").lower().removesuffix(".exe")
+    if p in EDITORS:
+        return EDITORS[p]
+    return next((name for name in EDITORS.values() if str(title or "").endswith(" - " + name)), None)
+
+
+def _editor_window(win):
+    """(hwnd, title, app) of the text editor typed into: the one named, else the one in front, else the topmost
+    editor. None when no editor is open."""
+    from nova import platform
+    from nova.actions.tools import windows
+    found = [(h, t, p) for h, t, p in windows._windows() if _editor_app(t, p)]
+    q = win.lower().removesuffix(".exe")
+    named = [w for w in found if q and (q in w[1].lower() or q in str(w[2]).lower())]
+    front = [w for w in found if w[0] == platform.current().foreground()]
+    pick = (named or front or found or [None])[0]
+    return (pick[0], pick[1], _editor_app(pick[1], pick[2])) if pick else None
+
+
+def _file_of(title, app):
+    """The saved file the editor's title names ("*notes.txt - Notepad"), or None (untitled, or not found on disk)."""
+    from nova.actions.tools import common
+    name = str(title or "").removesuffix(" - " + app).strip().lstrip("*● ").strip()
+    if not name or UNTITLED_RE.match(name) or not Path(name).suffix:
+        return None
+    if Path(name).is_absolute():
+        return Path(name) if Path(name).is_file() else None
+    home = common.HOME
+    for folder in (common._resolve("desktop"), home / "Desktop", home / "Documents", home / "OneDrive" / "Documents",
+                   home / "Downloads", home):
+        if (folder / name).is_file():
+            return folder / name
+    return None
+
+
+def _in_front(hwnd):
+    """Keys go to this window only: bring it forward and make sure it is in front (the app guard's rule)."""
+    from nova import platform
+    from nova.actions.tools import windows
+    if platform.current().foreground() != hwnd:
+        windows._focus(hwnd)
+        time.sleep(0.25)
+    return platform.current().foreground() == hwnd
+
+
+def _has(data, want):
+    """The typed text is in the editor's text, ignoring spacing and case (an editor may wrap or auto-capitalise)."""
+    return " ".join(str(want).split()).casefold() in " ".join(str(data).split()).casefold()
+
+
+def _saved_file(path, want):
+    """Ctrl+S in the editor (in front), then the file on disk holds the text."""
+    from nova import platform
+    before = path.stat().st_mtime
+    platform.current().press("ctrl+s")
+    end = time.time() + SAVE_WAIT
+    while path.stat().st_mtime == before and time.time() < end:
+        time.sleep(0.1)
+    ok, err = _file_has(path, want)
+    if ok is None:
+        return _skipped(err, str(path))
+    return (_passed(f"{path.name} holds the typed text (saved and read back)", str(path)) if ok
+            else _failed(f"{path.name} doesn't hold the typed text after saving it", str(path)))
+
+
+def _copied_text():
+    """Ctrl+A, Ctrl+C in the editor (in front); the text is read off the clipboard here only (never logged, never
+    shown), then the user's clipboard is put back the way the paste-typing does it (windows._clip_save /
+    _clip_restore). -> the text, or None when it couldn't be copied."""
+    from nova import platform
+    from nova.actions.tools import windows
+    saved = windows._clip_save()
+    if saved is None:
+        return None                                   # clipboard busy: never overwrite what can't be put back
+    marker = f"__nova_readback_{time.time()}__"
+    if not windows._clip_set_text(marker):
+        return None
+    text = marker
+    try:
+        platform.current().press("ctrl+a")
+        platform.current().press("ctrl+c")
+        end = time.time() + COPY_WAIT
+        text = platform.current().clipboard_text()
+        while text == marker and time.time() < end:
+            time.sleep(0.05)
+            text = platform.current().clipboard_text()
+        platform.current().press("ctrl+end")          # the selection goes; the caret is back where typing ends
+    finally:
+        # Our own (out-of-history) write last, so the restore knows nothing else was copied since.
+        windows._clip_restore(saved, windows._clip_set_text(""))
+    return None if text == marker else text
+
+
+def editor_text(win, want):
+    """Read typed text back from a text editor (Notepad and the like): a window with a saved file -> Ctrl+S and read
+    the file; an untitled one -> copy all of it and read the clipboard privately. None when no editor is open (the
+    caller says why it was skipped)."""
+    w = _editor_window(win)
+    if w is None:
+        return None
+    hwnd, title, app = w
+    if not _in_front(hwnd):
+        return _skipped(f"couldn't bring {app} to the front to read it back", title)
+    path = _file_of(title, app)
+    if path is not None:
+        return _saved_file(path, want)
+    got = _copied_text()
+    if got is None:
+        return _skipped(f"couldn't copy {app}'s text to read it back (the clipboard was busy)", title)
+    return (_passed(f"{app} holds the typed text", title) if _has(got, want)
+            else _failed(f"{app} doesn't hold the typed text", title))
+
+
+# ------------------------------------------------------------------ "file not found" (L3)
+
+# A step whose result says what it worked on isn't there didn't do the job, whatever she says next (task exam
+# 2026-11-23, no-such-file: "read me the file ...\does-not-exist.txt" ended as "done").
+MISSING_RE = re.compile(r"\b(not found|no such (?:file|folder|directory|path)|cannot find|can'?t find|couldn'?t find|"
+                        r"could not find|does ?n[o']t exist|is not a (?:file|folder|directory)|"
+                        r"isn'?t a (?:file|folder|directory)|not a valid (?:file|path))\b", re.I)
+PATH_KEYS = ("path", "file", "file_path", "filename", "source", "folder", "directory", "dir")
+MISSING_LINE = 300           # only a short first line: a file's own text that happens to say "not found" isn't this
+
+
+def missing(tool, args, out):
+    """A failed read-back when the step's result says what it worked on isn't there - for any step, the reading
+    ones too. None otherwise (also when the path named is in fact there: the words were about something else)."""
+    first = (str(out or "").strip().splitlines() or [""])[0]
+    if len(first) > MISSING_LINE or not MISSING_RE.search(first.replace("’", "'")):
+        return None
+    raw = next((str(args[k]) for k in PATH_KEYS if (args or {}).get(k)), "")
+    try:
+        p = _resolve(raw) if raw else None
+        there = p is not None and p.exists()
+    except (OSError, ValueError):         # a path Windows can't even look up isn't there either
+        p, there = None, False
+    if there:
+        return None
+    what = p.name if p is not None else "what it was asked for"
+    return _failed(f"{what}{GONE}", str(p) if p is not None else str(tool))
+
+
+GONE = " doesn't exist"
+
+
+def found_after_all(card, tool, rid):
+    """A later step of the same tool worked (a wrong path first, then the right one): the earlier "doesn't exist"
+    no longer says the task isn't done. It stays on the card as skipped, with why."""
+    for r in (card or {}).get("runs", []):
+        c = r.get("check")
+        if r.get("id") != rid and r.get("tool") == tool and c and c["state"] == "failed" and c["why"].endswith(GONE):
+            c.update(state="skipped", why=c["why"] + " (a later try worked)")
 
 
 def set_dark_mode(args, out):
@@ -404,6 +574,9 @@ def changes_things(tool):
 
 def read_back(tool, args, out, started=None):
     """The read-back for one finished step (see the module doc). Never raises."""
+    gone = missing(tool, args, out)        # "file not found": failed, for a reading step too (L3)
+    if gone is not None:
+        return gone
     if not changes_things(tool):
         return None
     if tool in SELF_CHECKED:
