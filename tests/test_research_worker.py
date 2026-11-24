@@ -32,6 +32,7 @@ def _fake_web(monkeypatch, tmp_path, pages=5):
 
 
 POINTS = "\n\n1. Green tea has antioxidants [1]\n2. Too much caffeine is bad [1]"
+TWO = "\n\n1. Green tea has antioxidants [1]\n2. Too much caffeine is bad [2]"    # 2 sources cited: no send-back
 
 
 def _hooks(monkeypatch, done, cloud=None, local=None):
@@ -45,7 +46,7 @@ def _hooks(monkeypatch, done, cloud=None, local=None):
 def test_research_is_recorded_in_the_job_history(monkeypatch, tmp_path):
     _fake_web(monkeypatch, tmp_path)
     done = []
-    _hooks(monkeypatch, done)
+    _hooks(monkeypatch, done, cloud=lambda p, n: "Headline: Green tea is good." + TWO)
     msg = tools.research_in_background("green tea", focus="is it healthy")
     assert msg.startswith("Started background job") and "researching 'green tea'" in msg     # same as before
     assert _wait(lambda: done) and done[0]["status"] == "done", done and done[0]["error"]
@@ -74,8 +75,8 @@ def test_a_failed_research_is_recorded_as_failed(monkeypatch, tmp_path):
 def test_settings_pick_how_many_pages_and_which_brain(monkeypatch, tmp_path):
     opened = _fake_web(monkeypatch, tmp_path)
     done, used = [], []
-    _hooks(monkeypatch, done, cloud=lambda p, n: used.append("cloud") or "Headline: A." + POINTS,
-           local=lambda p, n: used.append("local") or "Headline: A." + POINTS)
+    _hooks(monkeypatch, done, cloud=lambda p, n: used.append("cloud") or "Headline: A." + TWO,
+           local=lambda p, n: used.append("local") or "Headline: A." + TWO)
     out = workers.save_settings({"research_max_sources": 2, "research_cloud_report": False})
     assert out["config"]["research"] == {"max_sources": 2, "cloud_report": False}
     tools.research_in_background("tea")
