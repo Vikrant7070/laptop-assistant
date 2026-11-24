@@ -57,6 +57,9 @@ def job_done(job):
         conversation.task_log(f"LEARNER job note failed: {type(e).__name__}: {e}")
     if job["status"] == "stopped":                  # the user stopped it - stop_background_job already said so
         return
+    if job.get("handoff"):                          # a worker at its usage limit: a card asks, nothing switches
+        managing.limit_card(job)
+        return
     if job["status"] != "done":
         line = f"Sorry, the {job['kind'].replace('_', ' ')} didn't work: {job['error']}"
         voice_io.push_event({"reply": line, "kind": "job"})

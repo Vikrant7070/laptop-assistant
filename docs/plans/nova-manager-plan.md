@@ -1036,8 +1036,44 @@ outside orders.** `nova/actions/risk.py` (the table and the rules), `session.is_
 - A second worker reviewing the first one's work without seeing the conversation (costs a second run; after 4c
   works).
 - When a worker hits a usage limit (DeepSeek 429, Claude Code quota), the other worker carries on from the same
-  commit — with the user's OK, since it may cost money.
+  commit — with the user's OK, since it may cost money. *(Built 2026-11-24 - see "Leftovers as built" below.)*
 - Several devices (UFO's "Galaxy") belong to `docs/device-network-plan.md`.
+
+**Leftovers as built (2026-11-24, branch `claude/manager-leftovers-bdf9fd`): cloud re-plan, research send-back,
+usage-limit handoff.** `watching.plan_from_brains` / `watching.replan`, `jobrounds.research_round`,
+`jobrounds.usage_stop` / `hand_over`, `managing.limit_card`. Tests: `tests/test_manager_leftovers.py`.
+- **Re-plan from a cloud brain (4c-1 and 4d-1 gaps).** A re-plan goes to the cloud brain first when one is on - the
+  cloud brain picker's model (cloud-first mode), or the one a local-first task would climb to - else the local deep
+  brain; a cloud error or limit falls back to the deep brain. Rule 7: it is sent the goal, one line per step (its
+  words and done / failed / skipped, `task_state.outcomes`) and why - never raw tool results, and not the user's
+  folder paths. A goal about mail stays local unless ⚙ lets mail go to the cloud (`email_cloud`), as for climbing.
+  The card's plan source says "cloud" or "deep brain".
+  - Stuck (4d): the same one new plan as before, now cloud first.
+  - A laptop task whose read-back failed (4c-1): the one more go now comes with a fresh plan on the card ("A check by
+    code failed: multi.txt is missing. Plan how to finish the task …"), and the note says "A new plan is on the card
+    below - follow it". One per request; still failing → the plain "I don't think I finished that - …".
+  - Test: `test_the_cloud_replan_is_sent_step_outcomes_never_raw_results` (raw output, paths absent from the request),
+    `test_no_cloud_brain_means_the_deep_brain_plans`, the cloud-error / mail fallback.
+- **Research send-back (4c-3 gap).** A research job whose check fails (fewer than 2 cited sources, report missing or
+  empty) goes back once, in the same job: it reads more pages (2 more, at most 5) with "Nova checked the last report
+  and this check failed: sources: 1 source cited (need 2). Read more pages, and cite at least 2 different sources"
+  in its focus, and writes a new report (the first one is kept on disk). Same `send_backs` / `job_min` limits as
+  coding (a time limit stops it as `limit`, "Say 'try job #n again'"). A send-back that breaks keeps the first
+  report. Reported like coding: "(… I sent it back once to read more pages and it fixed it.)" or "… it still fails -
+  over to you: look at the report, or ask me to research it again another way."
+- **Usage-limit handoff (section 9, answer 3).** OpenCode with every model at its limit (429 / free limit, after the
+  big-pickle fallback), or Claude Code whose *error* says usage limit / quota / 429: the job stops as `limit`
+  ("usage: … hit its usage limit"), its changes kept and not committed, and a question card asks "… Carry on with
+  Claude Code, from where it stopped?" → "Carry on with Claude Code, paid, up to $1.00" (or "OpenCode + DeepSeek
+  (free)") / "Wait". Nothing switches by itself. On Carry on, the other worker gets the same brief plus "Another
+  worker started this job and stopped at its usage limit. It already changed these files …: README.md. Look at them
+  first and carry on from there", in the same folder as it was left; those files count as the new job's own. A job is
+  handed over once. `/tasks` ▶ Continue… ("try job #n again") does the same hand-over (Claude Code still asks Allow).
+  The card goes to the phone when the user is away, like 4b's cards.
+- Not built (said plainly): the resume re-plan (an app that has gone, 4-pre b) still uses the deep brain only.
+  "From the same commit": the other worker continues from the folder as it is (uncommitted changes), not a commit.
+  Claude Code's exact limit wording was not seen live (no paid job was run); the words matched are the known ones.
+  The research send-back's extra pages are read only when the check fails, never because the report looked thin.
 
 **Build order from here:** 4c → 4d → 4e → 4f → 4g, each on its own branch with tests and a live check on a separate
 copy, and only after the user says go for that step. 4e must be built before the manager runs any level-2 laptop
