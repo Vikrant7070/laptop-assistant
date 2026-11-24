@@ -39,9 +39,11 @@ def test_pacific_day_and_reset(now, day, reset):
 
 def test_counts_requests_and_tokens_and_starts_fresh_each_pacific_day():
     t = utc(2026, 11, 23, 12)
+    # set_limits reads the meter with the real clock, which starts a fresh day on any other date than t's and drops
+    # the counts below (the test only passed on 2026-11-23): set the limit first.
+    usage.set_limits("google", "gemini-3.8-flash", rpd=250)
     usage.record("google", "gemini-3.8-flash", 100, now=t)
     usage.record("google", "gemini-3.8-flash", 20, now=t + 5)
-    usage.set_limits("google", "gemini-3.8-flash", rpd=250)
     row = usage.snapshot("google", "gemini-3.8-flash", now=t + 10)["models"][0]
     assert (row["used"], row["tokens"], row["left"], row["kind"]) == (2, 120, 248, "free")
     nxt = usage.snapshot("google", "gemini-3.8-flash", now=utc(2026, 11, 24, 9))["models"][0]   # after midnight PST
