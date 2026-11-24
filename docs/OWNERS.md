@@ -6,7 +6,7 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 
 | Area (paths) | Owner (session, agent or person) | Branch | Since |
 |---|---|---|---|
-| Manager Phase 4: 4-pre to 4e-1 merged (PRs #50-#55, #57, #59, #61, #67-#74). 4e-2 undo + settings by level in progress (`nova/actions/undo.py`, `judging.execute`, ⚙ Access); then 4f, 4g, each after the user's go | Claude session (manager loop) | `claude/manager-4e-2` | 2026-11-24 |
+| Manager 4f remember and learn: one record per task (episodes on the task row, `nova/db.py`), app notes (`nova/actions/appnotes.py`), lessons from corrections (`nova/actions/lessons.py`), `learner.py`, `learning.py`. 4-pre to 4e-2 merged (PRs #50-#75) | Claude session (manager 4f) | `claude/manager-4f-c45edf` | 2026-11-24 |
 | Improvement roadmap Phase 1: R10 voice state machine (`nova/core/app/voice_machine.py`, the shadow calls in `voice_io.py`); R14, R15, R11, R13, R12 merged | Claude session (roadmap structure) | `feat/r10-voice-state` | 2026-11-22 |
 | Free ladder (strongest free Gemini first, next one when its limit is used up): `nova/brain/usage.py`, `nova/brain/cloud.py`, `config/cloud_free.json`, Brain tab switch. Local first (Part B) merged PR #68 | Claude session (free AI / cloud meter) | `feat/free-model-ladder` | 2026-11-24 |
 | Manager Phase 5 judges (`nova/actions/judges.py`, `nova/actions/sitejudge.py`, hooks in `jobchecks.py`, `workers.json` → `judges`) | Claude session (manager phase 5) | `claude/manager-phase5-fc2a5f` | 2026-11-24 |

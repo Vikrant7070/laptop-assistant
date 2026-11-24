@@ -3,11 +3,16 @@
 The episode log, the job history and the event log used to be JSON files rewritten whole on every change
 (episodes.jsonl, jobs.json) or a text file other code parsed back (task_log.txt). Now they are tables:
 
-    episodes(seq, id, ts, goal, data)      learner.load() / record() - data is the episode's JSON
+    episodes(seq, id, ts, goal, data)      the old episode log: empty since migration 3 (kept for older Novas)
     jobs(seq, key, id, started, kind, worker, status, data)        workers.load_jobs() / _save_record()
     events(id, ts, kind, text, data)       log.note() / log.event() / log_exception(); task_log.txt is the
                                            readable copy, nothing reads it back
     tasks(seq, id, started, updated, status, goal, data)    task cards (nova/task_state.py, saved by app.resume)
+
+Manager plan 4f, one record per task: a finished task's episode (learner.py) is kept ON its task card's row
+(`data.episode`), not in a table of its own, so /tasks and the Learner read the same record. load_episodes /
+replace_episodes keep their old meaning; an episode with no card (older ones, tests) gets a small stub row
+(`stub: true`, no runs - /tasks doesn't list it). save_task keeps a row's episode when the card in memory has none.
 
 so "research jobs from Tuesday" is a query (`find_jobs`, `find_events`). The modules keep their old functions.
 
@@ -42,6 +47,7 @@ MIGRATIONS = {
         "status TEXT, goal TEXT, data TEXT NOT NULL)",
         "CREATE INDEX tasks_updated ON tasks(updated)",
     ],
+    3: [],          # 4f: the episodes move onto their task rows (_episodes_to_tasks)
 }
 KEEP_EVENTS = 50_000          # the oldest events go once there are more (checked every PRUNE_EVERY inserts)
 PRUNE_EVERY = 500
@@ -106,6 +112,8 @@ def migrate(st=None):
                     con.execute("INSERT INTO migrations VALUES (?, ?)", (v, time.time()))
                     if v == 1:
                         imported = _import_old_files(con, st)
+                    if v == 3:
+                        _episodes_to_tasks(con)
             now = version(con)
         finally:
             con.close()
@@ -127,8 +135,10 @@ def _import_old_files(con, st):
                 ep = json.loads(line)
             except ValueError:
                 continue        # intentional: a torn line from a crash mid-write was skipped by the old reader too
-            if isinstance(ep, dict):
-                _put_episode(con, ep)
+            if isinstance(ep, dict):        # into the old table; migration 3 moves them onto task rows
+                con.execute("INSERT OR REPLACE INTO episodes (id, ts, goal, data) VALUES (?, ?, ?, ?)",
+                            (ep.get("id"), float(ep.get("ts") or 0), str(ep.get("goal") or "")[:500],
+                             json.dumps(ep, ensure_ascii=False)))
         done.append(eps_file)
     jobs_file = Path(st.jobs)
     if jobs_file.exists():
@@ -152,23 +162,66 @@ def _import_old_files(con, st):
 # ------------------------------------------------------------------ episodes
 
 def _put_episode(con, ep):
-    con.execute("INSERT OR REPLACE INTO episodes (id, ts, goal, data) VALUES (?, ?, ?, ?)",
-                (ep.get("id"), float(ep.get("ts") or 0), str(ep.get("goal") or "")[:500], json.dumps(ep, ensure_ascii=False)))
+    """The episode goes on its task's row (4f); a task with no saved card gets a stub row holding just the episode."""
+    tid, data = str(ep.get("id") or ""), json.dumps(ep, ensure_ascii=False)
+    if con.execute("UPDATE tasks SET data = json_set(data, '$.episode', json(?)) WHERE id = ?", (data, tid)).rowcount:
+        return
+    ts = float(ep.get("ts") or 0)
+    stub = {"id": tid, "goal": str(ep.get("goal") or "")[:300], "status": "done", "why": "", "plan": [], "runs": [],
+            "open": [], "started": ts, "updated": ts, "stub": True, "episode": ep}
+    con.execute("INSERT INTO tasks (id, started, updated, status, goal, data) VALUES (?, ?, ?, ?, ?, ?)",
+                (tid, ts, ts, "done", stub["goal"], json.dumps(stub, ensure_ascii=False)))
+
+
+def _episodes_to_tasks(con):
+    """Migration 3: every row of the old episodes table moves onto its task row; the old table is left empty."""
+    for (data,) in con.execute("SELECT data FROM episodes ORDER BY seq").fetchall():
+        try:
+            ep = json.loads(data)
+        except ValueError:
+            continue        # intentional: an unreadable old row was unreadable to the Learner too
+        if isinstance(ep, dict) and ep.get("id"):
+            _put_episode(con, ep)
+    con.execute("DELETE FROM episodes")
+
+
+_EPISODE = "json_extract(data, '$.episode')"
 
 
 def load_episodes(since=0.0):
-    """Episodes with ts >= since, in the order they were written."""
+    """Episodes with ts >= since, oldest first (by the episode's time, then the order the rows were written)."""
     with connect() as con:
-        rows = con.execute("SELECT data FROM episodes WHERE ts >= ? ORDER BY seq", (since,)).fetchall()
+        rows = con.execute(f"SELECT json(json_extract(data, '$.episode')) FROM tasks WHERE {_EPISODE} IS NOT NULL "
+                           "AND json_extract(data, '$.episode.ts') >= ? "
+                           "ORDER BY json_extract(data, '$.episode.ts'), seq", (since,)).fetchall()
     return [json.loads(r[0]) for r in rows]
 
 
 def replace_episodes(eps):
-    """The whole episode log becomes `eps` (in this order), in one transaction."""
+    """The whole episode log becomes `eps`, in one transaction: changed episodes are written onto their rows, and
+    episodes not in `eps` are taken off theirs (a stub row that only held an episode goes)."""
+    keep = {str(ep.get("id") or ""): ep for ep in eps}
     with connect() as con:
-        con.execute("DELETE FROM episodes")
-        for ep in eps:
-            _put_episode(con, ep)
+        have = {tid: (data, stub) for tid, data, stub in con.execute(
+            f"SELECT id, json(json_extract(data, '$.episode')), json_extract(data, '$.stub') FROM tasks "
+            f"WHERE {_EPISODE} IS NOT NULL").fetchall()}
+        for tid, (_, stub) in have.items():
+            if tid not in keep:
+                if stub:
+                    con.execute("DELETE FROM tasks WHERE id = ?", (tid,))
+                else:
+                    con.execute("UPDATE tasks SET data = json_remove(data, '$.episode') WHERE id = ?", (tid,))
+        for tid, ep in keep.items():
+            if tid not in have or json.loads(have[tid][0]) != ep:
+                _put_episode(con, ep)
+
+
+def task_episode(tid):
+    """The episode kept on task `tid`'s row, or None."""
+    with connect() as con:
+        row = con.execute(f"SELECT json(json_extract(data, '$.episode')) FROM tasks WHERE id = ? AND {_EPISODE} IS NOT NULL",
+                          (str(tid),)).fetchone()
+    return json.loads(row[0]) if row else None
 
 
 # ------------------------------------------------------------------ jobs
@@ -210,18 +263,24 @@ def find_jobs(since=0.0, until=None, **match):
 # ------------------------------------------------------------------ task cards
 
 def save_task(card):
-    """Add or replace one task card (by its id)."""
+    """Add or replace one task card (by its id). The row's episode (4f) stays when the card saved has none - the
+    card in memory never carries it."""
     with connect() as con:
         con.execute("INSERT INTO tasks (id, started, updated, status, goal, data) VALUES (?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT(id) DO UPDATE SET updated = excluded.updated, status = excluded.status, "
-                    "goal = excluded.goal, data = excluded.data",
+                    "goal = excluded.goal, data = CASE WHEN json_extract(tasks.data, '$.episode') IS NOT NULL "
+                    "AND json_extract(excluded.data, '$.episode') IS NULL "
+                    "THEN json_set(excluded.data, '$.episode', json(json_extract(tasks.data, '$.episode'))) "
+                    "ELSE excluded.data END",
                     (str(card["id"]), float(card.get("started") or 0), float(card.get("updated") or 0),
                      str(card.get("status") or ""), str(card.get("goal") or "")[:300], json.dumps(card, ensure_ascii=False)))
 
 
 def load_tasks(statuses=None, since=0.0, limit=50):
-    """The newest `limit` task cards changed since `since` (newest first), only these statuses if given."""
-    sql, args = "SELECT data FROM tasks WHERE updated >= ?", [since]
+    """The newest `limit` task cards changed since `since` (newest first), only these statuses if given. Stub rows
+    (an episode with no card) aren't cards, and the episode stays in the row (`task_episode` reads it)."""
+    sql, args = ("SELECT json_remove(data, '$.episode') FROM tasks WHERE updated >= ? "
+                 "AND json_extract(data, '$.stub') IS NULL"), [since]
     if statuses:
         sql += f" AND status IN ({', '.join('?' * len(statuses))})"
         args += list(statuses)
