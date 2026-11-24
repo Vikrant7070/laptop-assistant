@@ -8,3 +8,5 @@ Quick reminders:
 - The main folder runs the live Nova. Work in `.claude/worktrees/<name>` only.
 - `python scripts/who_edits.py <paths>` exits 1 if another worktree is changing those paths: stop and ask.
 - Update your line in `docs/OWNERS.md` when you start on an area.
+- Unfinished work waiting for someone to pick it up is listed in `docs/plans/manager-handoff.md` (branch, state,
+  what's left, merge order). Take a row there before starting on it.
