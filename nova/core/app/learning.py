@@ -71,6 +71,7 @@ def learn_now():
     made = learner.learn(is_skill=_covered_by_skill)
     if made:
         conversation.task_log(f"LEARNER queued {len(made)} question(s) for the daily list: {made}")
+    history_page.read_if_due()        # Phase 6: the user's laptop history, if they switched a source on
     return made
 
 
@@ -395,7 +396,8 @@ def knowledge_get():
     k = knowledge.load()
     facts = [{"id": f["id"], "text": learner.describe_fact(f), "confirmed": f.get("confirmed", False),
               "when": time.strftime("%d %b %Y", time.localtime(f.get("last", f.get("learned", 0))))}
-             for f in sorted(learner.load_facts()["facts"], key=lambda f: -f.get("last", 0))]
+             for f in sorted(learner.load_facts()["facts"], key=lambda f: -f.get("last", 0))
+             if f.get("kind") != "history"]        # history facts have their own section (history_page)
     asks = [{"id": q["id"], "text": q["text"], "why": q["why"], "asked": q["asked"], "urgent": q["urgent"]}
             for q in questions.open_questions()]
     return jsonify(profile=k["profile"], lessons=sorted(k["lessons"], key=lambda l: -l.get("last", 0)),
@@ -434,4 +436,4 @@ def knowledge_edit():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, config, conversation, integrations, session, skillrun, voice_io  # noqa: E402
+from nova.core.app import body, config, conversation, history_page, integrations, session, skillrun, voice_io  # noqa: E402
