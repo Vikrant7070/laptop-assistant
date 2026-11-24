@@ -18,14 +18,13 @@ def _card():
     return known.current_card() if known.current_card else None
 
 
-@tool("Ask the user something this task needs (their name for a thing, a choice only they can make). Use this "
-      "instead of asking in your reply: it answers from what is already known when it can; otherwise the question "
-      "waits for the user while you carry on with the steps that don't need the answer.",
+# Core, so it is in every local prompt: the description is kept short (the how is in the tool's reply, not here).
+@tool("Ask the user something the task needs, instead of asking in your reply. Then carry on with other steps.",
       friendly="Asked you something", core=True,
-      props={"question": {"type": "string", "description": "the question, as the user should read it"},
-             "key": {"type": "string", "description": "a short name for the answer, e.g. github_username"},
-             "why": {"type": "string", "description": "one short reason, shown under the question"},
-             "needed_now": {"type": "boolean", "description": "true only when no other step can be done without it"}},
+      props={"question": {"type": "string"},
+             "key": {"type": "string", "description": "e.g. github_username"},
+             "why": {"type": "string"},
+             "needed_now": {"type": "boolean", "description": "nothing else can be done without it"}},
       required=["question", "key"])
 def ask_user(question, key, why="", needed_now=False):
     card = _card()
