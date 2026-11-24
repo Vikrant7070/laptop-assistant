@@ -2,14 +2,86 @@
   "_help": {
     "what": "Which cloud models are free and their free limits, for the free-uses meter (nova/brain/usage.py). Edit freely.",
     "free / paid": "Model names (wildcards * allowed). Free = usable without billing; paid = costs money, the Brain tab asks first.",
+    "ladder": "Free models from strongest to weakest. With the Brain tab's 'Free ladder' on and one of them chosen, Nova uses the strongest one that still has free uses left and moves to the next when Google says its limit is used up. Exact model names only.",
     "limits": "Free limits per model: rpd = requests per day, rpm = requests per minute. null = not known yet. Nova also learns them from Google's 'limit reached' answers, and the Brain tab lets you type the real numbers from https://aistudio.google.com/rate-limit (those win over this file).",
-    "source": "Google AI Studio pricing page, checked 2026-11-23. Daily limits reset at midnight Pacific time."
+    "source": "Free models: Google AI Studio pricing page, checked 2026-11-23. Limits: the user's AI Studio rate-limit page, 2026-11-24 (free tier). Daily limits reset at midnight Pacific time."
   },
   "google": {
-    "free": ["gemini-4-hydrogen", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemma-4*"],
-    "paid": ["gemini-4-carbon*", "gemini-4-argon*", "gemini-4-neon*"],
+    "free": [
+      "gemini-4-hydrogen",
+      "gemini-3.8-flash",
+      "gemini-3.6-flash",
+      "gemini-3-flash-preview",
+      "gemini-2.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite*",
+      "gemini-2.5-flash-lite",
+      "gemma-4*"
+    ],
+    "paid": [
+      "gemini-4-carbon*",
+      "gemini-4-argon*",
+      "gemini-4-neon*",
+      "gemini-2.5-pro*",
+      "gemini-3.1-pro*"
+    ],
+    "ladder": [
+      "gemini-4-hydrogen",
+      "gemini-3.8-flash",
+      "gemini-3.6-flash",
+      "gemini-3-flash-preview",
+      "gemini-2.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-2.5-flash-lite"
+    ],
+    "limits": {
+      "gemini-4-hydrogen": {
+        "rpd": 20,
+        "rpm": 5
+      },
+      "gemini-3.8-flash": {
+        "rpd": 20,
+        "rpm": 5
+      },
+      "gemini-3.6-flash": {
+        "rpd": 20,
+        "rpm": 5
+      },
+      "gemini-3-flash-preview": {
+        "rpd": 20,
+        "rpm": 5
+      },
+      "gemini-2.5-flash": {
+        "rpd": 20,
+        "rpm": 5
+      },
+      "gemini-3.5-flash-lite": {
+        "rpd": 500,
+        "rpm": 15
+      },
+      "gemini-3.1-flash-lite": {
+        "rpd": 500,
+        "rpm": 15
+      },
+      "gemini-2.5-flash-lite": {
+        "rpd": 20,
+        "rpm": 10
+      }
+    }
+  },
+  "openai": {
+    "free": [],
+    "paid": [
+      "*"
+    ],
     "limits": {}
   },
-  "openai": {"free": [], "paid": ["*"], "limits": {}},
-  "anthropic": {"free": [], "paid": ["*"], "limits": {}}
+  "anthropic": {
+    "free": [],
+    "paid": [
+      "*"
+    ],
+    "limits": {}
+  }
 }

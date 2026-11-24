@@ -224,7 +224,7 @@ def _neutral(messages):
                         args = {}
                 n += 1
                 calls.append({"id": f"call_{n}", "name": fn.get("name", ""), "args": args,
-                              "extra": c.get("extra_content")})
+                              "extra": c.get("extra_content"), "by": c.get("by")})
             waiting.extend(calls)
             turns.append({"kind": "assistant", "text": content, "calls": calls})
         elif role == "tool":
@@ -242,8 +242,9 @@ def _neutral(messages):
     return "\n\n".join(system), turns
 
 
-def _stored(text, calls):
-    """The reply in Ollama's format (what Nova keeps in its history)."""
+def _stored(text, calls, name=None):
+    """The reply in Ollama's format (what Nova keeps in its history). "by" names the model that wrote each call: its
+    thought signature is only shown back to that same model (the free ladder can switch models mid-task)."""
     msg = {"role": "assistant", "content": text}
     if calls:
         msg["tool_calls"] = []
@@ -251,6 +252,7 @@ def _stored(text, calls):
             tc = {"id": c["id"], "function": {"name": c["name"], "arguments": c["args"]}}
             if c.get("extra"):
                 tc["extra_content"] = c["extra"]
+                tc["by"] = name
             msg["tool_calls"].append(tc)
     return msg
 
@@ -286,7 +288,8 @@ def _openai_chat(provider, name, key, messages, tools, level="low", show=False):
                     tc = {"id": c["id"], "type": "function",
                           "function": {"name": c["name"], "arguments": json.dumps(c["args"], ensure_ascii=False)}}
                     if provider == "google":   # Gemini 3 wants its "thought signature" back; a call it didn't
-                        tc["extra_content"] = c["extra"] or {"google": {"thought_signature": "skip_thought_signature_validator"}}
+                        mine = c["extra"] if c.get("by") in (None, name) else None    # write (another model) gets the skip
+                        tc["extra_content"] = mine or {"google": {"thought_signature": "skip_thought_signature_validator"}}
                     m["tool_calls"].append(tc)
             msgs.append(m)
     defs = []
@@ -452,11 +455,18 @@ def _anthropic_chat(name, key, messages, tools, level="low", show=False):
 
 # ------------------------------------------------------------------ one turn
 
+LAST = {"model": None}     # the model that answered the last cloud call (the free ladder may pick another one)
+
+
+def _is_limit(error):
+    return error.code == 429 or (error.code is None and "(429)" in str(error))
+
+
 def _count(provider, name, error=None):
     """Tell the free-uses meter about this call. A 429 marks the model out (and its whole answer goes to the task log,
     to learn what Google's limit messages look like); any other answer counts as one use. Never raises."""
     try:
-        if error is not None and (error.code == 429 or (error.code is None and "(429)" in str(error))):
+        if error is not None and _is_limit(error):
             until = usage.hit_limit(provider, name, error.body or str(error))
             log.note(f"CLOUD LIMIT {provider}:{name} out until {time.strftime('%H:%M', time.localtime(until))}: "
                      + (error.body or str(error))[:2000].replace("\n", " "))
@@ -478,19 +488,26 @@ def chat(model, messages, tools, reasoning="low", on_think=None):
         raise CloudError(f"No API key saved for {PROVIDERS[provider]['label']}.")
     if provider not in PROVIDERS:
         raise CloudError(f"Unknown provider '{provider}'.")
-    out = usage.blocked(provider, name)
-    if out:                         # its limit is used up: don't spend a call (and 25 s) learning that again
-        raise CloudError(out)
-    _tokens.n = 0
-    try:
-        if provider == "anthropic":
-            text, calls, thoughts = _anthropic_chat(name, key, messages, tools, level, show)
-        else:
-            text, calls, thoughts = _openai_chat(provider, name, key, messages, tools, level, show)
-    except CloudError as e:
-        _count(provider, name, e)
-        raise
-    _count(provider, name)
-    if thoughts and on_think:
-        on_think(thoughts)
-    return _stored(text, calls), text, [{"id": c["id"], "name": c["name"], "args": c["args"]} for c in calls]
+    tries = usage.route(provider, name)
+    if not tries:                   # every model it may use is used up: don't spend a call (and 25 s) learning that again
+        raise CloudError(usage.unavailable(provider, name))
+    for i, use in enumerate(tries):
+        _tokens.n = 0
+        try:
+            if provider == "anthropic":
+                text, calls, thoughts = _anthropic_chat(use, key, messages, tools, level, show)
+            else:
+                text, calls, thoughts = _openai_chat(provider, use, key, messages, tools, level, show)
+        except CloudError as e:
+            _count(provider, use, e)
+            if _is_limit(e) and i + 1 < len(tries):
+                log.note(f"FREE LADDER {provider}:{use} used up -> trying {tries[i + 1]}")
+                continue
+            raise
+        _count(provider, use)
+        LAST["model"] = use
+        if use != name:
+            log.note(f"FREE LADDER answered with {provider}:{use} (chosen {name})")
+        if thoughts and on_think:
+            on_think(thoughts)
+        return _stored(text, calls, use), text, [{"id": c["id"], "name": c["name"], "args": c["args"]} for c in calls]

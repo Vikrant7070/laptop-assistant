@@ -149,6 +149,9 @@ STACK_NAMED = re.compile(r"\b(python|react|vue|angular|svelte|node(\.?js)?|types
 
 
 EMAIL = re.compile(r"\b(e-?mails?|mails?|gmail|inbox|unread|otp|verification code)\b", re.I)    # her mail stays local
+# "ask Gemini to ...": in local-first mode the task starts on the cloud brain (core/app/brains.py)
+ASK_CLOUD = re.compile(r"\b(ask|use|try|with)\s+(gemini|chatgpt|claude|the cloud|your cloud( brain)?|the cloud brain|"
+                       r"cloud brain|a (bigger|smarter|stronger) brain)\b", re.I)
 
 
 JOB_STATUS = re.compile(r"\b(how'?s|how is|is|status of|progress (of|on)|done with|finished)\b.{0,40}\b(job|jobs|"
@@ -248,7 +251,7 @@ KINDS = {
     "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
     "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "build_thing": BUILD_THING, "project_code": PROJECT_CODE,
-    "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
+    "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
     "show": SHOW, "help_yes": HELP_YES,
     "answer_yes": ANSWER_YES, "research": RESEARCH, "watch_start": WATCH_START, "watch_done": WATCH_DONE,
     "correction": CORRECTION, "about_me": ABOUT_ME,
