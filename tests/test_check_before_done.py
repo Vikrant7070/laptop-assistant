@@ -216,3 +216,41 @@ def test_plain_chat_never_climbs_even_when_it_says_it_cant(brain, local_first):
     models = recorded(brain, [("I can't taste food, and I couldn't say which is best.", [])])
     app.answer("which pizza is the best")
     assert models == [app.settings()["model"]] and "CLIMB" not in log()
+
+
+# --- the screen reader's view of a short document (task exam 2026-11-24) ---------------------------------------
+
+class _Ctrl:
+    def __init__(self, kind, name="", text=None):
+        self.ControlTypeName, self.Name, self._text = kind, name, text
+
+    def Exists(self, *a):
+        return self._text is not None
+
+    def GetTextPattern(self):
+        doc = self
+
+        class Range:
+            def GetText(self, limit):
+                return doc._text[:limit]
+
+        class Pattern:
+            DocumentRange = Range()
+        return Pattern()
+
+
+def test_page_text_keeps_a_short_documents_own_text(monkeypatch):
+    """Notepad's document control is named "Text editor"; a document under 80 characters used to be replaced by the
+    names of the controls around it, so page_has "hello exam" said no while the text was there."""
+    import sys
+    import types
+    from nova.actions.tools import apps
+    doc = _Ctrl("DocumentControl", "Text editor", "step one done\r\nhello exam")
+    walk = [(_Ctrl("TabItemControl", "*multi.txt"), 1), (doc, 2), (_Ctrl("TextControl", "Ln 2, Col 11"), 2)]
+    window = types.SimpleNamespace(ControlTypeName="WindowControl", DocumentControl=lambda searchDepth=0: doc)
+    fake = types.SimpleNamespace(ControlFromHandle=lambda h: window, WalkControl=lambda root, maxDepth=0: iter(walk))
+    monkeypatch.setitem(sys.modules, "uiautomation", fake)
+    text = apps.page_text(5)
+    assert "step one done hello exam" in text and "*multi.txt" in text
+    doc._text = ""                                       # an empty document: only the control names, as before
+    assert "hello exam" not in apps.page_text(5) and "*multi.txt" in apps.page_text(5)
