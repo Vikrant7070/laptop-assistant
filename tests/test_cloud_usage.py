@@ -10,6 +10,10 @@ from nova.brain import usage
 from nova.core import app
 
 
+def row(snap, name="gemini-3.8-flash"):
+    return next(r for r in snap["models"] if r["model"] == name)
+
+
 def utc(*a):
     return calendar.timegm(dt.datetime(*a).timetuple())
 
@@ -39,12 +43,12 @@ def test_pacific_day_and_reset(now, day, reset):
 
 def test_counts_requests_and_tokens_and_starts_fresh_each_pacific_day():
     t = utc(2026, 11, 23, 12)
+    usage.set_limits("google", "gemini-3.8-flash", rpd=250)    # first: it runs on today's real clock, not on `t`
     usage.record("google", "gemini-3.8-flash", 100, now=t)
     usage.record("google", "gemini-3.8-flash", 20, now=t + 5)
-    usage.set_limits("google", "gemini-3.8-flash", rpd=250)
-    row = usage.snapshot("google", "gemini-3.8-flash", now=t + 10)["models"][0]
-    assert (row["used"], row["tokens"], row["left"], row["kind"]) == (2, 120, 248, "free")
-    nxt = usage.snapshot("google", "gemini-3.8-flash", now=utc(2026, 11, 24, 9))["models"][0]   # after midnight PST
+    r = row(usage.snapshot("google", "gemini-3.8-flash", now=t + 10))
+    assert (r["used"], r["tokens"], r["left"], r["kind"]) == (2, 120, 248, "free")
+    nxt = row(usage.snapshot("google", "gemini-3.8-flash", now=utc(2026, 11, 24, 9)))   # after midnight PST
     assert (nxt["used"], nxt["left"]) == (0, 250)           # counts start again; the limit is kept
 
 
@@ -61,13 +65,13 @@ def test_per_minute_429_waits_only_the_retry_time():
     t = utc(2026, 11, 23, 12)
     assert usage.hit_limit("google", "gemini-3.8-flash", MINUTE_429, now=t) == pytest.approx(t + 21.5)
     assert usage.limits("google", "gemini-3.8-flash")["rpm"] == 10
-    assert usage.limits("google", "gemini-3.8-flash")["rpd"] is None
+    assert usage.limits("google", "gemini-3.8-flash")["rpd"] == 20       # still config/cloud_free.json's
 
 
 def test_unreadable_429_rests_a_minute_and_learns_nothing():
     t = utc(2026, 11, 23, 12)
     assert usage.hit_limit("google", "gemini-3.8-flash", "Resource exhausted.", now=t) == t + usage.DEFAULT_WAIT
-    assert usage.limits("google", "gemini-3.8-flash") == {"rpd": None, "rpm": None}
+    assert usage.limits("google", "gemini-3.8-flash") == {"rpd": 20, "rpm": 5}     # config/cloud_free.json's
 
 
 def test_an_out_model_stays_out_across_the_pacific_day_change():
@@ -84,9 +88,18 @@ def test_free_and_paid_models():
     assert usage.kind("openai", "gpt-6-mini") == "paid"
 
 
+def test_the_free_limits_from_ai_studio_are_known():
+    assert usage.limits("google", "gemini-4-hydrogen") == {"rpd": 20, "rpm": 5}
+    assert usage.limits("google", "gemini-3.5-flash-lite") == {"rpd": 500, "rpm": 15}
+    assert usage.limits("google", "gemini-7-unknown") == {"rpd": None, "rpm": None}
+    for name in usage.ladder("google"):
+        assert usage.kind("google", name) == "free" and usage.limits("google", name)["rpd"]
+    assert usage.kind("google", "gemini-2.5-pro") == "paid"
+
+
 def test_corrupt_meter_file_starts_from_zero():
     store.current().file(usage.USAGE_NAME).write_text("{not json", encoding="utf-8")
-    assert usage.snapshot("google", "gemini-3.8-flash")["models"][0]["used"] == 0
+    assert row(usage.snapshot("google", "gemini-3.8-flash"))["used"] == 0
     usage.record("google", "gemini-3.8-flash")
     assert usage.snapshot()["models"][0]["used"] == 1
 
@@ -95,6 +108,7 @@ def test_corrupt_meter_file_starts_from_zero():
 
 @pytest.fixture
 def google_key():
+    usage.set_ladder(False)                 # these tests are about one model; the ladder has its own (test_free_ladder.py)
     cloud.set_key("google", "test-key")
     yield
     cloud.set_key("google", "")
@@ -141,16 +155,16 @@ def test_usage_api_features_the_chosen_model(client):
     _use_gemini()
     j = client.get("/api/cloud/usage").get_json()
     assert j["active"] is True and j["studio"].startswith("https://aistudio.google.com")
-    row = j["models"][0]
-    assert (row["model"], row["kind"], row["used"], row["chosen"]) == ("gemini-3.8-flash", "free", 0, True)
+    r = row(j)
+    assert (r["model"], r["kind"], r["used"], r["chosen"]) == ("gemini-3.8-flash", "free", 0, True)
 
 
 def test_limits_api_saves_numbers_and_rejects_text(client):
     _use_gemini()
     r = client.post("/api/cloud/limits", json={"provider": "google", "model": "gemini-3.8-flash", "rpd": 250, "rpm": 10})
-    assert r.status_code == 200 and r.get_json()["models"][0]["left"] == 250
+    assert r.status_code == 200 and row(r.get_json())["left"] == 250
     assert client.post("/api/cloud/limits", json={"provider": "google", "model": "gemini-3.8-flash",
                                                   "rpd": "lots"}).status_code == 400
     assert client.post("/api/cloud/limits", json={"provider": "nope", "model": "x"}).status_code == 400
     r = client.post("/api/cloud/limits", json={"provider": "google", "model": "gemini-3.8-flash", "rpd": None})
-    assert r.get_json()["models"][0]["left"] is None         # cleared = not known
+    assert row(r.get_json())["left"] == 20                   # cleared: config/cloud_free.json's number again = not known
