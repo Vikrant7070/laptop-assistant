@@ -34,8 +34,9 @@ def check_round(w, rec, job, root, asked, check, out, conf, sent_back, brief):
                            f"{' …' if len(bad) > 4 else ''}). I undid those changes and stopped the job."
                            + (f" Its changes inside the folder are kept, not committed: {', '.join(kept[:4])}."
                               if kept else ""))
-    job["step"] = "checking its work (files, tests)"
-    checks = jobchecks.coding(root, asked, check["files"], workers._guard_env(), coworker.checkpoint)
+    job["step"] = "checking its work (files, tests, lint, build, the page)"
+    checks = jobchecks.coding(root, asked, check["files"], workers._guard_env(), coworker.checkpoint,
+                                rec.get("job_type") or "")
     rec.update(checks=checks, verdict=jobchecks.verdict(checks), left=jobchecks.left(checks, out["text"]), limit="")
     if rec["verdict"] != "failed" or out.get("denied"):
         return checks, False

@@ -1093,6 +1093,53 @@ Quality comes from measurement, not from the user's habits or the worker's own c
 
 Each judge gives a pass/fail list Nova can quote back to the worker ("mobile layout overflows at 375 px").
 
+**Phase 5 as built (2026-11-24, branch `claude/manager-phase5-fc2a5f`): judges for websites, code and research.**
+`nova/actions/judges.py` (settings, lint/build, research) and `nova/actions/sitejudge.py` (the website judge), called
+from `jobchecks.coding` (every coding round, after files + tests) and `jobchecks.research`. Same check shape as 4c-2:
+passed / failed / skipped-with-why, never "passed" for a check that didn't run, nothing installed to make one run.
+A failed check's `why` is the sentence Nova quotes back, so 4c-3's send-back brief carries it unchanged
+("- mobile: mobile layout overflows at 375 px (the page is 512 px wide; div.hero sticks out)").
+- **Websites** - for job type `new site` / `new app` (`rec["job_type"]`, now passed by `jobrounds.check_round`) or a
+  folder (or one above it, up to the git root) with an `index.html` (also `public/`) or an npm `dev` / `start` script:
+  - How it opens: the build check's output (`dist/` `build/` `out/` with an index.html) → served from there (SPA
+    fallback); else the npm `dev`/`start` script (with node_modules and npm/pnpm/yarn present) started with the
+    worker's safety env + `PORT`/`BROWSER=none`, its address read from its output, time-limited (`start_secs`) and
+    killed with its process tree afterwards; else the folder's `index.html`.
+  - Nova serves the page on 127.0.0.1 herself (static, or a proxy in front of the dev server) and injects a small probe
+    script into every HTML page. Chrome (else Edge) runs headless with a throwaway profile and `--dump-dom`; the page
+    sits in an iframe exactly 375 px wide because headless Chrome won't make a window narrower than ~500 px
+    (found live: `--window-size=375` gave innerWidth 504).
+  - Checks: `page` (opens, title; a "new site" with nothing to open fails, other jobs skip), `console` (console.error,
+    script errors, unhandled rejections, files that failed to load - the server's own 404s too; dev-server HMR /
+    websocket chatter ignored behind the proxy), `mobile` (no sideways scroll at `width`, names the first element that
+    sticks out; skipped if the frame couldn't be sized), `links` (local links fetched, up to 40; links to other sites
+    counted, not fetched - no network for judging), `lighthouse` (performance / accessibility / SEO ≥ `lighthouse_min`
+    when `lighthouse` is on the PATH; else skipped "Lighthouse isn't installed").
+  - No Chrome/Edge → every website check skipped "no headless browser (Chrome or Edge) on this laptop".
+- **Code** - `lint`: ruff (`ruff.toml` / `.ruff.toml` / `[tool.ruff` in pyproject; the project's venv first), else
+  flake8 (`.flake8`, `[flake8]` in setup.cfg / tox.ini), else an npm `lint` script; none → skipped "the project has no
+  lint set up"; set up but not installed → skipped, saying so. `build` (package.json projects only): `npm run build`
+  (by lock file; no node_modules → skipped). Both run like the tests (`jobchecks.run_tests(..., name=)`: safety env,
+  time limit, Stop stops them, the end of the output kept as `detail`). "Diff only in the expected folder" is 4c-2's
+  `files` check, unchanged.
+- **Research** - over the saved report: `citations` (every finding cites a source, and only listed ones: "cites [7],
+  but only 3 sources are listed"), `independent` (the cited sources come from 2+ different sites, `www.` ignored),
+  `backed` (at least `backed_share` - default half - of the findings cite 2+ different sites), `disagreements` (a
+  "Disagreements: …" line, "none found" counts). Fewer than 2 sources read → skipped. The research prompt
+  (`nova/prompts/research.md`) now asks for every source number per point ([1][3]) and the closing Disagreements line
+  - **a prompt change: run the task exam (`python -m nova.exam`, the user starts it) before/after merging.** Research
+  jobs still aren't sent back (4c-3); a failed research judge is reported in the result line.
+- Settings: `workers.json` → `judges` (`page_secs` 40, `start_secs` 60, `lint_secs` 180, `build_secs` 300, `width` 375,
+  `lighthouse_min` 80, `lighthouse_secs` 120, `backed_share` 0.5), each clamped to a range by `judges.limits`; a
+  ⚙ Workers save keeps them. ⚙ Workers shows "Time to open a page" and "Lowest Lighthouse score".
+- Live check (2026-11-24, real Chrome, fixture pages, outside Nova): a page with a 520 px div → "mobile layout overflows
+  at 375 px (the page is 528 px wide; div.hero sticks out)", console "boom; failed to load missing.png", links
+  "gone.html (404)"; a responsive page → all passed; ~4 s per page.
+- Not built (said plainly): ML-model judges (held-out score, speed, memory vs the last run); Playwright (not installed
+  here - Chrome's `--dump-dom` plus the probe does the job without it); desktop-width checks; Lighthouse itself isn't
+  installed on this laptop, so its pass/fail is tested with a fake run only; a build's output (`dist/`) may show up as
+  changed files on a send-back round if the project doesn't ignore it.
+
 ## 8. Phase 6–8 — Knowing the user (all opt-in, local, viewable, deletable)
 
 **Principle: learn from meaning, not raw input.** No keylogger, no screenshots of everything.
