@@ -50,6 +50,8 @@ function taskBody(d) {
     ${c.left && c.left.length ? html`<p class="k">Couldn't finish: ${c.left.join("; ")}</p>` : ""}
     ${c.not_checked ? html`<p class="k">Done, not checked: no step could be read back.</p>` : ""}
     ${(c.known || []).length ? html`<p class="k">Known:</p><ul>${c.known.map(k => html`<li>${k.key}: ${k.value} <small>${k.how === "guess" ? "a guess" : k.how}</small></li>`)}</ul>` : ""}
+    ${(d.undo || []).length ? html`<p class="k">Changes that can be undone:</p><ul>${d.undo.map(u => html`<li>#${u.id} ${u.what} <small>${
+        u.state === "can undo" ? html`<button data-chat="undo change #${u.id}" title="Opens the chat with this filled in">↩ Undo…</button>` : u.state}</small></li>`)}</ul>` : ""}
     ${(c.asks || []).length ? html`<p class="k">Waiting for your answer: ${c.asks.map(a => a.text).join("; ")}</p>` : ""}
     ${d.checks.length ? html`<p class="k">The Judge's checks (${d.verdict_source || "checks"}): ${d.checks.join("; ")}</p>` : ""}
     <p class="k">Why it ended: ${d.status === "running" ? "still running" : d.status === "waiting" ? "waiting for you" + (d.why ? ": " + d.why : "")

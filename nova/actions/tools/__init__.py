@@ -99,7 +99,7 @@ _HOME = {name: _MODULES[mod] for mod, names in {
     'notes': ['EMAIL_WARN', 'LOCAL_TOPIC', '_ago', '_email_gate', '_norm_all', 'add_note', 'background_jobs', 'check_email', 'commit_coding_job', 'connect_gmail', 'draft_email', 'due_reminders', 'email_ok', 'forget_fact', 'go_to_sleep', 'hand_off_job', 'learn_lesson', 'list_notes', 'list_reminders', 'memories', 'mute_notifications', 'read_email', 'read_notifications', 'recall_knowledge', 'remember_fact', 'research_in_background', 'research_report', 'retry_coding_job', 'set_reminder', 'show_coding_changes', 'show_finished_work', 'start_coding_job', 'stop_background_job', 'update_profile', 'write_document'],
     'routines': ['CONTINUE_NAME', 'SIGNIN_NAME', '_buttons', 'delete_skill', 'edit_skill', 'escalate', 'forms_code_box', 'list_skills', 'login_if_needed', 'more_tools', 'run_skill', 'save_skill', 'save_task_as_skill', 'start_watching', 'stop_watching', 'undo_skill_change'],
     'body': ['can_do', 'change_look', 'forget_move', 'new_move', 'react', 'reaction_name'],
-    'taskcard': ['YES', '_card', 'ask_user', 'note_fact'],
+    'taskcard': ['YES', '_card', 'ask_user', 'note_fact', 'undo_last_change'],
     'terminal': ['TERM_SCRIPT', 'TERM_TITLE', 'TERM_WAIT', '_avatar_pos', '_open_terminal', '_read_text', '_terminal', 'drag_window', 'run_in_terminal'],
 }.items() for name in names}
 

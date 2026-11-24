@@ -56,12 +56,14 @@ function showTask(t) {
             r.check ? html`<small>${{passed: "✓", failed: "✗", skipped: "–"}[r.check.state]} read back: ${r.check.why}</small>` : ""}</li>`)}</ul>` : ""}
       ${t.left && t.left.length ? html`<p class="mood">Couldn't finish: ${t.left.join("; ")}</p>` : ""}
       ${t.not_checked ? html`<p class="mood">Done, not checked: no step could be read back.</p>` : ""}
+      ${(t.undo || []).length ? html`<p class="mood">Can undo: ${t.undo.map(u => html`<button type="button" class="ts-undo" data-id="${u.id}" title="Put it back">↩ ${u.what}</button> `)}</p>` : ""}
       ${(t.known || []).length ? html`<p class="mood">Known: ${t.known.map(k => `${k.key}: ${k.value}${k.how === "guess" ? " (a guess)" : ""}`).join("; ")}</p>` : ""}
     </div>`);
   box.open = wasOpen;
   box.hidden = false;
   const go = (sel, fn) => { const b = box.querySelector(sel); if (b) b.onclick = e => { e.preventDefault(); e.stopPropagation(); fn(); }; };
   go(".ts-stop", () => stopNova());
+  box.querySelectorAll(".ts-undo").forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); send(`undo change #${b.dataset.id}`); });
   go(".ts-go", async () => { try { await api("/api/task/pick", {id: t.id}); send("continue"); } catch (e) { add("err", e.message); } });
   go(".ts-drop", async () => { try { showTask(await api("/api/task/drop", {id: t.id})); } catch (e) { add("err", e.message); } });
   box.querySelectorAll(".ts-qa").forEach(b => b.onclick = e => {

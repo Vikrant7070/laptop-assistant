@@ -46,6 +46,15 @@ def ask_user(question, key, why="", needed_now=False):
             "nothing else can be done without it, end your turn: I'll ask the user everything at once.")
 
 
+@tool("Undo a change Nova made that can be undone (moved or renamed files, a new folder or file, a file's text, dark "
+      "mode, brightness, volume). which: 'latest', a change number, or words from it.",
+      friendly="Undid a change", hints="undo that, put it back, change it back, revert that, undo the last change",
+      props={"which": {"type": "string", "description": "'latest', a number, or words"}}, required=[])
+def undo_last_change(which="latest"):
+    from nova.actions import undo
+    return undo.undo(which or "latest")
+
+
 @tool("Note a fact for this task on its card - something you found out on the way, or a guess (guess=true) - so "
       "later steps and questions use it.",
       friendly="Noted it on the task card", hints="note this fact for the task, remember this for now, found out",

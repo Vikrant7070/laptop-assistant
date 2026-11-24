@@ -25,6 +25,7 @@ QUIET = {"react", "new_move", "go_to_sleep", "more_tools", "escalate", "start_wa
          "background_jobs", "stop_background_job", "research_report", "list_windows", "media_control",
          "ask_user", "note_fact"}
 SELF_CHECKED = {"run_skill": "the skill checks its own steps",
+                "undo_last_change": "the undo checks what it put back and says so",
                 "start_coding_job": "the worker job is checked when it ends",
                 "commit_coding_job": "git says what was committed",
                 "retry_coding_job": "the worker job is checked when it ends"}

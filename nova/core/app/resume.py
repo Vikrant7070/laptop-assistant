@@ -25,6 +25,7 @@ import time
 from nova import db, intents, overlay, protocol, store, task_state
 from nova.actions import judge, skills
 from nova.actions import checks
+from nova.actions import undo
 from nova.brain import cloud, router
 from nova.log import log_exception
 from nova.core.app import api, eventbus
@@ -422,6 +423,8 @@ def strip_for(card):
     q = session.state.get("question")
     if out and q and q.get("task") == card["id"]:
         out["question"] = asking.public(q)          # the strip shows its buttons
+    if out:                                         # 4e: level-1 changes that can be undone, newest last
+        out["undo"] = [undo.describe(r) for r in undo.records(card["id"]) if r["state"] == "can undo"][-3:]
     return out
 
 
