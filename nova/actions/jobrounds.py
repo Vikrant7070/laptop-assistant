@@ -7,10 +7,16 @@
     can_continue(rec)      a job a limit stopped before its send-back: "try job #n again" continues it (workers.retry)
     Quiet(folder)          4d: a run with no output and no file change for QUIET_MIN minutes is "maybe stuck" (the
                            chat is told; /tasks shows it with Stop…); it clears when the worker moves again
+    research_round(...)    a research job's checks; a failed one goes back once ("read more pages, cite 2"), same limits
+    usage_limited / usage_stop / hand_over
+                           a worker at its usage limit (OpenCode 429 after its fallback models, Claude Code's usage
+                           limit): the job stops as `limit` and the app asks "Carry on with <other> (cost)" / "Wait";
+                           on the user's go the other worker gets the same brief + the files already changed
 
 workers.start runs the rounds; this module is the deciding, kept apart so workers.py stays readable.
 """
 import os
+import re
 import time
 
 from nova.actions import jobchecks
@@ -69,6 +75,107 @@ def can_continue(rec):
     """A coding job a limit stopped before its send-back round, not yet continued."""
     return (rec.get("status") == "limit" and bool(rec.get("send_back")) and not rec.get("continued")
             and rec.get("worker") in ("opencode", "claude"))
+
+
+# ------------------------------------------------------------------ research: one send-back with the failing check
+
+def research_round(job, rec, wanted, conf, rerun):
+    """A finished research round's checks (jobchecks.research). A failed one (too few cited sources, no report) goes
+    back once - rerun(focus, max_sources) reads more pages and writes the report again, in the same job - under the
+    same send_backs / job_min limits as a coding job. A rerun that breaks keeps the first round's report. -> checks"""
+    from nova.actions import coworker
+    checks = jobchecks.research(job, wanted)
+    if jobchecks.verdict(checks) != "failed":
+        return checks
+    why = jobchecks.limit_hit(conf.get("manager") or {}, "research", rec["started"], int(rec.get("sent_back") or 0))
+    if why:
+        if not why.startswith("rounds"):
+            rec["limit"] = why
+        return checks
+    failed = [f"{c['name']}: {c['why']}" for c in checks if c["state"] == "failed"]
+    coworker._note(f"🔁 Job #{job['id']}: a check failed ({'; '.join(failed)[:120]}) - sending the research back once "
+                   "to read more pages.")
+    job["step"] = "sent back to fix a failing check"
+    rec["sent_back"] = int(rec.get("sent_back") or 0) + 1
+    need = max(1, min(jobchecks.MIN_SOURCES, int(wanted or jobchecks.MIN_SOURCES)))
+    focus = (f"{rec.get('focus') or ''}\nNova checked the last report and this check failed: {'; '.join(failed)}. "
+             f"Read more pages, and cite at least {need} different sources with their [n] marks.").strip()
+    kept = {k: job.get(k) for k in ("path", "headline", "sources", "cited", "result")}
+    try:
+        rerun(focus, min(5, int(wanted or 3) + 2))
+    except coworker.Stopped:
+        raise
+    except Exception as e:
+        log_exception("jobrounds: the research send-back", e)
+        job.update(kept)
+        return checks
+    return jobchecks.research(job, wanted)
+
+
+def research_words(rec, n):
+    """What a research report says about its send-back."""
+    if rec.get("limit"):
+        return f" I didn't send it back to fix that - a limit was reached ({rec['limit']}). Say 'try job #{n} again'."
+    if rec.get("sent_back") and rec.get("verdict") == "failed":
+        return (" I sent it back once to read more pages and it still fails - over to you: look at the report, or "
+                "ask me to research it again another way.")
+    if rec.get("sent_back"):
+        return " (A check failed at first; I sent it back once to read more pages and it fixed it.)"
+    return ""
+
+
+# ------------------------------------------------------------------ a worker at its usage limit: ask, never switch
+
+USAGE_LIMIT = re.compile(r"usage limit|limit reached|hit your limit|quota|rate.?limit|\b429\b|too many requests|"
+                         r"out of (?:extra )?usage|credit balance is too low", re.I)
+
+
+def usage_limited(w, out):
+    """OpenCode: every model it may use (the big-pickle fallback too) said 429 / free limit. Claude Code: its error
+    says usage limit / quota (only its error - a summary that talks about rate limits is not one)."""
+    if out.get("limit"):
+        return True
+    return w == "claude" and bool(USAGE_LIMIT.search(str(out.get("error") or "")))
+
+
+def usage_stop(w, rec, job, check):
+    """The job stops as `limit`; the app asks "Carry on with <other> (cost)" / "Wait" (managing.limit_card, from
+    job["handoff"]). Nothing switches by itself. -> the report line."""
+    from nova.actions import manager, workers
+    other = manager.other_worker(w)
+    files = list(check["files"])
+    rec.update(status="limit", limit=f"usage: {workers.NAMES[w]} hit its usage limit", files=files,
+               note=check["note"], handoff=other)
+    job.update(files=files, handoff={"key": rec["key"], "job": job["id"], "from": w, "to": other,
+                                     "label": manager.worker_label(other)})
+    did = (f" after changing {len(files)} file{'s' if len(files) != 1 else ''}: {', '.join(files[:4])}"
+           + (" …" if len(files) > 4 else "") + " (kept, not committed)") if files else " before changing anything"
+    return f"{workers.NAMES[w]} hit its usage limit, so job #{job['id']} stopped{did}. I haven't switched workers."
+
+
+def can_hand_over(rec):
+    return rec.get("status") == "limit" and bool(rec.get("handoff")) and not rec.get("handed_over")
+
+
+def hand_over(rec):
+    """The user said carry on: the other worker gets the same brief plus the files already changed, in the same
+    folder as it is now (those files count as the new job's own). -> the sentence from workers.start."""
+    from nova.actions import workers
+    if not can_hand_over(rec):
+        return f"Job #{rec.get('job')} isn't waiting to be handed over any more."
+    files = list(rec.get("files") or [])
+    brief = str(rec["brief"]) + (
+        f"\n\nAnother worker started this job and stopped at its usage limit. It already changed these files (they "
+        f"are in the folder as it left them, not committed): {', '.join(files[:20])}. Look at them first and carry on "
+        "from there - don't start over." if files else
+        "\n\nAnother worker started this job and stopped at its usage limit before changing anything.")
+    meta = {k: rec[k] for k in ("job_type", "manager_job") if rec.get(k)}
+    said = workers.start(brief, rec.get("asked") or rec["folder"], worker=rec["handoff"],
+                         meta={**meta, "continues": rec["job"], "carry_files": files})
+    if str(said).startswith(("Started", "Queued")):
+        rec["handed_over"] = True
+        workers._save_record(rec)
+    return said
 
 
 # ------------------------------------------------------------------ 4d: a worker that has gone quiet

@@ -167,6 +167,11 @@ def readback_verdict(task):
         return                                # nothing failed, or the Judge's own check already said why
     task.update(done=False, verdict_source="checks", screen="Read back by code: " + "; ".join(bad), fail_plain=bad[0])
     conversation.task_log("READ BACK says not done: " + "; ".join(bad))
+    if not task.get("nudged"):
+        # One fresh plan for the one more go (cloud brain first, else the deep brain), from the step outcomes only.
+        if watching.replan(task, f"A check by code failed: {bad[0]}. Plan how to finish the task - fix what that "
+                                 "check found, don't repeat a step that already failed.", "READ BACK"):
+            task["screen"] += "\nA new plan is on the card below - follow it from the first step not done."
 
 
 def execute(calls, approved, activity, model):
@@ -202,4 +207,4 @@ def execute(calls, approved, activity, model):
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import config, conversation, resume, session, skillrun  # noqa: E402
+from nova.core.app import config, conversation, resume, session, skillrun, watching  # noqa: E402
