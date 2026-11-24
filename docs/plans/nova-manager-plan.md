@@ -1078,6 +1078,48 @@ Each judge gives a pass/fail list Nova can quote back to the worker ("mobile lay
 Always: a pause switch with a visible indicator, a blocked-apps list, a "what Nova knows about me" page with delete,
 recording only when the user is the one at the laptop (YuNet presence can help), raw events auto-deleted.
 
+### Phase 6 as built (2026-11-24, branch `claude/manager-phase6-8b25a2`)
+
+- **Code:** `nova/actions/laptop_history.py` (reading + summarising, plain code only), `nova/core/app/history_page.py`
+  (`/api/laptop_history` and the idle-time read), `static/history.js` + a "What Nova knows about me (from this
+  laptop)" section on the Knowledge page. `learning.learn_now` calls `history_page.read_if_due()` (in its own thread,
+  at most once an hour, only when no task, thinking or pending question); `/api/knowledge` leaves history facts out of
+  the "Sites Nova has learned" card. `learner.py` is untouched.
+- **Off by default, per source:** Chrome history, PowerShell history, Claude Code transcripts, each with a switch and
+  a "What is read" line; a **never list** (sites like `example.com`; folders or project names like `C:\Work\Private`)
+  applied to every source; a **pause** switch; **Read now**.
+- **Chrome:** every profile's `History` (+ `-wal`/`-journal`) copied to a temp folder, read read-only, the copy deleted
+  in `finally`. Visits after the last `visit_time` read; `http(s)` only (no `file://`, `chrome://`). Search pages
+  (Google, Bing, DuckDuckGo, YouTube `search_query`, Amazon `k`...) count as search **words**, not visits; other
+  pages count as visits to the **host**. Whole URLs, titles and full queries are never kept.
+- **PowerShell:** `PSReadLine\ConsoleHost_history.txt` from the last line read (a shrunk file starts over); only the
+  **program name** (git, python, npm) is counted.
+- **Claude Code:** `~/.claude/projects/*/*.jsonl`, newest files first, from the last byte read, up to 100 MB per read.
+  Only the user's own text (no tool results, no `<command>` / meta lines). Kept: the **project** (worktrees count as
+  their main project; sessions + last day) and short sentences where the user says how they like things done
+  ("I prefer...", "always...", "let's go with...", 15-180 characters, at most the newest 10 as facts).
+- **Secret filter** before anything is counted: `knowledge.SECRET` (passwords, PIN, OTP, card/Aadhaar/PAN, API key,
+  token, emails, phone and 12-19 digit numbers) plus `laptop_history.EXTRA_SECRET` (`sk-`/`ghp_`/`AKIA`/`AIza` keys,
+  bearer, long hex/base64, one-time, verification, CVV, IBAN/IFSC, account/routing numbers, passport, SSN,
+  SecureString, credential, `-p <x>` / `--pass`). A matching line is dropped whole.
+- **Facts:** counts live in `data/laptop_history.json` (tallies, read positions, never list, switches); the top
+  8 per kind become facts in `data/facts.json` with `kind: "history"`, `source`, `key`, `text`, **unconfirmed**. The
+  section shows each with its source, ✓ and ×. × records the key so it never comes back from the same history;
+  **Forget everything from it** removes that source's facts and counts but keeps the read position (old history is
+  not read again). Facts that fall out of the top 8 go, unless the user confirmed them.
+- **No network, no brain:** nothing in Phase 6 calls a model (local or cloud) or opens a socket; history facts are
+  not put in any prompt yet.
+- **Tests:** `tests/test_laptop_history.py` (fixture Chrome DB, PS history, transcripts; sockets and `llm` patched to
+  fail): facts appear unconfirmed with their source; secret lines never reach facts or counts; never-listed site and
+  folder skipped; an off source or a pause reads nothing; incremental reads; delete stays deleted; forget clears one
+  source only; the Knowledge page endpoints.
+- **Live check** (copy on a throwaway `NOVA_DATA`, counts only, folder deleted afterwards): Chrome 2,196 visits read,
+  16 facts; PowerShell 72 lines, 6 facts; Claude Code 32,615 transcript lines (first 100 MB of 535 MB), 15 facts;
+  ~1.3 s per read; no temp copies left behind. The page was checked on port 5096 with fixture data only.
+- **Not built:** a local-model summary of transcripts (plain-code sentences instead; safer and testable); using
+  confirmed history facts in briefs or prompts (needs the user's say on what may reach a cloud brain); Chrome's
+  other browsers (Edge, Firefox); the ⚙ settings copy of the switches (they live on the Knowledge page only).
+
 ## 9. The user's answers (2026-11-20)
 
 1. **Main work:** **coding / web development** and **research**. → First workers: Claude Code, OpenCode + DeepSeek,
