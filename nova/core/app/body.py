@@ -209,7 +209,7 @@ def answer(text, quiet=False, remote=False):
         session.state["messages"].append({"role": "user", "content":
                                   text + carry_on + (protocol.windows_note(screen) if screen else "")})
         try:
-            out = by_code or managing.route(text) or look_first(text, activity)   # a clear job for a worker: no brain turn
+            out = by_code or managing.route(text) or scheduling.route(text) or look_first(text, activity)   # a clear job for a worker: no brain turn
             if out:     # done without the brain (reading out selected text, or carrying on in code)
                 session.state["messages"].append({"role": "assistant", "content": out["reply"]})
                 out.pop("by_code", None)
@@ -364,4 +364,4 @@ def react_later(reaction, wait_for_speech=True, repeat=None):
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
 from nova.core.app import config, conversation, judging, learning, session, voice_io  # noqa: E402
-from nova.core.app import asking, managing, resume as resume_module  # noqa: E402
+from nova.core.app import asking, managing, resume as resume_module, scheduling  # noqa: E402

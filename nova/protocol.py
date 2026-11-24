@@ -18,7 +18,16 @@ PHONE_TAG = ("[from the user's phone via Telegram; they are away from the laptop
              "message, so keep it short and don't describe things only visible on the screen]")
 MOBILE_TAG = ("[from the user's phone app (the Nova web app on their iPhone); they may be away from the laptop and read "
               "your answer as a short text message, so keep it brief and don't describe things only visible on the screen]")
-SPOKEN_RE = re.compile(r"^\[(spoken|from the user's phone)[^\]]*\]\s*")      # spoken or phone request in front
+SCHEDULED_START = "[scheduled job"                                       # 4g: a run of one of the user's schedules
+SPOKEN_RE = re.compile(r"^\[(spoken|from the user's phone|scheduled job)[^\]]*\]\s*")   # spoken / phone / scheduled
+
+
+def scheduled(n, when, late=""):
+    """The marker in front of a scheduled run's request (manager plan 4g): the user set it up earlier, in their own
+    words, and may not be at the laptop now."""
+    return (f"{SCHEDULED_START} #{n} ({when}), set up earlier by the user in their own words; do it now"
+            + (f" - it is running late: {late}" if late else "")
+            + ". They may be away from the laptop, so keep the answer short]")
 
 # Hidden context, added by code and never meant to be read out.
 NOTE_START = "[note from Nova's system"
