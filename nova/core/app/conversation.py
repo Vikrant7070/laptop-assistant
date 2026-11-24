@@ -137,7 +137,7 @@ def new_task(goal):
     if any(x.get("ok") and x["tool"] not in skills.SKIP_IN_TRACE for x in last.get("trace", [])):   # for "remember that"
         session.state["last_trace"] = {"goal": last.get("goal", ""), "trace": list(last["trace"])}
     if not last.get("paused"):
-        learning.record_episode(last)                 # the last task is over: one line in the episode log (learner.py)
+        learning.record_episode(last, clean)         # the last task is over: one line in the episode log (learner.py)
     resumed = resume.take()                           # "continue" picked a stopped task (resume.direct checked it)
     if resumed:
         task_log(f"RESUMING task: {resumed['card']['goal'][:200]}")
@@ -260,7 +260,7 @@ def route_task(kind, why=""):
     session.think("🧠 Complex job - asking my deep-thinking brain to plan it first. Loading it can take a minute…")
     t0 = time.time()
     ts = session.ThoughtStream()
-    plan, m = interruptible(router.make_plan, s, task["goal"], on_think=unless_stopped(ts.feed))
+    plan, m = interruptible(router.make_plan, s, task_state.plan_goal(task), on_think=unless_stopped(ts.feed))
     ts.flush()
     if not plan:
         task_log(f"ROUTE deep failed: {m}")

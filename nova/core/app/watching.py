@@ -24,8 +24,41 @@ from nova.log import log_exception
 
 
 def make_plan(goal):
-    """The deep brain's plan text, or (None, why). Its own function so tests can say what it gives."""
-    return router.make_plan(config.settings(), goal)
+    """The new plan's text and who made it ("cloud:…" or the deep model), or (None, why). Its own function so tests
+    can say what it gives (conftest: no planner)."""
+    return plan_from_brains(goal)
+
+
+def cloud_planner(s, goal):
+    """The cloud brain a re-plan goes to first (the cloud brain picker: the chosen cloud model in cloud-first mode,
+    the one a task may climb to in local-first mode), or None: no key, local only, or mail the user keeps local."""
+    model = config.brain(s)
+    model = model if llm.is_cloud(model) else brains.cloud_helper(s)
+    if not model:
+        return None
+    if not s.get("email_cloud") and intents.EMAIL.search(config._unspoken(goal)):
+        return None                                     # her mail never goes to a cloud brain unless ⚙ allows it
+    return model
+
+
+def plan_from_brains(goal):
+    """A re-plan (4d stuck, 4c-1 read-back failed): the cloud brain first when one is on, else the local deep brain.
+    `goal` is the goal + one-line step outcomes (task_state.outcomes) - never raw tool results (plan rule 7). The
+    user's folder paths aren't sent to the cloud either."""
+    s = config.settings()
+    model = cloud_planner(s, goal)
+    if model:
+        try:
+            names = ", ".join(t["name"] for t in tools.TOOLS)[:3000]
+            prompt = router.PLAN_PROMPT.format(goal=goal[:1500], tools=names, folders="(not shared - name the folder "
+                                               "in words, e.g. 'the Downloads folder')")
+            _, text, _ = cloud.chat(model, [{"role": "user", "content": prompt}], [], reasoning="high")
+            if (text or "").strip():
+                return text.strip(), model
+            conversation.task_log(f"RE-PLAN {model} gave no plan - asking the deep brain")
+        except Exception as e:
+            conversation.task_log(f"RE-PLAN {model} failed ({type(e).__name__}: {str(e)[:120]}) - asking the deep brain")
+    return router.make_plan(s, goal)
 
 
 def _holder(task):
@@ -34,12 +67,17 @@ def _holder(task):
 
 
 def _replan(task, words):
-    """The one new plan: goal + one-line step outcomes + why it's stuck. -> the card's rendered plan, or ""."""
+    """The one new plan when stuck: goal + one-line step outcomes + why. -> the card's rendered plan, or ""."""
+    return replan(task, f"Stuck: it {words}. Plan a different way to reach the goal - not that step again.", "STUCK")
+
+
+def replan(task, why, label="RE-PLAN"):
+    """One fresh plan for the task's card from the goal, the one-line step outcomes and `why` (a sentence written by
+    code). -> the card's rendered plan, or "" (no card, no planner, nothing usable came back)."""
     card = task_state.of(task)
     if card is None:
         return ""
-    goal = (card["goal"] + "\nAlready tried, step by step:\n" + "\n".join(task_state.outcomes(card))
-            + f"\nStuck: it {words}. Plan a different way to reach the goal - not that step again.")
+    goal = card["goal"] + "\nAlready tried, step by step:\n" + "\n".join(task_state.outcomes(card)) + "\n" + why
     try:
         plan, m = make_plan(goal)
     except Exception:
@@ -47,10 +85,10 @@ def _replan(task, words):
         return ""
     steps = task_state.steps_from_plan(plan, {t["name"] for t in tools.TOOLS}) if plan else []
     if not steps:
-        conversation.task_log(f"STUCK re-plan gave nothing ({m})")
+        conversation.task_log(f"{label} re-plan gave nothing ({m})")
         return ""
-    task_state.set_plan(card, steps, "deep brain")
-    conversation.task_log(f"STUCK re-planned with {m}: {len(steps)} steps")
+    task_state.set_plan(card, steps, "cloud" if str(m).startswith("cloud:") else "deep brain")
+    conversation.task_log(f"{label} re-planned with {m}: {len(steps)} steps")
     return task_state.render(card)
 
 
@@ -257,9 +295,10 @@ def _outside_answered(qcard, answers):
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
 from nova.actions import manager, risk, tools  # noqa: E402
-from nova.brain import llm  # noqa: E402
+from nova import intents  # noqa: E402
+from nova.brain import cloud, llm  # noqa: E402
 from nova.brain import router  # noqa: E402
-from nova.core.app import asking, config, conversation, resume, session, skillrun  # noqa: E402
+from nova.core.app import asking, brains, config, conversation, resume, session, skillrun  # noqa: E402
 asking.handler("stuck", _answered, _dropped)
 asking.handler("gather", _gathered, _gather_dropped)
 asking.handler("outside", _outside_answered, _dropped)

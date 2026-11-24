@@ -382,6 +382,12 @@
           <label class="mood">Pages to read (1-5)<input id="wkRsSources" class="sel" type="number" min="1" max="5"></label>
           <label class="mood" style="display:flex;gap:6px;align-items:center"><input id="wkRsCloud" type="checkbox"> The cloud brain may write the report (off = the brain on this laptop only)</label>
         </div>
+        <h4 style="margin:12px 0 0">⚖️ Judges</h4>
+        <p class="mood" style="margin:4px 0 0">When a worker finishes, Nova checks its work herself: tests, lint and build when the project has them, and for a website she opens the page (Chrome or Edge, hidden) for console errors, phone width (375 px), broken links and Lighthouse if it's installed. A failed check goes back to the worker once.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 10px;margin-top:8px">
+          <label class="mood">Time to open a page (seconds, 10-180)<input id="wkJdPage" class="sel" type="number" min="10" max="180"></label>
+          <label class="mood">Lowest Lighthouse score (0-100)<input id="wkJdLh" class="sel" type="number" min="0" max="100"></label>
+        </div>
         <h4 style="margin:12px 0 0">🧑‍💼 Manager</h4>
         <p class="mood" style="margin:4px 0 0">Say <i>"make a website for my project"</i> and Nova asks a few short questions, writes the brief and hands it to a worker. Should she show the brief and wait for your go?</p>
         <label class="mood">Before a job starts<select id="wkGoAhead" class="sel">

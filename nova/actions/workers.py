@@ -39,7 +39,7 @@ from pathlib import Path
 from nova import runtime
 from nova import db
 from nova import store
-from nova.actions import jobchecks, jobrounds
+from nova.actions import jobchecks, jobrounds, judges
 from nova.log import log_exception
 
 KEEP_JOBS = 200
@@ -54,6 +54,7 @@ DEFAULTS = {
     "claude": {"exe": "", "model": "", "budget_usd": 1.0, "timeout_min": 30},
     "research": {"max_sources": 3, "cloud_report": True},
     "manager": {"go_ahead": "always"},       # 4a: show the brief and wait for "go" - always / paid (Claude only) / never
+    "judges": dict(judges.DEFAULTS),         # Phase 5: time limits and thresholds of the judges (judges.settings clamps)
     "daily_budget_usd": 3.0,
 }
 GO_AHEAD = ("always", "paid", "never")
@@ -192,7 +193,8 @@ def save_settings(body):
         mg["go_ahead"] = body["manager_go_ahead"]
     daily = _num(body["daily_budget_usd"], "daily_budget_usd") if "daily_budget_usd" in body \
         else conf["daily_budget_usd"]
-    new = {"opencode": oc, "claude": cc, "research": rs, "manager": mg, "daily_budget_usd": daily}
+    new = {"opencode": oc, "claude": cc, "research": rs, "manager": mg, "daily_budget_usd": daily,
+           "judges": judges.save(conf.get("judges"), body)}
     with _lock:
         path = store.current().workers
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -585,6 +587,10 @@ def start(brief, folder, worker="auto", size="small", start_job=None, meta=None)
             while True:                    # 4c-3: a failed check goes back once to the same worker, within limits
                 out, used = _run_models(w, ask, root, models, conf, job, rec["log"])
                 cost += float(out.get("cost") or 0)
+                if jobrounds.usage_limited(w, out):     # at its usage limit: stop and ask, never switch by itself
+                    rec.update(model=used, cost=round(cost, 4), result=out["text"][:2000])
+                    job["result"] = jobrounds.usage_stop(w, rec, job, after_check(root, before))
+                    return
                 job["step"] = "checking what it changed"
                 rec["status"] = "checking"
                 _save_record(rec)
@@ -755,6 +761,8 @@ def retry_target(which="latest", worker=""):
         rec = last_record(which, need_files=False, kinds=None)
         if rec and jobrounds.can_continue(rec):
             return rec, rec["worker"]             # stopped by a limit (4c-3): Continue with the same worker
+        if rec and jobrounds.can_hand_over(rec):
+            return rec, rec["handoff"]            # stopped at its usage limit: Continue = the other worker
         return rec, ("research" if rec and rec.get("worker") == "research" else "claude")
     w = pick_worker(w)
     return last_record(which, need_files=False, kinds=("research",) if w == "research" else CODERS), w
@@ -770,6 +778,8 @@ def retry(which="latest", worker=""):
         return f"Job #{rec['job']} is still going - wait for it, or stop it first."
     if w == "research":
         return research(rec.get("topic") or rec["brief"], rec.get("focus", ""), rec.get("kind", "general"))
+    if jobrounds.can_hand_over(rec) and w == rec["handoff"]:
+        return jobrounds.hand_over(rec)
     if jobrounds.can_continue(rec) and w == rec.get("worker"):
         # Continue (4c-3): the send-back round the limit held back, as a new job; it won't be sent back again.
         meta = {k: rec[k] for k in ("job_type", "manager_job") if rec.get(k)}
@@ -816,10 +826,14 @@ def research(topic, focus="", kind="general", max_sources=None, start_job=None, 
             _save_record(rec)
             try:
                 work(job)
-                checks = jobchecks.research(job, n)
-                job["result"] = f"{job.get('result') or ''} {jobchecks.summary(checks)}".strip()
-                rec.update(status="done", result=str(job.get("result") or "")[:2000], path=job.get("path") or "",
-                           sources=list(job.get("sources") or []), checks=checks, verdict=jobchecks.verdict(checks),
+                checks = jobrounds.research_round(job, rec, n, config(), lambda focus2, n2: coworker.research(
+                    topic=topic, focus=focus2, kind=kind, max_sources=n2, local=local,
+                    start_job=lambda k, t, again: (again(job), job)[1]))      # 4c-3: sent back once, in this job
+                rec["verdict"] = jobchecks.verdict(checks)
+                job["result"] = (f"{job.get('result') or ''} {jobchecks.summary(checks)}".strip()
+                                 + jobrounds.research_words(rec, job["id"]))
+                rec.update(status="limit" if rec.get("limit") else "done", result=str(job.get("result") or "")[:2000],
+                           path=job.get("path") or "", sources=list(job.get("sources") or []), checks=checks,
                            left=jobchecks.left(checks))
             except coworker.Stopped:
                 rec["status"] = "stopped"
