@@ -286,3 +286,10 @@
 {"kind": "intent", "intent": "research_then_build", "query": "compare react and vue and then build the page", "match": true, "note": "a job for a worker"}
 {"kind": "intent", "intent": "research_then_build", "query": "research green tea", "match": false, "note": "a laptop task / near-miss"}
 {"kind": "intent", "intent": "research_then_build", "query": "research tea and then tell me", "match": false, "note": "a laptop task / near-miss"}
+{"kind": "intent", "intent": "ask_cloud", "query": "ask gemini to summarise this article", "match": true, "note": "names gemini"}
+{"kind": "intent", "intent": "ask_cloud", "query": "use the cloud brain for this", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "ask_cloud", "query": "try a bigger brain on it", "match": true, "note": "asks for a stronger one"}
+{"kind": "intent", "intent": "ask_cloud", "query": "ask chatgpt how to fix my wifi", "match": true, "note": "names chatgpt"}
+{"kind": "intent", "intent": "ask_cloud", "query": "what's the weather in the cloud forest", "match": false, "note": "cloud, but not the brain"}
+{"kind": "intent", "intent": "ask_cloud", "query": "ask me before you delete anything", "match": false, "note": "ask, but not a brain"}
+{"kind": "intent", "intent": "ask_cloud", "query": "open claude.ai in chrome", "match": false, "note": "names a site, doesn't ask it"}

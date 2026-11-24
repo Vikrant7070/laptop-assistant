@@ -120,10 +120,21 @@ def test_bank_grows_past_old_limits(words_only):
 
 @pytest.mark.parametrize("text,promise", [
     ("Arey, boss, locking your PC now - safe!", True), ("Okay, I'll do it right away.", True),
-    ("Locking the screen now...", True), ("It is 3 PM right now.", False), ("Your battery is 80% and charging.", False)])
+    ("Locking the screen now...", True), ("It is 3 PM right now.", False), ("Your battery is 80% and charging.", False),
+    # 2026-11-23, local brain, "which 3 folders in my Downloads are biggest": she said this, called nothing, stopped
+    ("Ugh, really? You want the biggest folders in Downloads without moving anything. I’ll check that right now.", True),
+    ("I’ll open Notepad for you.", True), ("Checking your Downloads now!", True), ("Let me look into it.", True),
+    ("I'm scanning the folder right away.", True),
+    ("Let me know if you want me to check anything else.", False), ("Your Downloads folder is 3.2 GB.", False)])
 def test_promise_without_tool_is_caught(text, promise):
     """Seen live: for 'lock my pc' the small model says it's locking, calls no tool, and nothing happens."""
     assert bool(app.PROMISE_RE.search(text)) == promise
+
+
+@pytest.mark.parametrize("text", ["I’ve opened Notepad.", "I've opened Notepad."])
+def test_done_claim_reads_a_curly_apostrophe_too(text):
+    from nova.core.app import conversation
+    assert conversation.DONE_CLAIM_RE.search(text)
 
 
 def test_recall_finds_by_meaning_with_model():

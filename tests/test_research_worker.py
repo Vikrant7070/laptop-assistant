@@ -125,12 +125,13 @@ def test_report_and_finding_past_research_by_day_or_words(monkeypatch, tmp_path)
     report = tmp_path / "r.txt"
     report.write_text("Research: tea\n\nHeadline: green tea is fine.\n\nSources:\n[1] x", encoding="utf-8")
     now = time.time()
-    tue = now - ((time.localtime(now).tm_wday - 1) % 7 or 7) * 86400      # the last Tuesday before today
+    tue = now - 2 * 86400              # two days ago, by its weekday name: never today (2026-11-24, a Tuesday, broke "Tuesday")
+    day_name = time.strftime("%A", time.localtime(tue))
     workers._save_record({"key": "a", "job": 1, "worker": "research", "brief": "green tea", "topic": "green tea",
                           "status": "done", "started": tue, "path": str(report), "sources": ["x"]})
     workers._save_record({"key": "b", "job": 2, "worker": "research", "brief": "coffee", "topic": "coffee",
                           "status": "done", "started": now, "path": "", "result": "Coffee is fine.", "sources": ["y"]})
-    assert "green tea is fine" in tools.research_report("the research from Tuesday")
+    assert "green tea is fine" in tools.research_report(f"the research from {day_name}")
     assert "green tea is fine" in tools.research_report("tea")
     assert "Coffee is fine." in tools.research_report("latest")              # file gone: the record still helps
     other = next(d for i, d in enumerate(workers.DAYS) if i not in (1, time.localtime(now).tm_wday))
