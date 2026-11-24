@@ -1,4 +1,4 @@
-Status: Part A merged 2026-11-23 (PR #63). Part B built 2026-11-23 (`nova/core/app/brains.py`, tests/test_local_first.py).
+Status: Part A merged 2026-11-23 (PR #63). Part B merged 2026-11-24 (PR #68). Free ladder added 2026-11-24 (section C).
 
 # ☁️ Local first, cloud when stuck — and a free-uses meter (plan)
 
@@ -186,3 +186,35 @@ Add a line to `docs/OWNERS.md` when each part starts (not now: both open branche
 1. Are the "stuck" numbers in B3 right, or should she climb sooner / later?
 2. In "local first", should side jobs (B5) never use the cloud, or use it only while there are many uses left?
 3. The "running low" line: 10 % left — OK?
+
+---
+
+## C — the free ladder (added 2026-11-24, user's wish)
+
+Google gives each free model its own limits, so when one runs out the others still have uses left.
+- `config/cloud_free.json` → `google.ladder`: the free models, strongest first. Edit the order freely. With the free
+  limits from the user's AI Studio rate-limit page (2026-11-24, also in the file's `limits`):
+
+  | Rung | Model | Per day | Per minute |
+  |---|---|---|---|
+  | 1 | gemini-4-hydrogen | 20 | 5 |
+  | 2 | gemini-3.8-flash | 20 | 5 |
+  | 3 | gemini-3.6-flash | 20 | 5 |
+  | 4 | gemini-3-flash-preview | 20 | 5 |
+  | 5 | gemini-2.5-flash | 20 | 5 |
+  | 6 | gemini-3.5-flash-lite | 500 | 15 |
+  | 7 | gemini-3.1-flash-lite | 500 | 15 |
+  | 8 | gemini-2.5-flash-lite | 20 | 10 |
+
+  About 1,120 free calls a day in all. Gemma 4 (14,400 a day) is left out: its 16K tokens a minute fits about one
+  Nova request a minute.
+- When the chosen model is on the ladder and the Brain tab's **🪜 Free ladder** switch is on (default), every cloud call
+  goes to the strongest rung with uses left (`usage.route`). A 429 marks that rung out (as before) and `cloud.chat`
+  tries the next rung in the same call. Only when every rung is out does she use the local brain
+  (`usage.unavailable`: "All my free Google models are used up ... until HH:MM"). Other errors (503, no internet) don't
+  move down the ladder.
+- Each rung keeps its own count and learned limits in the meter; the Brain tab numbers them and marks the one in use;
+  the header chip shows that one. `task_log.txt` gets `FREE LADDER ...` lines when another rung answers.
+- Thought signatures: each stored tool call remembers the model that wrote it (`by`); a different rung gets the "skip"
+  signature, so switching models mid-task doesn't break Gemini's signature check.
+- Switch off (or pick a model not on the ladder, e.g. a paid one) to use only the chosen model.

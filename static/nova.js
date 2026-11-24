@@ -370,7 +370,8 @@ function usageLine(r, u) {
   const count = r.left != null ? `${r.left} of ${r.rpd} left today` : `${r.used} used today (daily limit not known yet)`;
   const pct = r.rpd ? Math.max(0, Math.min(100, 100 * (r.left ?? 0) / r.rpd)) : null;
   const colour = r.out_until || pct === 0 ? "#e06c6c" : pct != null && pct < 20 ? "#e0a84c" : "#5fbf7f";
-  return html`<div style="margin:4px 0"><b>${r.model}</b>${KIND_LABEL[r.kind] || ""} — ${count}${r.rpm ? ` · ${r.rpm}/min` : ""} · resets in ${untilText(u.reset_at - u.now)}${out}
+  const rung = r.rung ? html`${r.rung}. ` : "", now = r.current && u.ladder.in_use ? html` <b style="color:#5fbf7f">← in use</b>` : "";
+  return html`<div style="margin:4px 0">${rung}<b>${r.model}</b>${now}${KIND_LABEL[r.kind] || ""} — ${count}${r.rpm ? ` · ${r.rpm}/min` : ""} · resets in ${untilText(u.reset_at - u.now)}${out}
     ${pct != null ? html`<div class="bar" style="margin-top:3px"><i style="width:${pct}%;background:${colour}"></i></div>` : ""}</div>`;
 }
 async function loadUsage(p) {
@@ -379,6 +380,11 @@ async function loadUsage(p) {
     showChip(u);
     if (!p || p === "ollama" || $("#provider").value !== p) return;
     const rows = u.models.filter(r => r.provider === p), mine = rows.find(r => r.model === $("#cloudModel").value);
+    const lad = u.ladder || {}, onLadder = (lad.rungs || []).includes($("#cloudModel").value);
+    $("#ladderRow").hidden = !onLadder; $("#ladderOn").checked = !!lad.on;
+    $("#ladderOn").onchange = async () => {
+      try { await api("/api/cloud/ladder", {on: $("#ladderOn").checked}); loadUsage(p); } catch (e) { $("#keyErr").textContent = e.message; }
+    };
     put($("#cloudUsage"), html`${rows.map(r => usageLine(r, u))}
       ${mine ? html`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">Free limits for ${mine.model}:
         <input id="limRpd" type="number" min="0" placeholder="per day" value="${mine.rpd ?? ""}" style="width:90px">
@@ -394,12 +400,12 @@ async function loadUsage(p) {
   } catch {}
 }
 function showChip(u) {
-  const chip = $("#cloudChip"), r = u && u.active && u.models.find(x => x.chosen);
+  const chip = $("#cloudChip"), r = u && u.active && (u.models.find(x => x.current && u.ladder.in_use) || u.models.find(x => x.chosen));
   chip.hidden = !r;
   if (!r) return;
   chip.textContent = r.out_until ? `☁️ out → local until ${clock(r.out_until)}` : r.left != null ? `☁️ ${r.left} left` : `☁️ ${r.used} used`;
   chip.style.color = r.out_until || r.left === 0 ? "#e06c6c" : r.left != null && r.rpd && r.left < r.rpd * 0.2 ? "#e0a84c" : "";
-  chip.title = `${r.model}: ${r.left != null ? `${r.left} of ${r.rpd} free uses left today` : `${r.used} uses today, daily limit not known yet`}. Resets in ${untilText(u.reset_at - u.now)}. Click for details.`;
+  chip.title = `${u.ladder && u.ladder.in_use ? "Free ladder, in use now: " : ""}${r.model}: ${r.left != null ? `${r.left} of ${r.rpd} free uses left today` : `${r.used} uses today, daily limit not known yet`}. Resets in ${untilText(u.reset_at - u.now)}. Click for details.`;
 }
 $("#cloudChip").onclick = async () => openSetup(await loadStatus());
 function keyPlaceholder(p) {
