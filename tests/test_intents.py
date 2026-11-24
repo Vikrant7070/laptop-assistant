@@ -13,7 +13,8 @@ APP = Path(app.__file__).parent
 # re.compile in nova/core/app that is NOT about the user's words: it reads a model's answer, checks a name or
 # splits sentences. A new user-intent regex goes in nova/intents.py instead of onto this list.
 NOT_USER_INTENT = {
-    ("body", "REACT_RULES"),                           # reactions to both sides of the chat, a table of its own
+    ("body", "REACT_RULES"),
+    ("brains", "CANT"),                                # her own reply ("I can't do that")                           # reactions to both sides of the chat, a table of its own
     ("conversation", "END"), ("conversation", "CLOSED_STAGE"), ("conversation", "OPEN_STAGE"),
     ("conversation", "DONE_CLAIM_RE"), ("conversation", "PROMISE_RE"), ("conversation", "BODY_CLAIM_RE"),
     ("integrations", "SECRETY"),                       # a phone notification's text, not the user

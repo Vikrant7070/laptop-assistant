@@ -81,7 +81,7 @@ def status():
                    autostart=host.STARTUP_LNK.exists(), character=characters.get(s.get("character"))["id"],
                    characters=characters.choices(),
                    voice=s["voice"], wake=s["wake"], wake_phrase=prompts.wake_phrase(), voice_name=voice_io.mouth.voice_name, ears=voice_io.ears.status, heard=voice_io.ears.heard,
-                   vision_model=llm.vision_model(s["model"]), **conversation.ready_info())
+                   vision_model=llm.vision_model(s["model"]), **brains.ready_info())
 
 
 @app.get("/api/mic_level")
@@ -115,6 +115,8 @@ def setup():
         voice_io.apply_character(s["character"])
     if "think" in body:
         s["think"] = bool(body["think"])
+    if body.get("brain_mode") in brains.MODES:
+        s["brain_mode"] = body["brain_mode"]
     if body.get("reasoning") in prompts.REASONING_CHOICES:
         s["reasoning"] = body["reasoning"]
     if "camera" in body:
@@ -166,7 +168,7 @@ def setup():
         integrations.sync_phone_banners()
     if "autostart" in body:
         host.set_autostart(bool(body["autostart"]))
-    return jsonify(ok=True, **conversation.ready_info())
+    return jsonify(ok=True, **brains.ready_info())
 
 
 @app.post("/api/cloud/key")
@@ -238,4 +240,4 @@ def cloud_limits():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import conversation, host, integrations, prompts, voice_io  # noqa: E402
+from nova.core.app import brains, conversation, host, integrations, prompts, voice_io  # noqa: E402

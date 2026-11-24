@@ -1,4 +1,4 @@
-Status: Part A built 2026-11-23 (`nova/brain/usage.py`, tests/test_cloud_usage.py); Part B not started.
+Status: Part A merged 2026-11-23 (PR #63). Part B built 2026-11-23 (`nova/core/app/brains.py`, tests/test_local_first.py).
 
 # ☁️ Local first, cloud when stuck — and a free-uses meter (plan)
 
@@ -101,6 +101,17 @@ easy to add in one place.
 ---
 
 ## Part B — local first, cloud when stuck
+
+### As built (Part B)
+- `brain_mode` = `cloud_first` (default, today's behaviour) | `local_first`. It only matters when a cloud provider with
+  a key is chosen; provider "Local model" stays local only. The Brain tab shows the choice under the cloud model.
+- In `local_first`, `config.brain()` is the local model, so every request and every side job starts local.
+  `brains.climb()` puts one task on the cloud model; the agent loop restarts its turn and repeat counters then.
+- Stuck signs built: asked in the request, `escalate(kind="cloud")`, planner gave no plan, read-back failures
+  (`cloud_after_failed_checks`, 2), the same step 3 times, `cloud_after_turns` (18) turns, the Judge's "not done"
+  after one push, "I can't" on a task that used tools. **Not built:** unreadable tool calls (no clean signal yet).
+- Mail tasks never climb unless "let the cloud read my mail" is on. Free uses used up → stays local, says so once.
+- The "free uses are finished" notice is a 💭 log line (it carries the time they come back), not spoken.
 
 ### B1. A new choice in the Brain tab
 "How should I use the cloud brain?"
