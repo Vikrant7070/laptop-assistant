@@ -223,8 +223,14 @@ class FakeDesktop:
     def memory_commit(self):
         return self.memory
 
+    wall = ""                               # the wallpaper's path; None = can't be read
+
+    def wallpaper(self):
+        return self.wall
+
     def set_wallpaper(self, path):
         self.log.append(("wallpaper", str(path)))
+        self.wall = str(path)
         return True
 
     def set_dark_mode(self, on):

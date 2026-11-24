@@ -385,7 +385,10 @@ def page_text(hwnd, limit=10000):
     except Exception:
         text = ""
     if len(text.strip()) < 80:             # anything else: collect the text pieces the app shows
-        parts, seen, total = [], set(), 0
+        # A short document (Notepad holding "hello exam") keeps its own text first: its control is named "Text
+        # editor", so the walk alone never finds what it holds (task exam 2026-11-24, type-in-notepad).
+        doc_text = re.sub(r"\s+", " ", text).strip()
+        parts, seen, total = ([doc_text] if doc_text else []), {doc_text}, len(doc_text)
         for ctrl, _depth in auto.WalkControl(root, maxDepth=40):
             try:
                 if ctrl.ControlTypeName not in ("TextControl", "HyperlinkControl", "EditControl", "DocumentControl",
