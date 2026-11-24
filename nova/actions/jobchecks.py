@@ -46,24 +46,57 @@ def _check(name, state, why, detail=""):
 
 # ------------------------------------------------------------------ coding: files inside the folder
 
+def _rel(root, folder):
+    """The job's folder relative to the git root: "." for the whole project, or when the two can't be compared
+    (another drive spelling, short names - never call a file "outside" on a guess)."""
+    try:
+        rel = os.path.relpath(os.path.abspath(folder), os.path.abspath(root))
+    except ValueError:
+        return "."
+    return "." if rel in (".", "") or rel.startswith("..") else rel.replace("\\", "/").rstrip("/")
+
+
+def outside(root, folder, files):
+    """The changed files (relative to the git root) that are not inside the job's folder."""
+    rel = _rel(root, folder)
+    if rel == ".":
+        return []
+    return [f for f in files if not str(f).replace("\\", "/").startswith(rel + "/")]
+
+
 def files_inside(root, folder, files):
     """The files the worker changed (relative to the git root) must all be inside the folder the job was given."""
     if not files:
         return _check("files", "skipped", "no files changed")
-    try:
-        rel = os.path.relpath(os.path.abspath(folder), os.path.abspath(root))
-    except ValueError:                       # another drive (a subst / mapped spelling of the same place)
-        rel = "."
-    if rel in (".", "") or rel.startswith(".."):     # git's root spelled differently (short names): can't tell apart
-        rel = "."
-    if rel == ".":
-        return _check("files", "passed", f"{len(files)} changed, all inside the project folder")
-    prefix = rel.replace("\\", "/").rstrip("/") + "/"
-    outside = [f for f in files if not str(f).replace("\\", "/").startswith(prefix)]
-    if outside:
-        return _check("files", "failed", f"changed files outside {rel}: " + ", ".join(outside[:5])
-                      + (f" and {len(outside) - 5} more" if len(outside) > 5 else ""))
-    return _check("files", "passed", f"{len(files)} changed, all inside {rel}")
+    rel, out = _rel(root, folder), outside(root, folder, files)
+    if out:
+        return _check("files", "failed", f"changed files outside {rel}: " + ", ".join(out[:5])
+                      + (f" and {len(out) - 5} more" if len(out) > 5 else ""))
+    return _check("files", "passed", f"{len(files)} changed, all inside " + ("the project folder" if rel == "." else rel))
+
+
+def undo(root, files, keep):
+    """The brief guard: put back the files a worker changed outside its folder. A file git knows is restored from
+    HEAD; a new file is moved (never deleted) to `keep`. -> ["path (put back)" / "path (moved to …)", ...]"""
+    from nova.actions import workers
+    done = []
+    for f in files:
+        try:
+            if workers._git(root, "cat-file", "-e", f"HEAD:{f}")[0] == 0:
+                code, msg = workers._git(root, "restore", "--source=HEAD", "--staged", "--worktree", "--", f)
+                done.append(f"{f} (put back)" if code == 0 else f"{f} (couldn't put it back: {msg.strip()[:80]})")
+                continue
+            workers._git(root, "restore", "--staged", "--", f)          # a new file a slipped commit staged
+            src = Path(root, f)
+            if src.exists():
+                dst = Path(keep, f)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(dst))
+                done.append(f"{f} (moved to {dst})")
+        except Exception as e:
+            log_exception("jobchecks: undoing a change outside the folder", e)
+            done.append(f"{f} (couldn't undo it: {e.__class__.__name__})")
+    return done
 
 
 # ------------------------------------------------------------------ coding: the test command
@@ -222,6 +255,46 @@ def research(job, wanted=3):
         except OSError:
             checks.append(_check("report", "failed", f"the report file is missing ({path})"))
     return checks
+
+
+# ------------------------------------------------------------------ 4c-3: send back once, within limits
+
+SEND_BACKS = 1               # a failed check goes back to the same worker this many times (manager setting)
+JOB_MIN = 60                 # minutes for the whole job, every round together (manager setting)
+DETAIL_KEEP = 1200           # characters of the failing output in the send-back brief
+NL = chr(10)
+
+
+def send_back_brief(brief, checks):
+    """The same brief, plus the exact failing check and the end of its output."""
+    failed = [c for c in checks or [] if c["state"] == "failed"]
+    lines = [f"- {c['name']}: {c['why']}" for c in failed]
+    detail = NL.join(c.get("detail", "")[-DETAIL_KEEP:] for c in failed if c.get("detail")).strip()
+    parts = [str(brief).strip(), "Nova checked your work and this check failed:" + NL + NL.join(lines)]
+    if detail:
+        parts.append("The end of its output:" + NL + detail)
+    parts.append("Fix what makes this check fail, inside this folder. Don't change the tests to make them pass.")
+    return (NL + NL).join(parts)
+
+
+def limit_hit(manager, worker, started, sent_back, conf=None, spent=0.0, now=None):
+    """Why the job may NOT go back to the worker again, or "": rounds, time for the whole job, money (paid workers:
+    one more round at its budget would pass the daily limit)."""
+    manager, conf = manager or {}, conf or {}
+    rounds = int(manager.get("send_backs", SEND_BACKS))
+    if sent_back >= rounds:
+        return (f"rounds: it was already sent back {sent_back} time{'s' if sent_back != 1 else ''}" if rounds
+                else "rounds: sending back is turned off")
+    mins = float(manager.get("job_min") or JOB_MIN)
+    if (now or time.time()) - float(started or 0) > mins * 60:
+        return f"time: the job has used its {mins:g} minutes"
+    if worker == "claude":
+        budget = float((conf.get("claude") or {}).get("budget_usd") or 1.0)
+        daily = float(conf.get("daily_budget_usd") or 0)
+        if spent + budget > daily:
+            return (f"money: Claude Code jobs have cost ${spent:.2f} today; one more round (up to ${budget:.2f}) "
+                    f"would pass the daily limit of ${daily:.2f}")
+    return ""
 
 
 # ------------------------------------------------------------------ the verdict and the words
