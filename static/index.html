@@ -181,7 +181,15 @@
         </div>
         <select id="cloudModel" class="sel"></select>
         <p id="cloudNote" class="mood" style="margin:4px 0 0"></p>
+        <label id="ladderRow" class="mood" style="display:flex;gap:6px;align-items:center;margin:6px 0 0" hidden>
+          <input id="ladderOn" type="checkbox" style="width:auto"> 🪜 Free ladder - use the strongest free model first, then the next one when its free uses run out
+        </label>
         <div id="cloudUsage" class="mood" style="margin:6px 0 0"></div>
+        <p style="margin:10px 0 2px"><b>When should I use the cloud brain?</b></p>
+        <select id="brainMode" class="sel">
+          <option value="local_first">💻→☁️ Local first - my local brain tries first; the cloud helps only when it's stuck (saves free uses)</option>
+          <option value="cloud_first">☁️ Cloud first - the cloud answers everything; my local brain is the backup</option>
+        </select>
       </div>
       <p id="localLabel">Pick an installed Ollama model. Everything stays on your laptop.</p>
       <select id="model" class="sel"></select>

@@ -8,4 +8,5 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 |---|---|---|---|
 | Manager Phase 4: 4-pre, 4a, 4b, 4c-1 merged (PRs #50-#55, #57, #61). 4c-2 worker job checks in progress (`nova/actions/jobchecks.py`, the check calls in `workers.py`, `/tasks` checks); then 4c-3 send-back + limits + brief guard, 4d-4g, each after the user's go | Claude session (manager loop) | `claude/manager-4c-2` | 2026-11-23 |
 | Improvement roadmap Phase 1: R10 voice state machine (`nova/core/app/voice_machine.py`, the shadow calls in `voice_io.py`); R14, R15, R11, R13, R12 merged | Claude session (roadmap structure) | `feat/r10-voice-state` | 2026-11-22 |
+| Free ladder (strongest free Gemini first, next one when its limit is used up): `nova/brain/usage.py`, `nova/brain/cloud.py`, `config/cloud_free.json`, Brain tab switch. Local first (Part B) merged PR #68 | Claude session (free AI / cloud meter) | `feat/free-model-ladder` | 2026-11-24 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |
