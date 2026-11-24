@@ -131,7 +131,7 @@ def _research(monkeypatch, tmp_path, writes):
 
 
 ONE = "Headline: Green tea is good.\n\n1. Antioxidants [1]\n2. Caffeine [1]"
-TWO = "Headline: Green tea is good.\n\n1. Antioxidants [1]\n2. Caffeine [2]"
+TWO = "Headline: Green tea is good.\n\n1. Antioxidants [1][2]\n2. Caffeine [1][2]\n\nDisagreements: none found"
 
 
 def test_a_research_job_citing_one_source_is_sent_back_once_then_reported(monkeypatch, tmp_path):
@@ -140,6 +140,7 @@ def test_a_research_job_citing_one_source_is_sent_back_once_then_reported(monkey
     rec, prompts = _research(monkeypatch, tmp_path, [ONE])
     assert len(prompts) == 2                                                     # sent back once, not again
     assert "this check failed: sources: 1 source cited (need 2)" in prompts[1] and "cite at least 2" in prompts[1]
+    assert "independent: every cited source is from s0.com" in prompts[1]        # Phase 5's judge feeds it too
     assert rec["sent_back"] == 1 and rec["status"] == "done" and rec["verdict"] == "failed"
     assert "sent it back once to read more pages and it still fails" in rec["result"]
     assert any("sending the research back once" in n for n in notes)

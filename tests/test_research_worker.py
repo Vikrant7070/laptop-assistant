@@ -32,7 +32,8 @@ def _fake_web(monkeypatch, tmp_path, pages=5):
 
 
 POINTS = "\n\n1. Green tea has antioxidants [1]\n2. Too much caffeine is bad [1]"
-TWO = "\n\n1. Green tea has antioxidants [1]\n2. Too much caffeine is bad [2]"    # 2 sources cited: no send-back
+TWO = ("\n\n1. Green tea has antioxidants [1][2]\n2. Too much caffeine is bad [1][2]\n\n"
+       "Disagreements: none found")                  # passes every check (Phase 5's judge too): no send-back
 
 
 def _hooks(monkeypatch, done, cloud=None, local=None):
@@ -75,8 +76,10 @@ def test_a_failed_research_is_recorded_as_failed(monkeypatch, tmp_path):
 def test_settings_pick_how_many_pages_and_which_brain(monkeypatch, tmp_path):
     opened = _fake_web(monkeypatch, tmp_path)
     done, used = [], []
-    _hooks(monkeypatch, done, cloud=lambda p, n: used.append("cloud") or "Headline: A." + TWO,
-           local=lambda p, n: used.append("local") or "Headline: A." + TWO)
+    def report(p):                                   # cites only the sources it was given
+        return "Headline: A." + (TWO if "[2]" in p else POINTS)
+    _hooks(monkeypatch, done, cloud=lambda p, n: used.append("cloud") or report(p),
+           local=lambda p, n: used.append("local") or report(p))
     out = workers.save_settings({"research_max_sources": 2, "research_cloud_report": False})
     assert out["config"]["research"] == {"max_sources": 2, "cloud_report": False}
     tools.research_in_background("tea")
