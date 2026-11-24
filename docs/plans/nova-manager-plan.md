@@ -1022,6 +1022,66 @@ outside orders.** `nova/actions/risk.py` (the table and the rules), `session.is_
 - **Done when:** the second run of an app task has that app's notes in its plan; a correction shows up as a lesson
   on the daily list.
 
+**4f as built (2026-11-24, branch `claude/manager-4f-c45edf`): one record, app notes, app paths, lessons.**
+`nova/db.py` (migration 3), `nova/actions/appnotes.py`, `nova/actions/lessons.py`, `learner.py`, `learning.py`.
+- One record per task: the Learner's episode (steps, verdict, checks, brain, time, jobs it started, app, what got in
+  the way) now lives **on its task card's row** (`tasks.data.episode`), not in a table of its own. Migration 3 moves
+  the old episodes table's rows there and leaves that table empty; an episode with no saved card gets a stub row
+  that `/tasks` doesn't list. `save_task` keeps the row's episode when the card saved has none (the card in memory
+  never carries it). `learner.load()` / `record()` work as before, over the same rows.
+  - The card also keeps what the user chose on question cards during the task (`choices`: question → answer, or
+    "skipped - her guess").
+  - Worker jobs keep their one record in the jobs table (brief, worker, rounds/`sent_back`, checks, committed, cost),
+    as since 4b-4c.
+  - `/tasks` → a laptop task's detail reads the same row: "You chose: …", "Read before it started: <app notes>", and
+    "Record: app (in the way: …) · workers: <the jobs it started, read now> · N rounds · cost $x · the Learner
+    counted it as worked".
+- App notes (`appnotes.py`) are **read from those records**, not kept anywhere else: per app, its newest 8 runs -
+  which controls worked (`press_keys ctrl+s`, `click_text "Save as"`; typed text is never shown), which didn't,
+  what got in the way (sign-in wall / cookie banner / slow load, found in the steps' results when the episode is
+  made), how long it took on average, how many worked.
+  - The app is the one the request named, else the first app the task opened.
+  - An app task's card gets the line when it starts (`task_state.attach`) or when a step opens the app
+    (`task_state.start`): "APP NOTES (notepad, 2 earlier runs, 2 worked, about 25 s) Worked: press_keys ctrl+s …".
+    The brain sees it under the plan on every step, and the deep brain's planner gets it with the goal
+    (`task_state.plan_goal`).
+  - Done when: `test_the_second_run_of_an_app_task_has_that_apps_notes_in_its_plan`.
+- App path → skill: an app task is offered as a skill only once **the same path in that app** (the same tools in the
+  same order) has worked twice (`APP_TIMES`): "“…” has worked 2 times the same way in notepad. Shall I save it as a
+  skill …?" on the daily list. Tasks with no app keep the old rule (offered the first time it worked); the slot
+  ("search for tea / coffee") offer is unchanged and still wins.
+- Lessons from corrections (`lessons.py`, pure code), read from the user's next request and the task before it
+  (within 30 min):
+  - "don't X" / "never X" / "stop doing X" → "Don't X." ("don't worry", "never mind", "don't forget …" are not);
+  - "no, the other folder", "wrong window", "that's not what I asked" (the CORRECTION words) → "<what she did last>
+    was wrong - the user said “…”." (when: the last request);
+  - Stop, then the same request in other words (half the words shared) → "The user stopped me at “…” and asked again
+    as “…” - do it that way."
+  - Each goes on the daily list as "Shall I keep this lesson? … (When: …)" (kind `lesson`). It is **not** in her knowledge
+    bank until the user ticks it: a yes to the daily question, or the new ✓ on the Knowledge page (`question_yes`).
+    Then it is saved as a lesson with source "user" and read before answering like any other.
+  - The review brain that runs after a correction no longer saves its lessons straight away either: its better
+    wording replaces the code's question (one question per correction), still waiting for the tick. Its lessons for
+    "Nova could not finish" are saved as before.
+  - Done when: `test_a_correction_shows_up_as_a_lesson_on_the_daily_list`.
+- Live check (2026-11-24) on a separate copy (port 5099, throwaway data seeded with two Notepad runs that worked -
+  one hit a cookie banner, one with a folder answer - and a "no, the other folder" correction), no brain calls:
+  - a third Notepad card got "APP NOTES (notepad, 2 earlier runs, 2 worked …) … Got in the way: cookie banner (2x)";
+  - the Learner queued "… has worked 2 times the same way in notepad. Shall I save it as a skill …";
+  - `/tasks` showed the second run's "You chose: Where should I save it? → Documents", "Read before it started:
+    APP NOTES …" and "Record: app: notepad (in the way: cookie banner) · the Learner counted it as worked";
+  - the Knowledge page listed the lesson with ✓ / ×; ✓ put it in the lessons (source "user") and took it off the
+    list. No console or server errors.
+- Not built (said plainly):
+  - Notes attribute every step of a task to its one app: a task that used two apps puts both apps' steps under the
+    first. "Slow load" is found from words in results, not from timing (step times include the brain's thinking).
+  - The planner and the card get the notes; there is no separate "app worker" yet that reads them (the brain is the
+    app worker today).
+  - A worker job's notes per job type are still 4b's (`manager.choose` reads the job records); nothing new there.
+  - Lessons don't yet look at what the user did after a Stop with their own hands (the recorder is off by default).
+  - Changes the planner's prompt (the goal now carries the app notes): a task exam before/after is owed (the user
+    starts it).
+
 **4g — Scheduled and repeating jobs**
 - "Every morning at 9 check my Gmail and tell me what's important", "every Sunday copy Documents to D:" → a schedule
   record (`data/schedules.json` through `store.py`), shown on `/tasks` with the next run, Pause and Delete.

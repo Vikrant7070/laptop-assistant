@@ -17,6 +17,10 @@ Plans come from a skill's own steps or the deep brain's plan text; a step that n
 dropped. `render(card)` stays under MAX_CHARS (~250 tokens): the oldest results go first.
 
 The card is plain JSON (a `version` field for later upgrades), so step (b) can save it and the /tasks page show it.
+
+4f: an app task's card carries that app's notes (`app_notes`, nova/actions/appnotes.py) from the start - or from the
+step that opens the app - and the brain sees them under the plan; `plan_goal` gives them to the deep brain's planner.
+What the user chose on question cards during the task is kept too (`choices`, `note_choice`).
 """
 import json
 import re
@@ -69,7 +73,48 @@ def attach(task, steps=(), source="none"):
     """Give a task dict its card (replacing any old one). -> the card."""
     task["card"] = new(task.get("goal", ""), steps, source, task.get("id"))
     task["card"]["app"] = clean(task.get("app") or "", 60)
+    set_app_notes(task["card"], task["card"]["app"])
     return task["card"]
+
+
+# ------------------------------------------------------------------ app notes and the user's choices (4f)
+
+def set_app_notes(card, app):
+    """Put what Nova learned about `app` on the card (once per task; nothing when she has no notes yet)."""
+    if card is None or not app or card.get("app_notes"):
+        return
+    from nova.actions import appnotes
+    line = appnotes.line(app)
+    if line:
+        card["app_notes"], card["notes_app"] = clean(line, appnotes.LINE_CHARS), clean(app, 40).lower()
+
+
+def plan_goal(task):
+    """The goal as the deep brain's planner gets it: with the app's notes when the card has them."""
+    card = of(task)
+    notes = (card or {}).get("app_notes") or ""
+    goal = (task or {}).get("goal") or ""
+    return f"{goal}\n(What happened last time in this app - {notes})" if notes else goal
+
+
+MAX_CHOICES = 10
+
+
+def note_choice(card, qcard, answers):
+    """The user answered a question card during this task: keep what they chose (question -> answer), cleaned."""
+    if card is None or not isinstance(answers, dict):
+        return
+    for q in (qcard or {}).get("questions") or []:
+        a = answers.get(q.get("key"))
+        if a is None:
+            continue
+        how = a.get("how", "") if isinstance(a, dict) else ""
+        v = a.get("value") if isinstance(a, dict) else a
+        v = ", ".join(map(str, v)) if isinstance(v, (list, tuple)) else str(v if v is not None else "")
+        card.setdefault("choices", []).append({"q": clean(q.get("text"), 120), "a": clean(v, 80) or "(no answer)",
+                                               "how": clean(how, 20), "t": time.time()})
+    card["choices"] = card.get("choices", [])[-MAX_CHOICES:]
+    _touch(card)
 
 
 # ------------------------------------------------------------------ saved cards (step b)
@@ -225,6 +270,8 @@ def start(card, call):
         if isinstance(args, dict) else ""
     run = {"tool": tool, "hint": clean(hint, 40), "state": "started", "result": "", "t": time.time(), "step": None}
     run["step"] = _step_for(card, tool)
+    if tool == "open_app" and isinstance(args, dict):        # an app task whose request didn't name the app
+        set_app_notes(card, str(args.get("name") or "").strip())
     _add(card, run)
     card["open"].append(run["id"])
     if run["step"] is not None:
@@ -328,7 +375,8 @@ def strip(card, runs=6):
             "runs": [{"tool": r["tool"], "hint": r["hint"], "state": r["state"], "result": r["result"],
                       "check": r.get("check")} for r in card["runs"][-runs:]],
             "left": left(card), "not_checked": not_checked(card) and card["status"] == "done",
-            "read_only": bool(card.get("read_only")),
+            "read_only": bool(card.get("read_only")), "app_notes": card.get("app_notes") or "",
+            "choices": [{"q": c["q"], "a": c["a"], "how": c.get("how", "")} for c in card.get("choices") or []],
             "known": [{"key": k["key"], "value": k["value"], "how": k["how"]} for k in card.get("known") or []][-10:],
             "asks": [{"text": a["text"], "state": a["state"]} for a in card.get("asks") or []
                      if a["state"] in ("open", "asked")]}
@@ -388,6 +436,8 @@ def render(card, limit=MAX_CHARS):
     if card["plan"]:
         steps = "  ".join(f"{i + 1} {st['text']} {ICONS[st['state']]}" for i, st in enumerate(card["plan"]))
         head.append(f"PLAN ({card['source']}): {steps}")
+    if card.get("app_notes"):
+        head.append(card["app_notes"])
     unconfirmed = [r for r in card["runs"] if r["state"] == "started" and r["id"] not in card["open"]]
     failed = [r for r in card["runs"] if r["state"] == "failed"][-2:]
     tail = []

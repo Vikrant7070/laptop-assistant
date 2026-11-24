@@ -28,7 +28,7 @@ async function load() {
     </div>`) : html`<div class="empty">Nothing yet. She learns these when a background research job finishes.</div>`);
   put($("questions"), k.questions.length ? k.questions.map(q => html`<div class="lesson">
       <div class="what">${q.urgent && html`<span class="tag mistake">urgent</span>`}${q.text}</div>
-      <button class="del" title="Don't ask this" aria-label="Don't ask this question" data-q="${+q.id}">×</button>
+      <span>${(q.kind === "lesson" || q.kind === "save_skill") && html`<button class="ok" title="${q.kind === "lesson" ? "Keep this lesson - she uses it from now on" : "Yes, save it"}" aria-label="Yes" data-q-yes="${+q.id}">✓</button>`}<button class="del" title="Don't ask this" aria-label="Don't ask this question" data-q="${+q.id}">×</button></span>
       <div class="meta">Why: ${q.why}${q.asked ? ` · asked ${q.asked} time${q.asked > 1 ? "s" : ""}` : " · not asked yet"}</div>
     </div>`) : html`<div class="empty">No questions right now.</div>`);
   $("where").textContent = "Saved in this file on your laptop: " + k.file + " (learned sites: " + k.facts_file + ", questions: " + k.questions_file + "). When Nova thinks with a cloud brain (Gemini, ChatGPT or Claude), a short summary of this page is sent along with each message so she can use it; with the local brain nothing leaves the laptop.";
@@ -39,6 +39,7 @@ document.addEventListener("click", e => {
   else if (b.dataset.id) send({do: "lesson_delete", id: +b.dataset.id});
   else if (b.dataset.fact) send({do: "fact_delete", id: +b.dataset.fact});
   else if (b.dataset.factOk) send({do: "fact_confirm", id: +b.dataset.factOk});
+  else if (b.dataset.qYes) send({do: "question_yes", id: +b.dataset.qYes});
   else if (b.dataset.q) send({do: "question_drop", id: +b.dataset.q});
 });
 document.addEventListener("submit", e => {
