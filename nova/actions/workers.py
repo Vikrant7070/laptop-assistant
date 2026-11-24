@@ -447,10 +447,12 @@ def run_once(worker, brief, folder, model, conf, job=None, checkpoint=None, log=
     env = {**_guard_env(), **extra, "PWD": os.path.normpath(str(folder))}
     proc = _spawn(args, folder, env)
     lines, end = [], time.time() + 60 * float(conf[worker].get("timeout_min") or 20)
+    quiet = jobrounds.Quiet(folder)                 # 4d: no output and no file change for a while -> "maybe stuck"
 
     def read():
         for line in proc.stdout:
             lines.append(line)
+            quiet.heard()
             if log:
                 log.write(line)
             if job is not None and worker == "opencode" and line.lstrip().startswith("{"):
@@ -466,6 +468,8 @@ def run_once(worker, brief, folder, model, conf, job=None, checkpoint=None, log=
         while proc.poll() is None:
             if checkpoint:
                 checkpoint()
+            if job is not None:
+                quiet.check(job)
             if time.time() > end:
                 _kill(proc)
                 raise RuntimeError(f"{NAMES[worker]} took longer than {conf[worker].get('timeout_min')} minutes, "
@@ -476,6 +480,8 @@ def run_once(worker, brief, folder, model, conf, job=None, checkpoint=None, log=
             _kill(proc)
         raise
     reader.join(5)
+    if job is not None:
+        job.pop("maybe_stuck", None)
     out = parse_opencode(lines) if worker == "opencode" else parse_claude(lines)
     out["lines"] = lines
     out["exit"] = proc.returncode

@@ -60,13 +60,13 @@ def test_unknown_tool_with_no_words_is_left_as_text(ollama):
 from nova.core import app  # noqa: E402
 
 
-def test_same_call_over_and_over_gets_a_nudge_then_stops(brain):
+def test_same_call_over_and_over_gets_a_nudge_then_stops_and_asks(brain):
     fake, ran = brain([("", [("get_datetime", {})])] * 30)
     out, _ = app.answer("help me with my week")
     assert len(ran) == app.REPEAT_LIMIT                       # run 3 times, the 4th is refused
-    notes = [m["content"] for m in app.state["messages"] if m["role"] == "user" and "called get_datetime" in m["content"]]
+    notes = [m["content"] for m in app.state["messages"] if m["role"] == "user" and "same step (get_datetime)" in m["content"]]
     assert len(notes) == 1
-    assert "repeating the same step" in out["reply"]
+    assert "Stuck at" in out["reply"] and out["question"]["questions"][0]["key"] == "stuck"     # 4d: it asks
 
 
 def test_nudge_works_when_she_then_answers(brain):
@@ -112,7 +112,7 @@ def test_same_result_with_a_different_step_note_is_still_a_loop(brain, monkeypat
         app.state.update(last_outs=[f"Python 3.12.10\n[check after step {next(n)}] Windows now: none."]),
         [app.llm.tool_result_message(model, calls[0], app.state["last_outs"][0])])[2])
     out, _ = app.answer("help me with my week")
-    assert len(ran) == app.REPEAT_LIMIT and "repeating the same step" in out["reply"]
+    assert len(ran) == app.REPEAT_LIMIT and "Stuck at" in out["reply"]
 
 
 def test_call_in_a_json_block_after_some_words_becomes_a_real_call(ollama):

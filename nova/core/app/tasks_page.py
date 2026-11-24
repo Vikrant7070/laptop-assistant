@@ -75,7 +75,17 @@ def job_row(rec):
             "sources": len(rec.get("sources") or []), "cost": rec.get("cost") or 0,
             "secs": round(float(finished) - started, 1) if finished else None,
             "verdict": JOB_VERDICT.get(rec.get("verdict") or ""), "not_checked": rec.get("verdict") == "not checked",
-            "can_continue": False, "type": rec.get("job_type") or "", "chain": rec.get("chain_step") or ""}
+            "can_continue": False, "type": rec.get("job_type") or "", "chain": rec.get("chain_step") or "",
+            "maybe_stuck": _maybe_stuck(rec)}
+
+
+def _maybe_stuck(rec):
+    """4d: a running worker that has gone quiet (jobrounds.Quiet marks the live job)."""
+    if rec.get("status") not in ("running", "checking"):
+        return ""
+    from nova.actions import coworker
+    job = coworker.find(str(rec.get("job") or ""))
+    return _clean(job.get("maybe_stuck"), 120) if job and job.get("status") == "working" else ""
 
 
 def rows(status=None, kind=None, limit=LIMIT):
@@ -123,6 +133,8 @@ def detail(rid):
                         {"do": "chat", "label": "Commit…", "say": f"commit coding job #{n}"}]
         if worker == "research" and status == "done":
             actions.append({"do": "report", "label": "Report"})
+        if status in ("running", "checking", "queued"):
+            actions.append({"do": "chat", "label": "■ Stop…", "say": f"stop job #{n}"})
         if jobrounds.can_continue(rec):
             actions.append({"do": "chat", "label": "▶ Continue…", "say": f"try job #{n} again"})
         elif status in ("failed", "stopped", "needs-user"):

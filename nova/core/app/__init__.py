@@ -8,9 +8,9 @@ every access. Patch or assign a name in its home module (`app.config.settings`),
 tests/test_app_package.py checks that.
 """
 # Import order: each module finds what it needs at import time already there.
-from nova.core.app import eventbus, config, prompts, session, conversation, brains, skillrun, judging, body, api, voice_io, learning, host, integrations, background, resume, tasks_page, asking, managing  # noqa: F401
+from nova.core.app import eventbus, config, prompts, session, conversation, brains, skillrun, judging, body, api, voice_io, learning, host, integrations, background, resume, tasks_page, asking, managing, watching  # noqa: F401
 
-_MODULES = {m.__name__.rsplit(".", 1)[1]: m for m in (eventbus, config, prompts, session, conversation, brains, skillrun, judging, learning, api, host, voice_io, body, integrations, background, resume, tasks_page, asking, managing)}
+_MODULES = {m.__name__.rsplit(".", 1)[1]: m for m in (eventbus, config, prompts, session, conversation, brains, skillrun, judging, learning, api, host, voice_io, body, integrations, background, resume, tasks_page, asking, managing, watching)}
 _HOME = {name: _MODULES[mod] for mod, names in {
     'eventbus': ['Bus', 'BusyLock', 'HEARTBEAT', 'KEEP', 'MAX_QUEUE', 'bus', 'publish'],
     'config': ['ASSISTANT_NAME', 'CLOUD_HISTORY_MAX', 'DEFAULT_MODEL', 'MAX_EVENTS', 'MAX_HISTORY', 'MAX_STORED', 'PORT', 'PROMPT_TOKENS', 'ROOT', '_unspoken', 'brain', 'save_settings', 'settings'],

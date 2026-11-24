@@ -27,6 +27,7 @@ function meta(r) {
           r.files ? n(r.files, "file") + " changed" : "", r.sources ? n(r.sources, "source") : "",
           r.cost ? `$${(+r.cost).toFixed(2)}` : "", took(r.secs),
           r.verdict === true ? "✓ checks passed" : r.verdict === false ? "✗ a check failed" : r.not_checked ? "done, not checked" : "",
+          r.maybe_stuck ? `⚠ maybe stuck: ${r.maybe_stuck}` : "",
           r.why && r.status !== "running" ? `why: ${r.why}` : ""].filter(Boolean).join(" · ");
 }
 function row(r) {

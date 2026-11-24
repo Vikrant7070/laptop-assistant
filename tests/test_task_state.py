@@ -161,11 +161,12 @@ def test_an_error_result_is_a_failed_step(brain, trusted):
     assert app.state["task"]["card"]["runs"][0]["state"] == "failed"
 
 
-def test_the_same_call_again_and_again_marks_the_card_stuck(brain, trusted):
+def test_the_same_call_again_and_again_stops_and_asks(brain, trusted):
     brain([("", [("scroll_page_info", {"x": 1})])] * 6)
-    app.answer("find the setting")
+    out, _ = app.answer("find the setting")
     card = app.state["task"]["card"]
-    assert card["status"] == "stuck" and "scroll_page_info" in card["why"]
+    # 4d: stuck -> the question card; the task waits for the answer ("Stuck at …")
+    assert card["status"] == "waiting" and "Stuck at" in card["why"] and "scroll_page_info" in out["reply"]
 
 
 def test_waiting_for_an_approval_shows_on_the_card(brain):
