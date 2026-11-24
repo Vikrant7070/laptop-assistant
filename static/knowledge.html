@@ -35,6 +35,8 @@
   .lesson .meta{color:var(--muted);font-size:12.5px;grid-column:1/-1;overflow-wrap:anywhere}
   .tag{display:inline-block;border-radius:6px;padding:0 7px;font-size:12px;margin-right:6px;border:1px solid var(--line)}
   .tag.mistake{color:var(--warn)} .tag.improvement{color:var(--accent2)} .tag.preference{color:#ffd25e}
+  .src{padding:10px 0;border-bottom:1px solid var(--line)} .src:last-child{border-bottom:0}
+  .src .head{display:flex;gap:10px;align-items:center;flex-wrap:wrap} .src .head b{flex:1}
   .empty{color:var(--muted);padding:8px 0}
   form.newlesson{display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;margin-top:10px}
   #msg{color:var(--accent2);min-height:1.4em;margin-top:8px}
@@ -70,6 +72,16 @@
   <p class="lead">Noticed by herself after background research: which sites ended up in the report, and which she opened and didn't use. Next time she researches the same topic she reads the good ones first. Marked "unconfirmed" until you say it's right.</p>
   <div class="card" id="facts"></div>
 
+  <h2 id="about-me">What Nova knows about me (from this laptop)</h2>
+  <p class="lead">Off until you switch a source on. When the laptop is quiet she reads what is already there, sums it up on this laptop with plain code (no AI, nothing sent anywhere), and drops anything that looks like a password, code, key, card or ID number first. Raw copies are deleted straight after reading. What she works out shows here as "unconfirmed" until you tick it.</p>
+  <div class="card" id="laptop"></div>
+  <div class="card">
+    <div class="what">Never read</div>
+    <div class="meta" style="color:var(--muted);font-size:12.5px">Sites (example.com) and folders or project names (C:\Work\Private, Earn Money) she skips in every source.</div>
+    <div class="chips" id="never"></div>
+    <form class="add" id="neveradd" style="margin-top:8px"><input name="value" placeholder="Add a site or folder…" aria-label="Add a site or folder to the never list"><button>Add</button></form>
+  </div>
+
   <h2>Questions waiting for you</h2>
   <p class="lead">Things she wants to ask while she learns (like "save that as a skill?"). She asks them once a day, one at a time, when you're talking to her at the laptop.</p>
   <div class="card" id="questions"></div>
@@ -77,5 +89,6 @@
 </div>
 <script src="/static/markup.js"></script>
 <script src="/static/knowledge.js"></script>
+<script src="/static/history.js"></script>
 </body>
 </html>
