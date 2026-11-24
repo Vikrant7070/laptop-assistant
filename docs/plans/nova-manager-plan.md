@@ -1130,7 +1130,7 @@ A failed check's `why` is the sentence Nova quotes back, so 4c-3's send-back bri
   - **a prompt change: run the task exam (`python -m nova.exam`, the user starts it) before/after merging.** Research
   jobs still aren't sent back (4c-3); a failed research judge is reported in the result line.
 - Settings: `workers.json` → `judges` (`page_secs` 40, `start_secs` 60, `lint_secs` 180, `build_secs` 300, `width` 375,
-  `lighthouse_min` 80, `lighthouse_secs` 120, `backed_share` 0.5), each clamped to a range by `judges.settings`; a
+  `lighthouse_min` 80, `lighthouse_secs` 120, `backed_share` 0.5), each clamped to a range by `judges.limits`; a
   ⚙ Workers save keeps them. ⚙ Workers shows "Time to open a page" and "Lowest Lighthouse score".
 - Live check (2026-11-24, real Chrome, fixture pages, outside Nova): a page with a 520 px div → "mobile layout overflows
   at 375 px (the page is 528 px wide; div.hero sticks out)", console "boom; failed to load missing.png", links

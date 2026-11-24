@@ -233,9 +233,9 @@ def test_build_passes_fails_or_is_skipped(tmp_path, monkeypatch):
 
 
 def test_settings_are_clamped_and_saved_from_the_workers_page(tmp_path, monkeypatch):
-    s = judges.settings({"judges": {"page_secs": 9999, "lighthouse_min": -5, "backed_share": "x", "width": 375.4}})
+    s = judges.limits({"judges": {"page_secs": 9999, "lighthouse_min": -5, "backed_share": "x", "width": 375.4}})
     assert s["page_secs"] == 180 and s["lighthouse_min"] == 0 and s["backed_share"] == 0.5 and s["width"] == 375
-    assert judges.settings({}) == judges.DEFAULTS
+    assert judges.limits({}) == judges.DEFAULTS
     workers.save_settings({"judges_page_secs": "5", "judges_lighthouse_min": "90"})
     assert workers.config()["judges"]["page_secs"] == 10 and workers.config()["judges"]["lighthouse_min"] == 90
     workers.save_settings({"research_max_sources": 2})              # another save keeps the judges' settings

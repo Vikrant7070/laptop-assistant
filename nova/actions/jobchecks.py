@@ -240,7 +240,7 @@ def judged(root, folder, env=None, checkpoint=None, kind=""):
     from nova.actions import judges, sitejudge
     out, built = [], ""
     try:
-        conf = judges.settings()
+        conf = judges.limits()
         cwd = judges.project(root, folder, judges._sets_up_code)
         out, built = judges.code(cwd, env, checkpoint, conf)
         site = judges.project(root, folder, sitejudge.looks_like_site)

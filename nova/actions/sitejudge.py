@@ -426,7 +426,7 @@ def measure(srv, exe, conf, env=None, checkpoint=None, base=None):
 
 def site(folder, kind="", env=None, checkpoint=None, conf=None, built=""):
     """The website judge. Never raises except Stop (a crash -> every check skipped, with why)."""
-    conf = conf or judges.settings()
+    conf = conf or judges.limits()
     exe = browser()
     if not exe:
         return _all("skipped", "no headless browser (Chrome or Edge) on this laptop")

@@ -1,6 +1,6 @@
 """Judges for workers' results (manager plan Phase 5): measured quality, not the worker's word.
 
-    settings(conf)                 workers.json -> "judges", every number clamped to its range
+    limits(conf)                   workers.json -> "judges", every number clamped to its range
     save(current, body)            ⚙ Workers: the judges' fields of a save, clamped
     code(cwd, env, checkpoint)  -> ([lint, build?], built folder or "")   lint/build clean when the project sets them up
     research(job, text)         -> [citations, independent, backed, disagreements]   from the saved report
@@ -36,7 +36,7 @@ def _clamp(key, value):
     return v if isinstance(DEFAULTS[key], float) else int(round(v))
 
 
-def settings(conf=None):
+def limits(conf=None):
     """The judges' settings: workers.json -> "judges", missing or silly values back to the default, all in range."""
     if conf is None:
         from nova.actions import workers
@@ -48,7 +48,7 @@ def settings(conf=None):
 
 def save(current, body):
     """The judges' part of a ⚙ Workers save: the shown fields from the body, clamped; the rest kept."""
-    out = settings({"judges": current or {}})
+    out = limits({"judges": current or {}})
     for field, key in SAVED.items():
         if field in (body or {}):
             try:
@@ -157,7 +157,7 @@ BUILT = ("dist", "build", "out")
 def code(cwd, env=None, checkpoint=None, conf=None):
     """Lint (when set up) and, for a package.json project, its build. -> (checks, the built folder with an
     index.html, or "")."""
-    s = conf or settings()
+    s = conf or limits()
     checks, built = [], ""
     argv, why = lint_command(cwd)
     checks.append(run("lint", cwd, argv, env, checkpoint, s["lint_secs"]) if argv else _check("lint", "skipped", why))
@@ -228,7 +228,7 @@ def _short(s, n=60):
 def research(job, text=None, conf=None):
     """The research judge over the saved report: every finding cites a real source; the cited sources come from 2+
     different sites; enough findings are backed by 2+ different sites; disagreements are listed (or "none")."""
-    s = conf or settings()
+    s = conf or limits()
     if text is None:
         text = _read(job.get("path") or "")
     if not text.strip():
