@@ -134,6 +134,7 @@ def start_background():
     runtime.spawn("background.sync_phone_banners", integrations.sync_phone_banners)
     runtime.spawn("background.pulse_watch", pulse_watch)
     runtime.spawn("background.resume_offer", resume.offer_after_start)    # chat back + "should I continue?"
+    suggesting.start()                                      # Phase 8: "open your morning setup?" at the right moment
 
 
 @api.app.get("/ear")
@@ -411,4 +412,4 @@ def pulse_now():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, config, conversation, integrations, learning, prompts, resume, session, voice_io  # noqa: E402
+from nova.core.app import body, config, conversation, integrations, learning, prompts, resume, session, suggesting, voice_io  # noqa: E402
