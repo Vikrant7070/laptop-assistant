@@ -192,8 +192,22 @@ Add a line to `docs/OWNERS.md` when each part starts (not now: both open branche
 ## C — the free ladder (added 2026-11-24, user's wish)
 
 Google gives each free model its own limits, so when one runs out the others still have uses left.
-- `config/cloud_free.json` → `google.ladder`: the free models, strongest first (`gemini-4-hydrogen`, `gemini-3.8-flash`,
-  `gemini-3.6-flash`, `gemini-3.5-flash-lite`). Edit the order freely.
+- `config/cloud_free.json` → `google.ladder`: the free models, strongest first. Edit the order freely. With the free
+  limits from the user's AI Studio rate-limit page (2026-11-24, also in the file's `limits`):
+
+  | Rung | Model | Per day | Per minute |
+  |---|---|---|---|
+  | 1 | gemini-4-hydrogen | 20 | 5 |
+  | 2 | gemini-3.8-flash | 20 | 5 |
+  | 3 | gemini-3.6-flash | 20 | 5 |
+  | 4 | gemini-3-flash-preview | 20 | 5 |
+  | 5 | gemini-2.5-flash | 20 | 5 |
+  | 6 | gemini-3.5-flash-lite | 500 | 15 |
+  | 7 | gemini-3.1-flash-lite | 500 | 15 |
+  | 8 | gemini-2.5-flash-lite | 20 | 10 |
+
+  About 1,120 free calls a day in all. Gemma 4 (14,400 a day) is left out: its 16K tokens a minute fits about one
+  Nova request a minute.
 - When the chosen model is on the ladder and the Brain tab's **🪜 Free ladder** switch is on (default), every cloud call
   goes to the strongest rung with uses left (`usage.route`). A 429 marks that rung out (as before) and `cloud.chat`
   tries the next rung in the same call. Only when every rung is out does she use the local brain

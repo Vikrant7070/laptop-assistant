@@ -4,7 +4,8 @@ import pytest
 from nova import store
 from nova.brain import cloud, usage
 
-LADDER = ["gemini-4-hydrogen", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"]
+LADDER = ["gemini-4-hydrogen", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash",
+          "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"]
 DAILY_429 = "Quota exceeded for metric: free_tier_requests per day, limit: 250. Please retry in 33s."
 HI = [{"role": "user", "content": "hi"}]
 
@@ -105,8 +106,9 @@ def test_a_thought_signature_goes_back_only_to_the_model_that_wrote_it(monkeypat
 def test_the_meter_lists_the_rungs_and_which_one_is_in_use():
     usage.hit_limit("google", "gemini-4-hydrogen", DAILY_429)
     snap = usage.snapshot("google", "gemini-3.8-flash")
-    assert [r["model"] for r in snap["models"]][:4] == LADDER
-    assert [r["rung"] for r in snap["models"][:4]] == [1, 2, 3, 4]
+    assert [r["model"] for r in snap["models"]][:len(LADDER)] == LADDER
+    assert [r["rung"] for r in snap["models"][:len(LADDER)]] == list(range(1, len(LADDER) + 1))
+    assert snap["models"][1]["left"] == 20               # config/cloud_free.json's limit (hydrogen learned 250 above)
     assert snap["ladder"] == {"on": True, "rungs": LADDER, "in_use": True, "current": "gemini-3.8-flash"}
     assert [r["model"] for r in snap["models"] if r["current"]] == ["gemini-3.8-flash"]
 

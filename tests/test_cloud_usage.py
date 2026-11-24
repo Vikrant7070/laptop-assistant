@@ -65,13 +65,13 @@ def test_per_minute_429_waits_only_the_retry_time():
     t = utc(2026, 11, 23, 12)
     assert usage.hit_limit("google", "gemini-3.8-flash", MINUTE_429, now=t) == pytest.approx(t + 21.5)
     assert usage.limits("google", "gemini-3.8-flash")["rpm"] == 10
-    assert usage.limits("google", "gemini-3.8-flash")["rpd"] is None
+    assert usage.limits("google", "gemini-3.8-flash")["rpd"] == 20       # still config/cloud_free.json's
 
 
 def test_unreadable_429_rests_a_minute_and_learns_nothing():
     t = utc(2026, 11, 23, 12)
     assert usage.hit_limit("google", "gemini-3.8-flash", "Resource exhausted.", now=t) == t + usage.DEFAULT_WAIT
-    assert usage.limits("google", "gemini-3.8-flash") == {"rpd": None, "rpm": None}
+    assert usage.limits("google", "gemini-3.8-flash") == {"rpd": 20, "rpm": 5}     # config/cloud_free.json's
 
 
 def test_an_out_model_stays_out_across_the_pacific_day_change():
@@ -86,6 +86,15 @@ def test_free_and_paid_models():
     assert usage.kind("google", "gemini-4-argon") == "paid"
     assert usage.kind("google", "gemini-9-unknown") == ""
     assert usage.kind("openai", "gpt-6-mini") == "paid"
+
+
+def test_the_free_limits_from_ai_studio_are_known():
+    assert usage.limits("google", "gemini-4-hydrogen") == {"rpd": 20, "rpm": 5}
+    assert usage.limits("google", "gemini-3.5-flash-lite") == {"rpd": 500, "rpm": 15}
+    assert usage.limits("google", "gemini-7-unknown") == {"rpd": None, "rpm": None}
+    for name in usage.ladder("google"):
+        assert usage.kind("google", name) == "free" and usage.limits("google", name)["rpd"]
+    assert usage.kind("google", "gemini-2.5-pro") == "paid"
 
 
 def test_corrupt_meter_file_starts_from_zero():
@@ -158,4 +167,4 @@ def test_limits_api_saves_numbers_and_rejects_text(client):
                                                   "rpd": "lots"}).status_code == 400
     assert client.post("/api/cloud/limits", json={"provider": "nope", "model": "x"}).status_code == 400
     r = client.post("/api/cloud/limits", json={"provider": "google", "model": "gemini-3.8-flash", "rpd": None})
-    assert row(r.get_json())["left"] is None                 # cleared = not known
+    assert row(r.get_json())["left"] == 20                   # cleared: config/cloud_free.json's number again = not known
