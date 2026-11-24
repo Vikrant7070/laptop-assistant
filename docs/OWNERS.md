@@ -10,3 +10,4 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 | Improvement roadmap Phase 1: R10 voice state machine (`nova/core/app/voice_machine.py`, the shadow calls in `voice_io.py`); R14, R15, R11, R13, R12 merged | Claude session (roadmap structure) | `feat/r10-voice-state` | 2026-11-22 |
 | Free ladder (strongest free Gemini first, next one when its limit is used up): `nova/brain/usage.py`, `nova/brain/cloud.py`, `config/cloud_free.json`, Brain tab switch. Local first (Part B) merged PR #68 | Claude session (free AI / cloud meter) | `feat/free-model-ladder` | 2026-11-24 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |
+| Barge-in echo fix (`nova/audio/voice/barge_in.py`, `tests/test_barge_in.py`) | Claude session (barge-in echo) | `claude/bargein-echo-4ec2d0` | 2026-11-24 |

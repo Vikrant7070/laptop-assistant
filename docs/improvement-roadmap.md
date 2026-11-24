@@ -253,6 +253,16 @@ stopped her on her own words ("Not too bad, boss. R.E.M. is a big..."). Fix it o
 check, not the manager code). The test replays that log line: her own played words coming back through the mic
 must not count as the user. Since 4-pre (b), a cut-off reply is kept and "continue" finishes it, which softens the
 damage, but the false stop is still the bug.
+**Fixed 2026-11-24 (branch `claude/bargein-echo-4ec2d0`).** The old check dropped only the heard words that exactly
+matched her words in the dip's short window, so Whisper's near misses ("Novus" for "Nova's", "REM" for "R.E.M.",
+"Zikra" for "vikra") or a sentence just outside the window counted as the user's "talk". Now `BargeIn.judge` also
+scores the echo: the share of heard words (3+ letters, fuzzy-matched, spelled letters joined, `\` read as
+"backslash") that she said in the last `ECHO_BACK` = 6 s. At `ECHO_MIN` = 0.65 or more it is her echo and a "talk"
+barge is ignored; stop words and her name still stop her at any score. Every check is logged to the task log with its
+score (`BARGE-IN (talk, echo 0.20)` / `barge-in ignored (her own echo, echo 0.82)`) so the numbers can be tuned live.
+Tests in `tests/test_barge_in.py` replay the 21:33 line and two later live echoes (14:02, 15:02 on 2026-11-24).
+Trade-off: a short sentence of the user's said over a long stretch of her echo can score as echo; "stop", "wait" or
+her name always work.
 
 ### R11 Named, supervised threads (point 2b). Effort S–M
 
