@@ -39,7 +39,7 @@ from pathlib import Path
 from nova import runtime
 from nova import db
 from nova import store
-from nova.actions import jobchecks, jobrounds
+from nova.actions import jobchecks, jobrounds, judges
 from nova.log import log_exception
 
 KEEP_JOBS = 200
@@ -54,6 +54,7 @@ DEFAULTS = {
     "claude": {"exe": "", "model": "", "budget_usd": 1.0, "timeout_min": 30},
     "research": {"max_sources": 3, "cloud_report": True},
     "manager": {"go_ahead": "always"},       # 4a: show the brief and wait for "go" - always / paid (Claude only) / never
+    "judges": dict(judges.DEFAULTS),         # Phase 5: time limits and thresholds of the judges (judges.settings clamps)
     "daily_budget_usd": 3.0,
 }
 GO_AHEAD = ("always", "paid", "never")
@@ -192,7 +193,8 @@ def save_settings(body):
         mg["go_ahead"] = body["manager_go_ahead"]
     daily = _num(body["daily_budget_usd"], "daily_budget_usd") if "daily_budget_usd" in body \
         else conf["daily_budget_usd"]
-    new = {"opencode": oc, "claude": cc, "research": rs, "manager": mg, "daily_budget_usd": daily}
+    new = {"opencode": oc, "claude": cc, "research": rs, "manager": mg, "daily_budget_usd": daily,
+           "judges": judges.save(conf.get("judges"), body)}
     with _lock:
         path = store.current().workers
         path.parent.mkdir(parents=True, exist_ok=True)

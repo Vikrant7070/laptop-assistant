@@ -22,7 +22,7 @@ LOCKED = {   # prompt -> first 16 hex of sha256 of its text
     "phone_notification": "3e1759a4c952170d",
     "plan": "2df3b4cc47d251da",
     "propose_checks": "3c4418df3f9c47d5",
-    "research": "e1466c5df72b8c8c",
+    "research": "936cb9d90dab6654",
     "review": "246dc8729bcdca23",
     "see_screen": "71a95e67a3549270",
     "skill_hints": "e804eb5026c84c7a",

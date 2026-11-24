@@ -1058,6 +1058,66 @@ messages, form submits, the wallpaper.** `nova/actions/readback.py`; `judging.ex
 - **Done when:** the second run of an app task has that app's notes in its plan; a correction shows up as a lesson
   on the daily list.
 
+**4f as built (2026-11-24, branch `claude/manager-4f-c45edf`): one record, app notes, app paths, lessons.**
+`nova/db.py` (migration 3), `nova/actions/appnotes.py`, `nova/actions/lessons.py`, `learner.py`, `learning.py`.
+- One record per task: the Learner's episode (steps, verdict, checks, brain, time, jobs it started, app, what got in
+  the way) now lives **on its task card's row** (`tasks.data.episode`), not in a table of its own. Migration 3 moves
+  the old episodes table's rows there and leaves that table empty; an episode with no saved card gets a stub row
+  that `/tasks` doesn't list. `save_task` keeps the row's episode when the card saved has none (the card in memory
+  never carries it). `learner.load()` / `record()` work as before, over the same rows.
+  - The card also keeps what the user chose on question cards during the task (`choices`: question → answer, or
+    "skipped - her guess").
+  - Worker jobs keep their one record in the jobs table (brief, worker, rounds/`sent_back`, checks, committed, cost),
+    as since 4b-4c.
+  - `/tasks` → a laptop task's detail reads the same row: "You chose: …", "Read before it started: <app notes>", and
+    "Record: app (in the way: …) · workers: <the jobs it started, read now> · N rounds · cost $x · the Learner
+    counted it as worked".
+- App notes (`appnotes.py`) are **read from those records**, not kept anywhere else: per app, its newest 8 runs -
+  which controls worked (`press_keys ctrl+s`, `click_text "Save as"`; typed text is never shown), which didn't,
+  what got in the way (sign-in wall / cookie banner / slow load, found in the steps' results when the episode is
+  made), how long it took on average, how many worked.
+  - The app is the one the request named, else the first app the task opened.
+  - An app task's card gets the line when it starts (`task_state.attach`) or when a step opens the app
+    (`task_state.start`): "APP NOTES (notepad, 2 earlier runs, 2 worked, about 25 s) Worked: press_keys ctrl+s …".
+    The brain sees it under the plan on every step, and the deep brain's planner gets it with the goal
+    (`task_state.plan_goal`).
+  - Done when: `test_the_second_run_of_an_app_task_has_that_apps_notes_in_its_plan`.
+- App path → skill: an app task is offered as a skill only once **the same path in that app** (the same tools in the
+  same order) has worked twice (`APP_TIMES`): "“…” has worked 2 times the same way in notepad. Shall I save it as a
+  skill …?" on the daily list. Tasks with no app keep the old rule (offered the first time it worked); the slot
+  ("search for tea / coffee") offer is unchanged and still wins.
+- Lessons from corrections (`lessons.py`, pure code), read from the user's next request and the task before it
+  (within 30 min):
+  - "don't X" / "never X" / "stop doing X" → "Don't X." ("don't worry", "never mind", "don't forget …" are not);
+  - "no, the other folder", "wrong window", "that's not what I asked" (the CORRECTION words) → "<what she did last>
+    was wrong - the user said “…”." (when: the last request);
+  - Stop, then the same request in other words (half the words shared) → "The user stopped me at “…” and asked again
+    as “…” - do it that way."
+  - Each goes on the daily list as "Shall I keep this lesson? … (When: …)" (kind `lesson`). It is **not** in her knowledge
+    bank until the user ticks it: a yes to the daily question, or the new ✓ on the Knowledge page (`question_yes`).
+    Then it is saved as a lesson with source "user" and read before answering like any other.
+  - The review brain that runs after a correction no longer saves its lessons straight away either: its better
+    wording replaces the code's question (one question per correction), still waiting for the tick. Its lessons for
+    "Nova could not finish" are saved as before.
+  - Done when: `test_a_correction_shows_up_as_a_lesson_on_the_daily_list`.
+- Live check (2026-11-24) on a separate copy (port 5099, throwaway data seeded with two Notepad runs that worked -
+  one hit a cookie banner, one with a folder answer - and a "no, the other folder" correction), no brain calls:
+  - a third Notepad card got "APP NOTES (notepad, 2 earlier runs, 2 worked …) … Got in the way: cookie banner (2x)";
+  - the Learner queued "… has worked 2 times the same way in notepad. Shall I save it as a skill …";
+  - `/tasks` showed the second run's "You chose: Where should I save it? → Documents", "Read before it started:
+    APP NOTES …" and "Record: app: notepad (in the way: cookie banner) · the Learner counted it as worked";
+  - the Knowledge page listed the lesson with ✓ / ×; ✓ put it in the lessons (source "user") and took it off the
+    list. No console or server errors.
+- Not built (said plainly):
+  - Notes attribute every step of a task to its one app: a task that used two apps puts both apps' steps under the
+    first. "Slow load" is found from words in results, not from timing (step times include the brain's thinking).
+  - The planner and the card get the notes; there is no separate "app worker" yet that reads them (the brain is the
+    app worker today).
+  - A worker job's notes per job type are still 4b's (`manager.choose` reads the job records); nothing new there.
+  - Lessons don't yet look at what the user did after a Stop with their own hands (the recorder is off by default).
+  - Changes the planner's prompt (the goal now carries the app notes): a task exam before/after is owed (the user
+    starts it).
+
 **4g — Scheduled and repeating jobs**
 - "Every morning at 9 check my Gmail and tell me what's important", "every Sunday copy Documents to D:" → a schedule
   record (`data/schedules.json` through `store.py`), shown on `/tasks` with the next run, Pause and Delete.
@@ -1129,6 +1189,53 @@ Quality comes from measurement, not from the user's habits or the worker's own c
 
 Each judge gives a pass/fail list Nova can quote back to the worker ("mobile layout overflows at 375 px").
 
+**Phase 5 as built (2026-11-24, branch `claude/manager-phase5-fc2a5f`): judges for websites, code and research.**
+`nova/actions/judges.py` (settings, lint/build, research) and `nova/actions/sitejudge.py` (the website judge), called
+from `jobchecks.coding` (every coding round, after files + tests) and `jobchecks.research`. Same check shape as 4c-2:
+passed / failed / skipped-with-why, never "passed" for a check that didn't run, nothing installed to make one run.
+A failed check's `why` is the sentence Nova quotes back, so 4c-3's send-back brief carries it unchanged
+("- mobile: mobile layout overflows at 375 px (the page is 512 px wide; div.hero sticks out)").
+- **Websites** - for job type `new site` / `new app` (`rec["job_type"]`, now passed by `jobrounds.check_round`) or a
+  folder (or one above it, up to the git root) with an `index.html` (also `public/`) or an npm `dev` / `start` script:
+  - How it opens: the build check's output (`dist/` `build/` `out/` with an index.html) → served from there (SPA
+    fallback); else the npm `dev`/`start` script (with node_modules and npm/pnpm/yarn present) started with the
+    worker's safety env + `PORT`/`BROWSER=none`, its address read from its output, time-limited (`start_secs`) and
+    killed with its process tree afterwards; else the folder's `index.html`.
+  - Nova serves the page on 127.0.0.1 herself (static, or a proxy in front of the dev server) and injects a small probe
+    script into every HTML page. Chrome (else Edge) runs headless with a throwaway profile and `--dump-dom`; the page
+    sits in an iframe exactly 375 px wide because headless Chrome won't make a window narrower than ~500 px
+    (found live: `--window-size=375` gave innerWidth 504).
+  - Checks: `page` (opens, title; a "new site" with nothing to open fails, other jobs skip), `console` (console.error,
+    script errors, unhandled rejections, files that failed to load - the server's own 404s too; dev-server HMR /
+    websocket chatter ignored behind the proxy), `mobile` (no sideways scroll at `width`, names the first element that
+    sticks out; skipped if the frame couldn't be sized), `links` (local links fetched, up to 40; links to other sites
+    counted, not fetched - no network for judging), `lighthouse` (performance / accessibility / SEO ≥ `lighthouse_min`
+    when `lighthouse` is on the PATH; else skipped "Lighthouse isn't installed").
+  - No Chrome/Edge → every website check skipped "no headless browser (Chrome or Edge) on this laptop".
+- **Code** - `lint`: ruff (`ruff.toml` / `.ruff.toml` / `[tool.ruff` in pyproject; the project's venv first), else
+  flake8 (`.flake8`, `[flake8]` in setup.cfg / tox.ini), else an npm `lint` script; none → skipped "the project has no
+  lint set up"; set up but not installed → skipped, saying so. `build` (package.json projects only): `npm run build`
+  (by lock file; no node_modules → skipped). Both run like the tests (`jobchecks.run_tests(..., name=)`: safety env,
+  time limit, Stop stops them, the end of the output kept as `detail`). "Diff only in the expected folder" is 4c-2's
+  `files` check, unchanged.
+- **Research** - over the saved report: `citations` (every finding cites a source, and only listed ones: "cites [7],
+  but only 3 sources are listed"), `independent` (the cited sources come from 2+ different sites, `www.` ignored),
+  `backed` (at least `backed_share` - default half - of the findings cite 2+ different sites), `disagreements` (a
+  "Disagreements: …" line, "none found" counts). Fewer than 2 sources read → skipped. The research prompt
+  (`nova/prompts/research.md`) now asks for every source number per point ([1][3]) and the closing Disagreements line
+  - **a prompt change: run the task exam (`python -m nova.exam`, the user starts it) before/after merging.** Research
+  jobs still aren't sent back (4c-3); a failed research judge is reported in the result line.
+- Settings: `workers.json` → `judges` (`page_secs` 40, `start_secs` 60, `lint_secs` 180, `build_secs` 300, `width` 375,
+  `lighthouse_min` 80, `lighthouse_secs` 120, `backed_share` 0.5), each clamped to a range by `judges.limits`; a
+  ⚙ Workers save keeps them. ⚙ Workers shows "Time to open a page" and "Lowest Lighthouse score".
+- Live check (2026-11-24, real Chrome, fixture pages, outside Nova): a page with a 520 px div → "mobile layout overflows
+  at 375 px (the page is 528 px wide; div.hero sticks out)", console "boom; failed to load missing.png", links
+  "gone.html (404)"; a responsive page → all passed; ~4 s per page.
+- Not built (said plainly): ML-model judges (held-out score, speed, memory vs the last run); Playwright (not installed
+  here - Chrome's `--dump-dom` plus the probe does the job without it); desktop-width checks; Lighthouse itself isn't
+  installed on this laptop, so its pass/fail is tested with a fake run only; a build's output (`dist/`) may show up as
+  changed files on a send-back round if the project doesn't ignore it.
+
 ## 8. Phase 6–8 — Knowing the user (all opt-in, local, viewable, deletable)
 
 **Principle: learn from meaning, not raw input.** No keylogger, no screenshots of everything.
@@ -1149,6 +1256,48 @@ Each judge gives a pass/fail list Nova can quote back to the worker ("mobile lay
 
 Always: a pause switch with a visible indicator, a blocked-apps list, a "what Nova knows about me" page with delete,
 recording only when the user is the one at the laptop (YuNet presence can help), raw events auto-deleted.
+
+### Phase 6 as built (2026-11-24, branch `claude/manager-phase6-8b25a2`)
+
+- **Code:** `nova/actions/laptop_history.py` (reading + summarising, plain code only), `nova/core/app/history_page.py`
+  (`/api/laptop_history` and the idle-time read), `static/history.js` + a "What Nova knows about me (from this
+  laptop)" section on the Knowledge page. `learning.learn_now` calls `history_page.read_if_due()` (in its own thread,
+  at most once an hour, only when no task, thinking or pending question); `/api/knowledge` leaves history facts out of
+  the "Sites Nova has learned" card. `learner.py` is untouched.
+- **Off by default, per source:** Chrome history, PowerShell history, Claude Code transcripts, each with a switch and
+  a "What is read" line; a **never list** (sites like `example.com`; folders or project names like `C:\Work\Private`)
+  applied to every source; a **pause** switch; **Read now**.
+- **Chrome:** every profile's `History` (+ `-wal`/`-journal`) copied to a temp folder, read read-only, the copy deleted
+  in `finally`. Visits after the last `visit_time` read; `http(s)` only (no `file://`, `chrome://`). Search pages
+  (Google, Bing, DuckDuckGo, YouTube `search_query`, Amazon `k`...) count as search **words**, not visits; other
+  pages count as visits to the **host**. Whole URLs, titles and full queries are never kept.
+- **PowerShell:** `PSReadLine\ConsoleHost_history.txt` from the last line read (a shrunk file starts over); only the
+  **program name** (git, python, npm) is counted.
+- **Claude Code:** `~/.claude/projects/*/*.jsonl`, newest files first, from the last byte read, up to 100 MB per read.
+  Only the user's own text (no tool results, no `<command>` / meta lines). Kept: the **project** (worktrees count as
+  their main project; sessions + last day) and short sentences where the user says how they like things done
+  ("I prefer...", "always...", "let's go with...", 15-180 characters, at most the newest 10 as facts).
+- **Secret filter** before anything is counted: `knowledge.SECRET` (passwords, PIN, OTP, card/Aadhaar/PAN, API key,
+  token, emails, phone and 12-19 digit numbers) plus `laptop_history.EXTRA_SECRET` (`sk-`/`ghp_`/`AKIA`/`AIza` keys,
+  bearer, long hex/base64, one-time, verification, CVV, IBAN/IFSC, account/routing numbers, passport, SSN,
+  SecureString, credential, `-p <x>` / `--pass`). A matching line is dropped whole.
+- **Facts:** counts live in `data/laptop_history.json` (tallies, read positions, never list, switches); the top
+  8 per kind become facts in `data/facts.json` with `kind: "history"`, `source`, `key`, `text`, **unconfirmed**. The
+  section shows each with its source, ✓ and ×. × records the key so it never comes back from the same history;
+  **Forget everything from it** removes that source's facts and counts but keeps the read position (old history is
+  not read again). Facts that fall out of the top 8 go, unless the user confirmed them.
+- **No network, no brain:** nothing in Phase 6 calls a model (local or cloud) or opens a socket; history facts are
+  not put in any prompt yet.
+- **Tests:** `tests/test_laptop_history.py` (fixture Chrome DB, PS history, transcripts; sockets and `llm` patched to
+  fail): facts appear unconfirmed with their source; secret lines never reach facts or counts; never-listed site and
+  folder skipped; an off source or a pause reads nothing; incremental reads; delete stays deleted; forget clears one
+  source only; the Knowledge page endpoints.
+- **Live check** (copy on a throwaway `NOVA_DATA`, counts only, folder deleted afterwards): Chrome 2,196 visits read,
+  16 facts; PowerShell 72 lines, 6 facts; Claude Code 32,615 transcript lines (first 100 MB of 535 MB), 15 facts;
+  ~1.3 s per read; no temp copies left behind. The page was checked on port 5096 with fixture data only.
+- **Not built:** a local-model summary of transcripts (plain-code sentences instead; safer and testable); using
+  confirmed history facts in briefs or prompts (needs the user's say on what may reach a cloud brain); Chrome's
+  other browsers (Edge, Firefox); the ⚙ settings copy of the switches (they live on the Knowledge page only).
 
 ## 9. The user's answers (2026-11-20)
 
