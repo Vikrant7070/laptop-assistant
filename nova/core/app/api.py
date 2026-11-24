@@ -239,5 +239,16 @@ def cloud_limits():
     return jsonify(usage.snapshot(provider, name))
 
 
+@app.post("/api/cloud/ladder")
+def cloud_ladder():
+    """Turn the free ladder on or off (strongest free model first, the next one when its limit is used up)."""
+    on = _body().get("on")
+    if not isinstance(on, bool):
+        return jsonify(error="'on' must be true or false."), 400
+    usage.set_ladder(on)
+    provider, name = _chosen_cloud(None)
+    return jsonify(usage.snapshot(provider, name))
+
+
 # Used only when a function runs; imported last so each module is complete before its siblings load.
 from nova.core.app import brains, conversation, host, integrations, prompts, voice_io  # noqa: E402

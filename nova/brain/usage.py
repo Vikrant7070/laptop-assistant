@@ -8,6 +8,11 @@ When a model's limit is used up it is marked "out" until it comes back (midnight
 retry time Google gives for a per-minute one). While it is out, cloud.chat refuses at once without calling Google, so
 llm.chat goes straight to the local brain instead of waiting for another failed call.
 
+The free ladder: config/cloud_free.json lists each provider's free models from strongest to weakest ("ladder"). When
+the chosen model is one of them and the ladder is on (the Brain tab's switch, kept in cloud_usage.json), every cloud
+call goes to the strongest one that still has uses left; when Google says its limit is used up, cloud.chat moves down
+to the next one in the same call. Only when every one of them is out does Nova use her local brain.
+
 The counts live in data/cloud_usage.json. They are Nova's own count: AI Studio's rate-limit page is the real number
 (other apps using the same Google project count there too).
 """
@@ -107,6 +112,12 @@ def limits(provider, name, data=None):
         v = mine.get(k, base.get(k))
         out[k] = v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else None
     return out
+
+
+def ladder(provider):
+    """The provider's free models, strongest first (config/cloud_free.json "ladder")."""
+    rungs = (_free_conf().get(provider) or {}).get("ladder") or []
+    return [n for n in rungs if isinstance(n, str) and n]
 
 
 # ------------------------------------------------------------------ the counts
@@ -217,13 +228,58 @@ def blocked(provider, name, now=None):
     return f"My {name} {what} used up, so I'm using my local brain until {time.strftime('%H:%M', time.localtime(until))}."
 
 
+def ladder_on(data=None):
+    data = data if data is not None else _load()
+    return data.get("ladder", True) is not False
+
+
+def set_ladder(on):
+    with _lock:
+        data = _load()
+        data["ladder"] = bool(on)
+        store.current().write_json(_path(), data)
+
+
+def _rungs(provider, name, data):
+    """The models the chosen `name` stands for: the whole ladder (strongest first) when it is a rung and the ladder is
+    on, otherwise just itself."""
+    rungs = ladder(provider)
+    return rungs if name in rungs and ladder_on(data) else [name]
+
+
+def route(provider, name, now=None):
+    """The models to try, in order, for a call to the chosen model, leaving out the used-up ones ([] = all out)."""
+    now = time.time() if now is None else now
+    data = _load(now)
+    return [n for n in _rungs(provider, name, data)
+            if not ((data["models"].get(_key(provider, n)) or {}).get("out_until") or 0) > now]
+
+
+def unavailable(provider, name, now=None):
+    """Why the chosen model can't be used now ("" = at least one model it may use has uses left)."""
+    now = time.time() if now is None else now
+    if route(provider, name, now):
+        return ""
+    rungs = _rungs(provider, name, _load(now))
+    if len(rungs) == 1:
+        return blocked(provider, name, now)
+    back = min(out_until(provider, n, now) for n in rungs)
+    return (f"All my free {provider.title()} models are used up, so I'm using my local brain until "
+            f"{time.strftime('%H:%M', time.localtime(back))}.")
+
+
 def snapshot(provider=None, name=None, now=None):
     """What the Brain tab and the chip show: every model used today, plus the chosen one."""
     now = time.time() if now is None else now
     data = _load(now)
     keys = list(data["models"])
-    if provider and name and _key(provider, name) not in keys:
-        keys.insert(0, _key(provider, name))
+    rungs = _rungs(provider, name, data) if provider and name else []
+    for n in reversed(rungs if len(rungs) > 1 else [name] if provider and name else []):
+        if _key(provider, n) not in keys:
+            keys.insert(0, _key(provider, n))
+    if len(rungs) > 1:              # the ladder's rungs first, strongest first; other models used today after them
+        keys.sort(key=lambda k: rungs.index(k.split(":", 1)[1]) if k in {_key(provider, n) for n in rungs} else len(rungs))
+    live = route(provider, name, now) if provider and name else []
     rows = []
     for k in keys:
         p, n = k.split(":", 1)
@@ -235,5 +291,9 @@ def snapshot(provider=None, name=None, now=None):
                      "rpd": lim["rpd"], "rpm": lim["rpm"],
                      "left": max(0, lim["rpd"] - used) if lim["rpd"] else None,
                      "out_until": until, "why": m.get("why", "") if until else "",
-                     "chosen": p == provider and n == name})
-    return {"day": data["day"], "reset_at": next_reset(now), "now": now, "studio": STUDIO_URL, "models": rows}
+                     "chosen": p == provider and n == name,
+                     "rung": rungs.index(n) + 1 if p == provider and len(rungs) > 1 and n in rungs else None,
+                     "current": bool(live) and p == provider and n == live[0]})
+    return {"day": data["day"], "reset_at": next_reset(now), "now": now, "studio": STUDIO_URL, "models": rows,
+            "ladder": {"on": ladder_on(data), "rungs": ladder(provider) if provider else [],
+                       "in_use": len(rungs) > 1, "current": live[0] if live else None}}

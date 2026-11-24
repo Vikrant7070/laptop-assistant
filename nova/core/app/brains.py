@@ -17,7 +17,7 @@ Stuck signs (numbers in config/model_routing.json, see router.DEFAULTS):
   - the same tool call with the same result REPEAT_LIMIT times in a row
   - cloud_after_turns brain turns without finishing
   - the local brain says it can't, on a task where it already used tools
-A task climbs at most once. If the cloud model's free uses are used up (nova/brain/usage.py) she stays local and says so.
+A task climbs at most once. If the cloud model's free uses are used up (with the free ladder: every free model's) she stays local and says so.
 """
 
 
@@ -58,7 +58,7 @@ def climb(task, why):
         conversation.task_log(f"CLIMB refused ({why}): mail stays on this laptop (email_cloud is off)")
         return False                            # her mail never goes to a cloud brain unless ⚙ allows it
     provider, name = cloud.parse(target)
-    out = usage.blocked(provider, name)
+    out = usage.unavailable(provider, name)   # with the free ladder: only when every free model is used up
     if out or llm.cloud_resting():
         if not task.get("climb_refused"):
             task["climb_refused"] = True

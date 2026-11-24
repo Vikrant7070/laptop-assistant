@@ -112,11 +112,12 @@ def test_plain_chat_never_climbs_by_itself(brain):
 
 
 def test_used_up_free_uses_keep_the_task_local_and_say_so(brain):
-    usage.hit_limit("google", "gemini-3.8-flash", DAILY_429)
+    for name in usage.ladder("google"):          # with the free ladder, only every free model used up keeps it local
+        usage.hit_limit("google", name, DAILY_429)
     models, _ = recorded(brain, [("", [("escalate", {"kind": "cloud"})]), ("I'll do my best.", [])])
     app.answer("please help me with this")
     assert models == [local(), local()]
-    assert "CLIMB refused" in log() and "used up" in log()
+    assert "CLIMB refused" in log() and "All my free Google models are used up" in log()
 
 
 def test_mail_never_climbs_unless_allowed(brain):
