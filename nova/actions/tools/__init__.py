@@ -39,7 +39,8 @@ def is_dangerous(name, args):
 FUNCS = {}
 
 # Tools whose results are text other people wrote: run_tool wraps them with protocol.untrusted (roadmap R2 step 4).
-UNTRUSTED = {"read_email", "check_email", "read_page", "web_research", "read_notifications"}
+UNTRUSTED = {"read_email", "check_email", "read_page", "web_research", "read_notifications",
+             "read_text_file"}       # 4e: a file someone else wrote is outside text too
 
 
 def _install(spec):
@@ -72,6 +73,11 @@ def run_tool(name, args):
         if len(extra) == 1 and len(missing) == 1:     # {"query": ...} for topic: the small model misnamed the one it needs
             args[missing[0]] = args.pop(extra[0])
         args = {k: v for k, v in args.items() if k in allowed}  # local models sometimes add extras
+        from nova.actions import risk
+        never = risk.never_why(name, args)
+        if never:                                        # 4e: passwords, codes and card numbers stay with the user
+            return (f"Not done: {never}. Typing passwords, one-time codes or card numbers is the user's job - ask "
+                    "them to type it themselves (help_login / fill_form keep those values away from you).")
         out = str(FUNCS[name](**args))
         if name in UNTRUSTED and not out.startswith(f"Error in {name}"):
             from nova import protocol
