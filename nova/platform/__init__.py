@@ -140,6 +140,9 @@ class Desktop(Protocol):
     def memory_commit(self) -> tuple | None:
         """(used, limit) bytes of RAM + pagefile programs have claimed; None if unknown."""
 
+    def wallpaper(self) -> str | None:
+        """The desktop wallpaper's path ("" for none); None if it can't be read."""
+
     def set_wallpaper(self, path) -> bool:
         """Set the desktop wallpaper. -> accepted?"""
 
