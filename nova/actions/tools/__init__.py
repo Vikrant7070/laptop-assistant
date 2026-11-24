@@ -13,7 +13,7 @@ from nova.actions import registry
 
 
 # Declaration order = the order the brain sees the tools in.
-from nova.actions.tools import common, system, apps, files, windows, forms, eyes, notes, routines, body, terminal  # noqa: E402,F401
+from nova.actions.tools import common, system, apps, files, windows, forms, eyes, notes, routines, body, terminal, taskcard  # noqa: E402,F401
 
 
 TOOLS = []          # filled from the @tool declarations (see _install below)
@@ -81,7 +81,7 @@ def run_tool(name, args):
         return f"Error in {name}: {e}"
 
 
-_MODULES = {m.__name__.rsplit(".", 1)[1]: m for m in (common, system, apps, files, windows, forms, eyes, notes, routines, body, terminal)}
+_MODULES = {m.__name__.rsplit(".", 1)[1]: m for m in (common, system, apps, files, windows, forms, eyes, notes, routines, body, terminal, taskcard)}
 _HOME = {name: _MODULES[mod] for mod, names in {
     'common': ['ANGLE_HELP', 'B', 'HOME', 'N', 'S', '_files_lock', '_fmt_bytes', '_load', '_ps', '_resolve', '_save'],
     'system': ['SETTINGS_PAGES', 'UI_WAYS', '_clear_notifications', '_like_literal', '_nova_pids', 'get_datetime', 'get_system_status', 'install_app', 'kill_process', 'list_installed_apps', 'list_top_processes', 'lock_screen', 'media_control', 'network_info', 'open_settings_page', 'power_action', 'run_powershell', 'search_installable_apps', 'set_brightness', 'set_dark_mode', 'set_volume', 'set_wallpaper', 'stats', 'ui_way', 'uninstall_app'],
@@ -93,6 +93,7 @@ _HOME = {name: _MODULES[mod] for mod, names in {
     'notes': ['EMAIL_WARN', 'LOCAL_TOPIC', '_ago', '_email_gate', '_norm_all', 'add_note', 'background_jobs', 'check_email', 'commit_coding_job', 'connect_gmail', 'draft_email', 'due_reminders', 'email_ok', 'forget_fact', 'go_to_sleep', 'hand_off_job', 'learn_lesson', 'list_notes', 'list_reminders', 'memories', 'mute_notifications', 'read_email', 'read_notifications', 'recall_knowledge', 'remember_fact', 'research_in_background', 'research_report', 'retry_coding_job', 'set_reminder', 'show_coding_changes', 'show_finished_work', 'start_coding_job', 'stop_background_job', 'update_profile', 'write_document'],
     'routines': ['CONTINUE_NAME', 'SIGNIN_NAME', '_buttons', 'delete_skill', 'edit_skill', 'escalate', 'forms_code_box', 'list_skills', 'login_if_needed', 'more_tools', 'run_skill', 'save_skill', 'save_task_as_skill', 'start_watching', 'stop_watching', 'undo_skill_change'],
     'body': ['can_do', 'change_look', 'forget_move', 'new_move', 'react', 'reaction_name'],
+    'taskcard': ['YES', '_card', 'ask_user', 'note_fact'],
     'terminal': ['TERM_SCRIPT', 'TERM_TITLE', 'TERM_WAIT', '_avatar_pos', '_open_terminal', '_read_text', '_terminal', 'drag_window', 'run_in_terminal'],
 }.items() for name in names}
 

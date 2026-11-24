@@ -22,7 +22,8 @@ READ_MAX = 1_000_000         # bytes of a file read back
 # Changes nothing by name, beyond the skills' READ_ONLY prefixes (no read-back needed).
 QUIET = {"react", "new_move", "go_to_sleep", "more_tools", "escalate", "start_watching", "stop_watching",
          "remember", "add_note", "set_reminder", "web_research", "research_in_background", "hand_off_job",
-         "background_jobs", "stop_background_job", "research_report", "list_windows", "media_control"}
+         "background_jobs", "stop_background_job", "research_report", "list_windows", "media_control",
+         "ask_user", "note_fact"}
 SELF_CHECKED = {"run_skill": "the skill checks its own steps",
                 "start_coding_job": "the worker job is checked when it ends",
                 "commit_coding_job": "git says what was committed",

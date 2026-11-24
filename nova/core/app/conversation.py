@@ -678,6 +678,10 @@ def _agent_loop(activity):
                 continue
             task_log(f"HALLUCINATED DONE: '{(text or '')[:120]}' with no tool called")
             text = "I haven't actually done that yet - tell me again and I'll do it properly."
+        asked = watching.gather(task) if not calls else None       # 4d: the questions she queued, on one card
+        if asked:
+            unsaid.extend(t for t in (protocol.strip_meta(text or ""), asked["reply"]) if t)
+            return result(" ".join(spoken + [protocol.strip_meta(text or ""), asked["reply"]]).strip(), question=asked["question"])
         if not calls and task and task["steps"] and (task.get("checks") or task["steps"] >= LOOK_FROM_STEP):
             # She says she's finished: the Judge decides (checks first, at most one advisory screen look).
             judging.final_judge(task, text, activity, model)

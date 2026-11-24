@@ -1,4 +1,4 @@
-Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks, PR #67), 4c-3 (send-back, limits, brief guard, PR #69) and 4d-1 (progress watch) on their branches; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
+Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks, PR #67), 4c-3 (send-back, limits, brief guard, PR #69) 4d-1 (progress watch, PR #70) and 4d-2 (known list, questions) on their branches; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
 
 # Nova as a manager — plan
 
@@ -925,6 +925,25 @@ question, quiet workers.** `nova/progress.py` (pure rules), `nova/core/app/watch
   when the worker writes output or changes a file. The live strip shows only the laptop task card, so it isn't there.
 - Not built yet (4d-2): the *known* list (facts given, found, guesses); answering questions from facts and gathering
   the rest on one card while other steps go on. The new plan comes from the local deep brain only, not a cloud brain.
+
+**4d-2 as built (2026-11-24, branch `claude/manager-4d-2`, on top of 4d-1): what the task knows; questions don't stop
+the work.** `nova/known.py` (pure), `nova/actions/tools/taskcard.py` (two tools), `watching.gather` (the app side).
+- The card's *known* list, kept by code: `given` (in the request - paths, links, emails, "quoted text" - or the
+  user's answer), `found` (the brain's `note_fact`, or an answer the user gave in an earlier task), `guess`
+  (`note_fact … guess=true`, marked as one, never used to answer a question). The brain sees "KNOWN: …" on the card;
+  `/tasks` and the strip show it. Secret-looking values are hidden, as everywhere on the card.
+- `ask_user(question, key, why, needed_now)` (a core tool, so the local brain always has it):
+  - answered by code from the card, then from the user's saved answers (the 4a facts on the Knowledge page) -
+    "Already known - don't ask the user: github_username = vik-dev";
+  - otherwise queued on the card ("WAITING FOR THE USER'S ANSWER: …") and the brain is told to carry on with the steps
+    that don't need it; `needed_now` tells it to end its turn.
+- When she ends her turn with questions waiting, code asks them on **one card** (2 at a time, the card's limit; the
+  rest on the next stop), after whatever she said. Answers go on the card as given facts, are saved as the user's
+  answers (unconfirmed facts, so the next task gets them from facts), and the task carries on ("The user answered:
+  …"). A skipped one: "use your best guess and say so". A card that goes unanswered puts its questions back to be
+  asked when the task carries on.
+- Not built: facts *found* by code on its own (beyond the request's paths/links/emails/quotes) - the brain notes them
+  with `note_fact`. Questions are asked when she stops, not the moment the user comes back to the laptop.
 
 **4e — Risk levels for every action**
 - Every tool and every step gets a level:

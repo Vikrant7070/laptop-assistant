@@ -22,6 +22,8 @@ import json
 import re
 import time
 
+from nova import known
+
 VERSION = 1
 MAX_CHARS = 1000            # ~250 tokens: the card is sent after every step, inside the 8K window
 MAX_RUNS = 40               # runs kept on the card (the oldest go first)
@@ -58,7 +60,7 @@ def new(goal, steps=(), source="none", tid=None):
     now = time.time()
     card = {"version": VERSION, "id": str(tid or f"{now:.3f}"), "goal": clean(goal, 300), "status": "running", "why": "",
             "source": "none", "plan": [], "runs": [], "open": [], "started": now, "updated": now, "app": "",
-            "unsaid": "", "replanned": False}
+            "unsaid": "", "replanned": False, "known": known.from_goal(goal), "asks": []}   # 4d: what it knows / asks
     set_plan(card, steps, source)
     return card
 
@@ -326,7 +328,10 @@ def strip(card, runs=6):
             "runs": [{"tool": r["tool"], "hint": r["hint"], "state": r["state"], "result": r["result"],
                       "check": r.get("check")} for r in card["runs"][-runs:]],
             "left": left(card), "not_checked": not_checked(card) and card["status"] == "done",
-            "read_only": bool(card.get("read_only"))}
+            "read_only": bool(card.get("read_only")),
+            "known": [{"key": k["key"], "value": k["value"], "how": k["how"]} for k in card.get("known") or []][-10:],
+            "asks": [{"text": a["text"], "state": a["state"]} for a in card.get("asks") or []
+                     if a["state"] in ("open", "asked")]}
 
 
 # ------------------------------------------------------------------ read-back checks (4c)
@@ -397,6 +402,7 @@ def render(card, limit=MAX_CHARS):
         tail.append(f"NOW: step {i + 1} - {card['plan'][i]['text']}")
     elif card["plan"]:
         tail.append("NOW: every plan step has really run - check the goal is reached, then tell the user.")
+    tail += known.render(card)
     if card["status"] != "running":
         tail.append(f"STATUS: {card['status']}" + (f" ({card['why']})" if card["why"] else ""))
     done = [_run_line(r) for r in card["runs"] if r["state"] == "done"]

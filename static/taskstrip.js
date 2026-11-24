@@ -56,6 +56,7 @@ function showTask(t) {
             r.check ? html`<small>${{passed: "✓", failed: "✗", skipped: "–"}[r.check.state]} read back: ${r.check.why}</small>` : ""}</li>`)}</ul>` : ""}
       ${t.left && t.left.length ? html`<p class="mood">Couldn't finish: ${t.left.join("; ")}</p>` : ""}
       ${t.not_checked ? html`<p class="mood">Done, not checked: no step could be read back.</p>` : ""}
+      ${(t.known || []).length ? html`<p class="mood">Known: ${t.known.map(k => `${k.key}: ${k.value}${k.how === "guess" ? " (a guess)" : ""}`).join("; ")}</p>` : ""}
     </div>`);
   box.open = wasOpen;
   box.hidden = false;
