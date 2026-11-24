@@ -517,15 +517,19 @@ def agent_loop(activity):
     return out
 
 
-DONE_CLAIM_RE = re.compile(r"(all set|ready (for|to)\b|is ready|are ready|\bi'?ve (just )?(opened|started|turned|set|closed|pushed|sent|"
+DONE_CLAIM_RE = re.compile(r"(all set|ready (for|to)\b|is ready|are ready|\bi['’]?ve (just )?(opened|started|turned|set|closed|pushed|sent|"
                            r"launched|enabled|switched|made|done|put|muted|played)|\b(opened|started|launched|enabled)\b[ !.]|\bdone[!.])", re.I)
 
 
+# Her own reply promising an action she didn't take. The small models write a curly ’ as often as a straight ' -
+# "I’ll check that right now." with no tool call slipped through (2026-11-23), as did every "check/look/find" verb.
+# "let me know..." is a question to the user, not a promise.
 PROMISE_RE = re.compile(
-    r"\b(i'?ll|i will|i'?m|i am|let me|going to|now)\b[^.!?]{0,30}\b(click|open|search|play|scroll|type|press|clos|select|"
-    r"tap|launch|start|go to|navigat|lock|mut|paus|turn|set|shut|restart|remind|delet|mov|install)"
-    r"|\b(lock|open|clos|play|search|launch|start|turn|mut|paus|set|shut|restart|delet|mov|install|clean)\w*ing\b"
-    r"[^.!?]{0,30}\b(now|right away)\b|\bi'?ll do (it|that) (right away|now)\b", re.I)
+    r"\b(i['’]?ll|i will|i['’]?m|i am|let me(?! know)|going to|now)\b[^.!?]{0,30}\b(click|open|search|play|scroll|type|"
+    r"press|clos|select|tap|launch|start|go to|navigat|lock|mut|paus|turn|set|shut|restart|remind|delet|mov|install|"
+    r"check|look|find|scan|measur)"
+    r"|\b(lock|open|clos|play|search|launch|start|turn|mut|paus|set|shut|restart|delet|mov|install|clean|check|scan|"
+    r"measur)\w*ing\b[^.!?]{0,30}\b(now|right away)\b|\bi['’]?ll do (it|that) (right away|now)\b", re.I)
 
 
 # "Reacting now... I'm dancing!" with no react call: her body never moved (2026-11-18 log).
