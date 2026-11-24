@@ -70,7 +70,8 @@ def found_routines(now=None):
         fn = source()
         if fn is None:
             return []
-        raw = fn(now=now)
+        stamp = now.timestamp() if isinstance(now, dt.datetime) else now
+        raw = fn(now=stamp)                         # Phase 7 (nova.actions.activity) takes a time.time() stamp
     except Exception:
         log_exception("suggest: reading Phase 7's routines")
         return []
@@ -88,13 +89,13 @@ def _clean(text, n):
 
 
 def _minute(r):
-    """Minutes after midnight from "time": "9:05" / "09:05", "minute_of_day": 545, or "hour": 9.25."""
+    """Minutes after midnight from "time": "9:05" / "09:05", "minute" / "minute_of_day": 545, or "hour": 9.25."""
     t = r.get("time")
     if isinstance(t, str):
         m = re.match(r"^\s*(\d{1,2})[:.](\d{2})\s*$", t)
         if m and int(m.group(1)) < 24 and int(m.group(2)) < 60:
             return int(m.group(1)) * 60 + int(m.group(2))
-    for key, scale in (("minute_of_day", 1), ("hour", 60)):
+    for key, scale in (("minute", 1), ("minute_of_day", 1), ("hour", 60)):
         v = r.get(key)
         if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v * scale < 1440:
             return int(round(v * scale))
@@ -138,9 +139,13 @@ def normalise(r):
     minute = _minute(r)
     if not steps or minute is None:
         return None
-    name = _clean(r.get("name") or r.get("label") or "", 60) or "your usual setup"
+    part = "morning" if minute < 12 * 60 else "afternoon" if minute < 17 * 60 else "evening"
+    name = _clean(r.get("name") or r.get("label") or "", 60) or f"{part} setup"
+    days = r.get("weekdays") if "weekdays" in r else r.get("days")      # Phase 7: "days" is how many days it was seen
+    if isinstance(days, int):                   # a count, not a weekday
+        days = None
     rid = _clean(r.get("id") or r.get("key") or name + ": " + " > ".join(s["label"] for s in steps), 120)
-    return {"id": rid, "name": name, "steps": steps[:8], "minute": minute, "days": _days(r.get("days"))}
+    return {"id": rid, "name": name, "steps": steps[:8], "minute": minute, "days": _days(days)}
 
 
 # ------------------------------------------------------------------ the words

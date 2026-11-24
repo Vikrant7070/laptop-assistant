@@ -227,6 +227,19 @@ def test_the_adapter_reads_the_shapes_phase_7_may_give(raw, minute, days):
     assert r["minute"] == minute and r["days"] == days and r["steps"][0]["label"] == "A"
 
 
+def test_the_adapter_reads_phase_7s_activity_routines(monkeypatch):
+    """The shape nova.actions.activity.routines(now=<time.time() stamp>) gives (Phase 7's branch, 2026-11-24)."""
+    got = []
+    phase7 = {"key": "routine:Gmail > Calendar > VS Code", "steps": ["Gmail", "Calendar", "VS Code"], "minute": 540,
+              "window": [530, 550], "when": "weekdays", "weekdays": [0, 1, 2, 3, 4], "days": 6,
+              "last_day": "2026-11-23", "text": "weekdays ~9:00: Gmail → Calendar → VS Code", "due": True}
+    monkeypatch.setattr(suggest, "source", lambda: (lambda now=None: (got.append(now), [phase7])[1]))
+    r, = suggest.found_routines(TUE_9)
+    assert got == [TUE_9.timestamp()]
+    assert (r["id"], r["minute"], r["days"]) == ("routine:Gmail > Calendar > VS Code", 540, [0, 1, 2, 3, 4])
+    assert suggest.question_text(r) == "Open your morning setup? (Gmail → Calendar → VS Code)"
+
+
 @pytest.mark.parametrize("raw", [{"steps": [], "time": "9:00"}, {"steps": ["A"]}, {"steps": ["A"], "time": "25:00"},
                                  "not a dict"])
 def test_the_adapter_skips_routines_it_cant_use(raw):

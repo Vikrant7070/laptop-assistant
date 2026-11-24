@@ -1198,11 +1198,11 @@ app itself keeps them (a Sent folder, the conversation's history), and only *whi
 `nova/actions/suggest.py` (the rules, pure), `nova/core/app/suggesting.py` (the watcher, the card, the answers, ⚙),
 `nova/platform/busy.py` (Windows' own "don't disturb" state), `static/suggestions.js` (⚙ Senses). Level-2 recording
 is **not** built (design above).
-- Phase 7's routines come through `suggest.found_routines(now)` around `routines(now=None)`, looked for in
-  `nova.actions.activity` (then `nova.actions.routine_log`); while Phase 7 isn't on master it returns []. It accepts
-  `{"id", "name", "steps" | "apps" | "sequence": ["Gmail", ...] or [{"label" | "app", "tool", "args"}], "time": "9:00"
-  | "minute_of_day" | "hour", "days": [0-6] | ["Mon", ...] | "weekdays" | "weekends" | None}`; a routine with no steps
-  or no time is skipped; a failing Phase 7 is logged and gives [].
+- Phase 7's routines come through `suggest.found_routines(now)` around `nova.actions.activity.routines(now=None)`
+  (given a `time.time()` stamp); while Phase 7 isn't on master it returns []. It reads Phase 7's shape (`key`, `steps`
+  ["Gmail", ...], `minute`, `weekdays` [0-6]; its `days` is a count and is not used as weekdays) and also `id` / `name`
+  / `apps` / `sequence` / `time` "9:00" / `hour` / `days` ["Mon", ...] / "weekdays"; a routine with no steps or no time
+  is skipped; a failing Phase 7 is logged and gives []. With no name it is the morning / afternoon / evening setup.
 - Every 30 s (`suggesting.watch`, started with the other background watchers): a routine inside its usual time
   ± 20 min, on one of its days, not offered yet today, not "don't suggest" -> one card: "Open your morning setup?
   (Gmail → Calendar → VS Code)" with Yes / Not now / Don't suggest this, and why ("You usually do this around 9:00.
