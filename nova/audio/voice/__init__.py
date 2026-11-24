@@ -18,7 +18,7 @@ _HOME = {name: _MODULES[mod] for mod, names in {
     'wake': ['WhisperEars', '_EarsBase', 'set_wake'],
     'windows_ears': ['Ears', 'LISTEN_PS1', 'RT_PS1', 'Transcriber', 'command_phrases', 'kill_strays', 'online_speech_on'],
     'whisper': ['ANYTIME_SHORT', 'EARS_SLEEP_RE', 'EARS_WAKEUP_RE', 'ENGLISH_ONLY', 'ENGLISH_SURE', 'HINGLISH_HINT', 'JUNK_WORDS', 'NOT_WORDS', 'NOVA_NAMES', 'SHORT_REPLY', 'SURE', 'SURE_HINT', 'SURE_SHORT', 'SURE_WAKE', 'VoiceProfile', 'WAKE_HINT', 'WAKE_NAME', 'WAKE_RE', 'WHISPER_CHOICES', 'WHISPER_GHOSTS', 'WHISPER_HINT', 'WHISPER_JUNK', 'WhisperTranscriber', '_add_nvidia_dlls', '_wake_re', '_words', 'noise_words'],
-    'barge_in': ['BARGE_RE', 'BARGE_STOP_RE', 'BargeIn', '_barge_re', 'other_apps_playing'],
+    'barge_in': ['BARGE_RE', 'BARGE_STOP_RE', 'BargeIn', '_barge_re', 'echo_score', 'echo_words', 'other_apps_playing'],
 }.items() for name in names}
 
 

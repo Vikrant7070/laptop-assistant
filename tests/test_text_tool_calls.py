@@ -164,6 +164,49 @@ def test_code_call_with_unknown_argument_is_left_alone(ollama):
     assert calls == []
 
 
+# ---- [tool: args] in brackets (qwen3-vl, live 2026-11-24: nothing ran) ----
+FILES = [{"name": "open_path", "description": "d",
+          "input_schema": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string"}}}},
+         {"name": "find_large_files", "description": "d",
+          "input_schema": {"type": "object", "required": [],
+                           "properties": {"folder": {"type": "string"}, "min_mb": {"type": "number"}}}},
+         {"name": "react", "description": "d",
+          "input_schema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}}}]
+
+
+def test_bracket_call_with_a_positional_path_becomes_a_real_call(ollama):
+    ollama(["I’m on it — first, I’ll open the Downloads folder… 📁\n\n", '[open_path: "C:\\\\Users\\\\vikra\\\\Downloads"]'])
+    _, text, calls = llm.chat("qwen3-vl:4b-instruct", [], FILES, on_text=lambda p: None)
+    assert calls[0]["name"] == "open_path" and calls[0]["args"] == {"path": r"C:\Users\vikra\Downloads"}
+    assert text == "I’m on it — first, I’ll open the Downloads folder… 📁"
+
+
+def test_bracket_call_with_keywords_and_a_number(ollama):
+    ollama(["Oops — I forgot to use the `find_large_files` tool!\nLet’s fix that now… 🛠️\n\n",
+            '[find_large_files: folder="C:\\\\Users\\\\vikra\\\\Downloads", min_mb=1]'])
+    _, _, calls = llm.chat("m", [], FILES, on_text=lambda p: None)
+    assert calls[0]["name"] == "find_large_files"
+    assert calls[0]["args"] == {"folder": r"C:\Users\vikra\Downloads", "min_mb": 1}
+
+
+def test_bracket_call_with_single_backslashes_still_works(ollama):
+    ollama(['[open_path: "C:\\Users\\vikra\\Downloads"]'])
+    _, _, calls = llm.chat("m", [], FILES, on_text=lambda p: None)
+    assert calls[0]["args"] == {"path": r"C:\Users\vikra\Downloads"}
+
+
+@pytest.mark.parametrize("reply", [
+    "Your files are listed [note: see above] for you.",          # not a tool
+    '[open_path: path=os.getcwd()]',                             # not a plain value
+    '[open_path: cmd="C:\\\\x"]',                                # unknown argument
+    '[react: "laugh"] Haha, good one!',                          # a stage direction, played by after_turn
+])
+def test_brackets_that_are_not_a_real_call_stay_text(ollama, reply):
+    ollama([reply])
+    _, text, calls = llm.chat("m", [], FILES, on_text=lambda p: None)
+    assert calls == [] and text
+
+
 # ---- "Sure! Let's run the command:" before a step isn't glued onto the real answer ----
 def test_lead_in_before_a_step_is_left_out_of_the_answer(brain):
     fake, ran = brain([("Sure! Let's check the time:", [("get_system_status", {})]),

@@ -1,5 +1,6 @@
 """Talking over her: BargeIn hears the user while she speaks and stops her."""
 import collections
+import difflib
 import re
 import time
 from nova import runtime
@@ -16,6 +17,50 @@ def _barge_re(names):
 
 
 BARGE_RE = _barge_re(whisper.NOVA_NAMES)
+
+# Symbols her voice reads out as words ("C:\Users" is said "C backslash Users"), so her echo of them matches.
+_SPOKEN_SYMBOLS = {"\\": " backslash ", "/": " slash "}
+
+
+def echo_words(text):
+    """Words for comparing what Whisper heard with what she said: lower case, no apostrophes ("Nova's" = "novas"),
+    spoken symbols as words, and spelled-out letters joined ("R.E.M." and "REM" are both "rem")."""
+    text = (text or "").replace("’", "'")
+    for sym, said in _SPOKEN_SYMBOLS.items():
+        text = text.replace(sym, said)
+    out, letters = [], ""
+    for w in whisper._words(text.replace("'", "")):
+        if len(w) == 1 and w not in ("a", "i"):
+            letters += w
+            continue
+        if letters:
+            out.append(letters)
+            letters = ""
+        out.append(w)
+    if letters:
+        out.append(letters)
+    return out
+
+
+def _same_word(heard, said):
+    """Is this heard word one of hers, allowing Whisper's near misses ("Novus" for "Nova's", "Zikra" for "vikra")?
+    Barge words (stop, wait, her name...) must match exactly, so "stop" is never taken for her "step"."""
+    if heard == said:
+        return True
+    if max(len(heard), len(said)) < 3 or BARGE_RE.fullmatch(heard):
+        return False
+    return difflib.SequenceMatcher(None, heard, said).ratio() >= 0.75
+
+
+def echo_score(text, said):
+    """How much of what Whisper heard is her own words: the share (0..1) of heard words that are (nearly) in said.
+    Words of one or two letters ("in", "it", "a") don't count: Whisper fills gaps with them. 0.0 when nothing was
+    heard."""
+    heard = [w for w in echo_words(text) if len(w) > 2]
+    mine = set(echo_words(said))
+    if not heard:
+        return 0.0
+    return sum(any(_same_word(w, m) for m in mine) for w in heard) / len(heard)
 
 
 def other_apps_playing(level=0.02):
@@ -51,7 +96,8 @@ class BargeIn:
       2. She falters: DUCK_SECS at a third of her loudness (Mouth.duck), so the user's voice now stands out.
       3. A quick Whisper reading of that moment holds a barge word (her name, stop, wait, ruko...) that is NOT
          in what she was saying -> she stops (on_barge). Otherwise she carries on at full voice.
-    Her own words come out of Whisper as her own words, so her echo can't stop her. While another app plays sound
+    Her own words come out of Whisper as her own words, or nearly ("Novus" for "Nova's"): when most of what Whisper
+    heard is what she said in the last few seconds (judge's echo score), it is her echo and can't stop her. While another app plays sound
     (song lyrics say "stop" and "wait"), only her name counts. Needs the natural voice (Kokoro): with the Windows
     voice her sound isn't known, so this stays off."""
 
@@ -162,13 +208,24 @@ class BargeIn:
     def _check(self, audio, t, gen, secs=None):
         try:
             text = self.w.quick_english(audio, wait=1.0)
-            own = self.mouth.words_between(t - (secs or self.LOOK) - 0.5, t + 0.2)
-            kind = self.barge_kind(text, own, music=bool(self.others_playing and self.others_playing()))
-            self.note = f"{time.strftime('%H:%M:%S')} over her voice: “{text[:60]}” -> {kind or 'not for me'}"
-            if kind and gen == self.mouth.gen and self.mouth.talking():
+            look = secs or self.LOOK
+            own = self.mouth.words_between(t - look - 0.5, t + 0.2)
+            recent = self.mouth.words_between(t - look - self.ECHO_BACK, t + 0.5)
+            kind, score = self.judge(text, own, music=bool(self.others_playing and self.others_playing()),
+                                     recent=recent)
+            verdict = kind or ("her own echo" if score >= self.ECHO_MIN else "not for me")
+            self.note = (f"{time.strftime('%H:%M:%S')} over her voice: “{text[:60]}” -> {verdict}"
+                         f" (echo {score:.2f})")
+            fire = bool(kind) and gen == self.mouth.gen and self.mouth.talking()
+            if self.log and echo_words(text):
+                said = (recent or own)[-60:]
+                if fire:
+                    self.log(f"BARGE-IN ({kind}, echo {score:.2f}): heard {text[:60]!r} while she said {said!r}")
+                else:
+                    self.log(f"barge-in ignored ({verdict}, echo {score:.2f}): heard {text[:60]!r}"
+                             f" while she said {said!r}")
+            if fire:
                 self.fired_gen = gen
-                if self.log:
-                    self.log(f"BARGE-IN ({kind}): heard {text[:60]!r} while she said {own[-60:]!r}")
                 self.on_barge(kind, text)
         except Exception as e:
             self.note = f"barge-in check failed: {e}"[:120]
@@ -177,24 +234,37 @@ class BargeIn:
             self.checking = False
 
     TALK_WORDS = 4        # this many new words (none of them hers) in the dip = the user is saying something
+    # Echo: this share of the heard words (or more) is her own -> Whisper heard her, not a sentence of the user's.
+    # Live echoes: 2026-11-21 21:33 "Not too bad, boss. R.E.M. is a big" (all hers, but missed by the old exact
+    # check) and 2026-11-24 14:02 "with PRs that are in there. It looks like Novus got some fun" (0.67 hers).
+    # Stop words and her name still stop her at any score. Tune from the "barge-in ... echo" lines in the task log.
+    ECHO_MIN = 0.65
+    ECHO_BACK = 6.0       # her echo can be of anything she said this many seconds before the dip
 
     @classmethod
-    def barge_kind(cls, text, own, music=False):
-        """'stop' (stop words), 'name' (her name / wait / hold on), 'talk' (a sentence of the user's own, like
-        "open Chrome instead"), or '' - counting only the words in text that she wasn't saying herself.
+    def barge_kind(cls, text, own, music=False, recent=None):
+        return cls.judge(text, own, music, recent)[0]
+
+    @classmethod
+    def judge(cls, text, own, music=False, recent=None):
+        """(kind, echo score). kind: 'stop' (stop words), 'name' (her name / wait / hold on), 'talk' (a sentence of
+        the user's own, like "open Chrome instead"), or ''. Stop words and her name count only when she wasn't saying
+        them herself (own: what she said during the dip); 'talk' needs TALK_WORDS new words and an echo score under
+        ECHO_MIN against recent (what she said over the last few seconds; own when not given).
         music: another app is playing, so only her name counts."""
         mine = set(whisper._words(own))
         new_words = [w for w in whisper._words(text) if w not in mine]
         new = " ".join(new_words)
+        score = echo_score(text, f"{own} {recent or ''}")
         if not new:
-            return ""
+            return "", score
         named = re.search(rf"\b{whisper.NOVA_NAMES}\b", new, re.I)
         if music and not named:
-            return ""
+            return "", score
         if BARGE_STOP_RE.search(new):
-            return "stop"
+            return "stop", score
         if named or BARGE_RE.search(new):
-            return "name"
-        if len(new_words) >= cls.TALK_WORDS and not whisper.noise_words(new):
-            return "talk"
-        return ""
+            return "name", score
+        if len(new_words) >= cls.TALK_WORDS and score < cls.ECHO_MIN and not whisper.noise_words(new):
+            return "talk", score
+        return "", score

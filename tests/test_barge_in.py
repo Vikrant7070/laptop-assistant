@@ -136,7 +136,7 @@ def test_check_on_her_own_echo_does_nothing():
     b = voice.BargeIn(TalkingMouth("Your battery is at sixty percent."), FakeWhisper("Your battery is at sixty"),
                       lambda k, text: got.append(k), others_playing=lambda: False)
     b._check(np.zeros(100, np.float32), time.time(), 7)
-    assert got == [] and "not for me" in b.note
+    assert got == [] and "her own echo" in b.note
 
 
 def test_check_after_she_moved_on_does_nothing():
@@ -278,6 +278,79 @@ def test_a_sentence_of_your_own_over_her_voice_counts():
     assert kind("I found three big open Chrome instead please", own) == "talk"
     assert kind("I found three big model", own) == ""          # one misheard word of hers is not you
     assert kind("open Chrome instead please", own, music=True) == ""
+
+
+# ---------------------------------------------------------------- her echo, as Whisper misreads it, never stops her
+REM = "Not too bad, boss. R.E.M. is a big band from Athens, Georgia."
+
+
+def test_the_2026_11_21_echo_does_not_stop_her():
+    # 21:33:46: barge-in stopped her on "Not too bad, boss. R.E.M. is a big..." - her own words.
+    assert voice.BargeIn.judge("Not too bad, boss. R.E.M. is a big", REM) == ("", 1.0)
+    assert kind("Not too bad boss, REM is a big", REM) == ""            # Whisper spells the band its own way
+    # The dip's short window missed the sentence (she had moved on to the next one): the last seconds still count.
+    assert kind("Not too bad, boss. R.E.M. is a big", "They had a lot of hits.", recent=REM) == ""
+
+
+def test_whispers_near_misses_of_her_own_words_are_echo():
+    # 2026-11-24 14:02:51 and 15:02:35: both fired as "talk" on her own voice.
+    said = "with PR 71 — looks like Nova’s got some fun checks going on"
+    assert kind("with PRs that are in there. It looks like Novus got some fun", said) == ""
+    assert kind("users backslash backslash Zikra backslash backslash.", 'folder="C:\\Users\\vikra\\Downloads", minmb=1]') == ""
+
+
+def test_stop_or_a_sentence_of_yours_during_her_speech_still_stops_her():
+    assert kind("Not too bad, boss. R.E.M. stop", REM) == "stop"
+    assert kind("Not too bad, boss. Nova, wait", REM) == "name"
+    assert kind("ruko", REM, recent=REM) == "stop"
+    assert kind("open Chrome and play some lofi music instead", REM, recent=REM) == "talk"
+    assert kind("Not too bad boss open Chrome and play some lofi music instead", REM) == "talk"
+
+
+def test_echo_threshold_edges():
+    own = "your battery has sixty percent and the charger was plugged into the wall"       # 13 counted words
+    new = "open chrome quickly tomorrow lofi music please"                               # 7 words, none of hers
+    assert voice.echo_score("is it a", own) == 0.0                                       # (short words don't count)
+    assert voice.echo_score(f"{own} {new}", own) == voice.BargeIn.ECHO_MIN          # 13/20 = 0.65: echo
+    assert kind(f"{own} {new}", own) == ""
+    less = own.rsplit(" ", 1)[0]                                                     # 12 of hers + 8 new
+    assert voice.echo_score(f"{less} {new} thanks", own) == 0.6
+    assert kind(f"{less} {new} thanks", own) == "talk"
+
+
+def test_echo_words_and_near_misses():
+    assert voice.echo_words("R.E.M. is Nova’s band") == ["rem", "is", "novas", "band"]
+    assert voice.echo_words("C:\\Users") == ["c", "backslash", "users"]
+    near = voice.barge_in._same_word
+    assert near("novus", "novas") and near("zikra", "vikra") and near("prs", "pr")
+    assert not near("stop", "step") and not near("nova", "novas") and not near("in", "on")
+    assert voice.echo_score("", "anything") == 0.0
+
+
+class TimedMouth(TalkingMouth):
+    """Said the REM line, then "They had a lot of hits." - only the second is in the dip's short window."""
+
+    def words_between(self, t0, t1):
+        return "They had a lot of hits." if t1 - t0 < 3.0 else f"{REM} They had a lot of hits."
+
+
+def test_check_logs_echo_and_keeps_speaking():
+    got, log = [], []
+    b = voice.BargeIn(TimedMouth(""), FakeWhisper("Not too bad, boss. R.E.M. is a big"),
+                      lambda k, text: got.append(k), others_playing=lambda: False)
+    b.log = log.append
+    b._check(np.zeros(100, np.float32), time.time(), 7)
+    assert got == [] and b.fired_gen == -1
+    assert log and log[0].startswith("barge-in ignored (her own echo, echo 1.00)")
+
+
+def test_check_logs_a_real_barge_with_its_score():
+    got, log = [], []
+    b = voice.BargeIn(TimedMouth(""), FakeWhisper("open Chrome and play some lofi music instead"),
+                      lambda k, text: got.append(k), others_playing=lambda: False)
+    b.log = log.append
+    b._check(np.zeros(100, np.float32), time.time(), 7)
+    assert got == ["talk"] and log[0].startswith("BARGE-IN (talk, echo 0.")
 
 
 # ---------------------------------------------------------------- "Nova, stop" when she isn't talking

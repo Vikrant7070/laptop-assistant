@@ -151,3 +151,34 @@ def test_settings_page_explains_the_levels():
     html = (Path(app.ROOT) / "static" / "index.html").read_text(encoding="utf-8")
     assert "Level 2 - hard to undo, or leaves the laptop" in html and "<b>always asks</b>" in html
     assert 'name="aut" value="careful"' in html
+
+
+def test_wifi_and_wallpaper_go_back_to_their_old_value(monkeypatch, tmp_path):
+    """4c-4: Wi-Fi on / off and the wallpaper keep their old value; "undo" puts it back."""
+    ran = []
+    monkeypatch.setattr(common, "_ps", lambda cmd: "Wi-Fi\n   Administrative state: Enabled\n")
+    monkeypatch.setitem(tools.FUNCS, "toggle_wifi", lambda on: ran.append(("wifi", on)) or "ok")
+    rec, _ = _run("toggle_wifi", on=False)
+    assert rec["what"] == "turned Wi-Fi off" and rec["snap"] == {"on": True}
+    undo.undo()
+    assert ran[-1] == ("wifi", True)
+    desk = platform.current()
+    old, new = tmp_path / "old.jpg", tmp_path / "new.jpg"
+    old.write_bytes(b"jpg")
+    new.write_bytes(b"jpg")
+    desk.wall = str(old)
+    rec, _ = _run("set_wallpaper", image_path=str(new))
+    assert rec["what"] == "set the wallpaper to new.jpg" and desk.wallpaper() == str(new)
+    assert undo.undo().startswith("Undone: set the wallpaper to new.jpg")
+    assert desk.wallpaper() == str(old)
+
+
+def test_a_wallpaper_whose_old_picture_is_gone_is_not_put_back(tmp_path):
+    desk = platform.current()
+    new = tmp_path / "new.jpg"
+    new.write_bytes(b"jpg")
+    desk.wall = str(tmp_path / "deleted.jpg")
+    _run("set_wallpaper", image_path=str(new))
+    assert "isn't there any more" in undo.undo() and desk.wallpaper() == str(new)
+    desk.wall = ""                                     # no wallpaper before (or it can't be read): no record
+    assert _run("set_wallpaper", image_path=str(new))[0] is None

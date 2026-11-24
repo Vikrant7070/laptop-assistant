@@ -13,6 +13,13 @@ the chosen model is one of them and the ladder is on (the Brain tab's switch, ke
 call goes to the strongest one that still has uses left; when Google says its limit is used up, cloud.chat moves down
 to the next one in the same call. Only when every one of them is out does Nova use her local brain.
 
+Light and hard jobs (local-first v2, L5): each call may say what kind of job it is. A "hard" job (the default: coach,
+take-over of a stuck task) starts at the top of the ladder. A "light" one (a one-shot answer, a fact, a summary) starts
+at the ladder's "light_from" rung (3.5 Flash Lite, 500 a day), so the 20-a-day models at the top are kept for hard
+work. Either kind still moves down past a used-up rung; a light job never climbs above "light_from", so when the light
+rungs are all used up it fails the same way as when the whole ladder is (local brain). No "light_from" in the config
+(or one that isn't a rung) = every job is hard, as before.
+
 The counts live in data/cloud_usage.json. They are Nova's own count: AI Studio's rate-limit page is the real number
 (other apps using the same Google project count there too).
 """
@@ -118,6 +125,16 @@ def ladder(provider):
     """The provider's free models, strongest first (config/cloud_free.json "ladder")."""
     rungs = (_free_conf().get(provider) or {}).get("ladder") or []
     return [n for n in rungs if isinstance(n, str) and n]
+
+
+JOBS = ("hard", "light")
+
+
+def light_from(provider):
+    """The rung a light job starts at (config/cloud_free.json "light_from"), or "" when there is none (every job is
+    then a hard one)."""
+    rung = (_free_conf().get(provider) or {}).get("light_from")
+    return rung if isinstance(rung, str) and rung in ladder(provider) else ""
 
 
 # ------------------------------------------------------------------ the counts
@@ -240,31 +257,37 @@ def set_ladder(on):
         store.current().write_json(_path(), data)
 
 
-def _rungs(provider, name, data):
-    """The models the chosen `name` stands for: the whole ladder (strongest first) when it is a rung and the ladder is
-    on, otherwise just itself."""
+def _rungs(provider, name, data, job="hard"):
+    """The models the chosen `name` stands for: the ladder when it is a rung and the ladder is on (strongest first for
+    a hard job; from the "light_from" rung down for a light one), otherwise just itself."""
     rungs = ladder(provider)
-    return rungs if name in rungs and ladder_on(data) else [name]
+    if name not in rungs or not ladder_on(data):
+        return [name]
+    start = light_from(provider) if job == "light" else ""
+    return rungs[rungs.index(start):] if start else rungs
 
 
-def route(provider, name, now=None):
-    """The models to try, in order, for a call to the chosen model, leaving out the used-up ones ([] = all out)."""
+def route(provider, name, now=None, job="hard"):
+    """The models to try, in order, for a call to the chosen model, leaving out the used-up ones ([] = all out).
+    job: "hard" (the default) starts at the top of the ladder, "light" at its "light_from" rung."""
     now = time.time() if now is None else now
     data = _load(now)
-    return [n for n in _rungs(provider, name, data)
+    return [n for n in _rungs(provider, name, data, job)
             if not ((data["models"].get(_key(provider, n)) or {}).get("out_until") or 0) > now]
 
 
-def unavailable(provider, name, now=None):
-    """Why the chosen model can't be used now ("" = at least one model it may use has uses left)."""
+def unavailable(provider, name, now=None, job="hard"):
+    """Why the chosen model can't be used now for this kind of job ("" = at least one model it may use has uses
+    left)."""
     now = time.time() if now is None else now
-    if route(provider, name, now):
+    if route(provider, name, now, job):
         return ""
-    rungs = _rungs(provider, name, _load(now))
+    rungs = _rungs(provider, name, _load(now), job)
     if len(rungs) == 1:
         return blocked(provider, name, now)
     back = min(out_until(provider, n, now) for n in rungs)
-    return (f"All my free {provider.title()} models are used up, so I'm using my local brain until "
+    which = "light" if rungs != ladder(provider) else "free"
+    return (f"All my {which} {provider.title()} models are used up, so I'm using my local brain until "
             f"{time.strftime('%H:%M', time.localtime(back))}.")
 
 
