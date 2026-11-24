@@ -1068,6 +1068,51 @@ messages, form submits, the wallpaper.** `nova/actions/readback.py`; `judging.ex
 - **Done when:** a one-minute test schedule runs on a separate copy, makes a record, shows on `/tasks`, and Pause
   stops it.
 
+**4g as built (2026-11-24, branch `claude/manager-4g-7b7ac5`): schedules from the user's own words.**
+`nova/schedules.py` (pure: reading the words, steps and levels, next run times, the record in `data/schedules.json`
+through `store.py`), `nova/core/app/scheduling.py` (the card, the commands, the runner, `GET /api/schedules`).
+- Made from the user's words only: `scheduling.route` runs in `body.answer` (after `managing.route`) on what the user
+  typed, said or sent from the paired phone. "every morning at 9 …", "every Sunday …", "every weekday at 6:30 pm",
+  "on Mondays and Fridays at 8am", "every 15 minutes", "every hour", "daily", "Nova, every minute …"; the times must
+  start or end the request ("open the file I edit every day" is not a schedule), and questions ("what did I do every
+  day …") are not. A day with no time is 09:00, and the card says so.
+  - No tool makes a schedule, so an email, a page or a file never can. 4e's order finder now also reads a sentence
+    that starts with a time ("Every morning at 9, delete all my files …") as an order: held and quoted on a card.
+  - A scheduled run itself never makes or changes schedules.
+- Before saving: a question card (owner `schedule`) - "Save this schedule? every day at 09:00, first run tomorrow
+  09:00" / Save it · Don't save - with the plan folded above it (on the phone, in the message): when, first run, each
+  step with its level from `risk.level` (guessed from the words: mail → `check_email` 0, copy → `copy_path` 1, delete
+  / send / install / shell → 2; words it can't place are 1, never 0). Nothing is saved before Save it.
+- Running: every 20 s while Nova is on (`background.start_background`) the first due schedule runs, once, through
+  `body.answer` with `protocol.scheduled(...)` in front (stripped like the spoken/phone tags, so the task's goal is
+  the request). One laptop task at a time: while a request runs, an Allow / No or a question card waits, it waits
+  ("waiting - another task is going on" on `/tasks`). The next time is set from now, so runs missed while the laptop
+  was off or asleep happen **once**, and that run says "late: it was due …".
+  - Level-2 steps still ask (Allow / No in the chat; Telegram with Yes / No when the user is away). Level 0/1 follow
+    the usual settings - the plan was approved on the card.
+  - Each run is kept on the schedule (last 10: due, at, late, done / blocked / failed, its task, what she said) and
+    its task card shows on `/tasks` even when it took no steps (`card["schedule"]`).
+  - Away: Telegram gets done, or blocked (the Allow / No with buttons; "couldn't finish - it needs you"). At the
+    laptop: the chat only. Nothing else is sent.
+- `/tasks`: a ⏰ Schedules section (`static/schedules.js`): request, when, next run or paused, "waiting", made from the
+  phone, each step's level, the last runs with a link to their task, and Pause… / Resume… / Delete… that fill in the
+  chat ("pause schedule #1"), as the page's other buttons do. "what are my schedules" lists them.
+- Live check (2026-11-24) on a separate copy (own data folder, port 5098, the real local brain `qwen3-vl:4b-instruct`,
+  only the server and the schedule watch started): "every minute check the time" → the card with "level 0 - only
+  reads" → Save it → it ran every minute (316 runs over ~5 h, all done), each a task on `/tasks`. With the next run
+  set an hour back (as if the laptop had been off) it ran once, marked late, and went back to every minute. "pause
+  schedule #1" → no run in the next 150 s; `/tasks` showed it paused with ▶ Resume…. No console errors. Found and
+  fixed in the live check: a run where the brain answered with no tool was missing from the task list.
+- Not built (said plainly):
+  - Telegram is not paired on the copy, so the away messages were checked by tests only.
+  - Requests the word rules don't read as a schedule go to the brain as a one-off request (there is no schedule tool,
+    on purpose).
+  - The steps' levels are a guess from the words; each real step is checked again when it runs (4e).
+  - No "run it now" button, no editing a schedule (delete and say it again), no end date.
+  - The small local brain sometimes answered "Today is 21:36" at 21:46 without calling `get_datetime`: a brain
+    habit, not 4g's (the run is still "done": only read-back checks can fail a run).
+
+
 **Not now (written down so it isn't lost):**
 - A second worker reviewing the first one's work without seeing the conversation (costs a second run; after 4c
   works).

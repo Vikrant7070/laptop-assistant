@@ -90,7 +90,7 @@ def _maybe_stuck(rec):
 
 def rows(status=None, kind=None, limit=LIMIT):
     """The list, newest first, filtered by FILTERS / KINDS words (unknown words = no filter)."""
-    out = [task_row(c) for c in _cards() if c["runs"] or c["plan"]]       # a chat with no steps isn't a task
+    out = [task_row(c) for c in _cards() if c["runs"] or c["plan"] or c.get("schedule")]  # a chat with no steps isn't a task; a scheduled run is (4g)
     out += [job_row(r) for r in workers.load_jobs()]
     if status in FILTERS:
         out = [r for r in out if r["status"] in FILTERS[status]]

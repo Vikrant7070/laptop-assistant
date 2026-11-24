@@ -15,3 +15,4 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 | Local first v2 L3: check before "done" (type_text + file-not-found readers in `nova/actions/readback.py`, failed-again climb hook in `judging.readback_verdict` / `brains.py`). Stacked on PR #79 | Claude session (lf2-l3-readback) | `claude/lf2-l3-readback-014f96` | 2026-11-24 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |
 | Barge-in echo fix (`nova/audio/voice/barge_in.py`, `tests/test_barge_in.py`) | Claude session (barge-in echo) | `claude/bargein-echo-4ec2d0` | 2026-11-24 |
+| Manager 4g: scheduled and repeating jobs (`nova/schedules.py`, `nova/core/app/scheduling.py`, `static/schedules.js`, the ⏰ section in `static/tasks.html`; one line each in `body.py`, `background.py`, `tasks_page.py`, `risk.py`, `protocol.py`, `store.py`) | Claude session (manager 4g) | `claude/manager-4g-7b7ac5` | 2026-11-24 |

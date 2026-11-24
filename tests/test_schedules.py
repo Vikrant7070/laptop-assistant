@@ -210,3 +210,12 @@ def test_the_tasks_page_has_the_schedules():
     from nova import shared
     html =(shared.ROOT / "static" / "tasks.html").read_text(encoding="utf-8")
     assert 'id="schedules"' in html and "/static/schedules.js" in html
+
+
+def test_a_run_that_took_no_steps_still_shows_on_tasks(brain, client, phone):
+    """Live check 2026-11-24: the real brain just answered "It's 16:24" with no tool - the run was missing from /tasks."""
+    _saved("every minute check the time")
+    brain([("It's 9:00.", [])])
+    run = scheduling.run(schedules.get(1))
+    rows = client.get("/api/tasks").get_json()["rows"]
+    assert run["status"] == "done" and any(r["id"] == "t:" + run["task"] for r in rows)

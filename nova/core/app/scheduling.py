@@ -174,6 +174,9 @@ def run(rec, now=None):
         log_exception("schedules: a run")
         out, status = {"error": f"{type(e).__name__}: {e}"}, 500
     card = task_state.of(session.state.get("task"))
+    if card is not None:                              # a run is a task on /tasks even when it took no steps
+        card["schedule"] = rec["id"]
+        resume.save()
     result = _result(out, status, card)
     head = f"⏰ Schedule #{rec['id']} ({rec['request']})"
     if late:
@@ -233,5 +236,5 @@ def schedules_list():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import asking, body, conversation, eventbus, integrations, session, voice_io  # noqa: E402
+from nova.core.app import asking, body, conversation, eventbus, integrations, resume, session, voice_io  # noqa: E402
 asking.handler(OWNER, _answered)
