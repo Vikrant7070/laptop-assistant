@@ -177,8 +177,9 @@ def _failing(text):
     return tail[:120] + (f" ({', '.join(names[:4])}{' …' if len(names) > 4 else ''})" if names else "")
 
 
-def run_tests(cwd, argv, env=None, checkpoint=None, secs=None):
-    """Run the test command; the job's Stop stops it too. -> a "tests" check."""
+def run_tests(cwd, argv, env=None, checkpoint=None, secs=None, name="tests"):
+    """Run the test command (or a Phase 5 judge's: lint, build, lighthouse - `name`); the job's Stop stops it too.
+    -> a check called `name`."""
     secs = secs or TEST_SECS
     shown = " ".join([os.path.basename(argv[0])] + argv[1:]).replace("python.exe -m ", "").replace("python -m ", "")
     try:
@@ -186,7 +187,7 @@ def run_tests(cwd, argv, env=None, checkpoint=None, secs=None):
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, text=True, encoding="utf-8",
                                 errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except OSError as e:
-        return _check("tests", "skipped", f"{shown} couldn't start ({e.strerror or e})")
+        return _check(name, "skipped", f"{shown} couldn't start ({e.strerror or e})")
     out = []
     from nova import runtime
     reader = runtime.spawn("jobchecks.read", lambda: out.extend(proc.stdout), start=False)
@@ -199,7 +200,7 @@ def run_tests(cwd, argv, env=None, checkpoint=None, secs=None):
             if time.time() > end:
                 _kill(proc)
                 reader.join(5)
-                return _check("tests", "failed", f"{shown} ran longer than {secs // 60 or 1} min, so I stopped it",
+                return _check(name, "failed", f"{shown} ran longer than {secs // 60 or 1} min, so I stopped it",
                               "".join(out))
             time.sleep(0.2)
     except BaseException:
@@ -209,14 +210,16 @@ def run_tests(cwd, argv, env=None, checkpoint=None, secs=None):
     reader.join(5)
     text = "".join(out)
     if proc.returncode == 0:
-        return _check("tests", "passed", f"{shown}: {_failing(text)}")
-    if proc.returncode == 5 and "pytest" in shown:            # pytest: no tests were collected
-        return _check("tests", "skipped", "the project has no tests yet")
-    return _check("tests", "failed", f"{shown}: {_failing(text)}", text)
+        return _check(name, "passed", f"{shown}: {_failing(text)}")
+    if proc.returncode == 5 and "pytest" in shown and name == "tests":            # pytest: no tests were collected
+        return _check(name, "skipped", "the project has no tests yet")
+    return _check(name, "failed", f"{shown}: {_failing(text)}", text)
 
 
-def coding(root, folder, files, env=None, checkpoint=None):
-    """The checks of a finished coding job. Never raises (a check that crashes is skipped, with why)."""
+def coding(root, folder, files, env=None, checkpoint=None, kind=""):
+    """The checks of a finished coding job: files, tests, then Phase 5's judges (lint/build, and the website judge
+    for a new site / app or a folder with a page). Never raises (a check that crashes is skipped, with why).
+    kind: the manager's job type ("new site", "feature", ...), "" when unknown."""
     checks = [files_inside(root, folder or root, files)]
     if not files:
         return checks + [_check("tests", "skipped", "no files changed")]
@@ -229,7 +232,26 @@ def coding(root, folder, files, env=None, checkpoint=None):
             raise
         log_exception("jobchecks: running the tests", e)
         checks.append(_check("tests", "skipped", f"the test run crashed ({e.__class__.__name__})"))
-    return checks
+    return checks + judged(root, folder or root, env, checkpoint, kind)
+
+
+def judged(root, folder, env=None, checkpoint=None, kind=""):
+    """Phase 5's judges on a coding job's folder: lint / build, then the website judge when it's a site."""
+    from nova.actions import judges, sitejudge
+    out, built = [], ""
+    try:
+        conf = judges.settings()
+        cwd = judges.project(root, folder, judges._sets_up_code)
+        out, built = judges.code(cwd, env, checkpoint, conf)
+        site = judges.project(root, folder, sitejudge.looks_like_site)
+        if sitejudge.wanted(site, kind):
+            out += sitejudge.site(site, kind, env, checkpoint, conf, built if Path(site) == Path(cwd) else "")
+    except Exception as e:
+        if e.__class__.__name__ == "Stopped":
+            raise
+        log_exception("jobchecks: running the judges", e)
+        out.append(_check("judges", "skipped", f"the judges crashed ({e.__class__.__name__})"))
+    return out
 
 
 # ------------------------------------------------------------------ research
@@ -254,6 +276,13 @@ def research(job, wanted=3):
                                  f"{os.path.basename(path)} is there" if size > 0 else f"{os.path.basename(path)} is empty"))
         except OSError:
             checks.append(_check("report", "failed", f"the report file is missing ({path})"))
+    if checks[-1]["state"] == "passed":                      # Phase 5: the research judge reads the report
+        from nova.actions import judges
+        try:
+            checks += judges.research(job)
+        except Exception as e:
+            log_exception("jobchecks: judging the research report", e)
+            checks.append(_check("judges", "skipped", f"the research judge crashed ({e.__class__.__name__})"))
     return checks
 
 
