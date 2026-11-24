@@ -51,6 +51,8 @@ def save(task=None):
     try:
         if task.get("goal"):                      # a real task dict (not just {"card": ...}): the Tasks page's columns
             card["brain"] = brain_label(task)
+            if task.get("climbed"):               # local first: why it went to the cloud (Brain tab stats, L6)
+                card["climbed"] = task_state.clean(task["climbed"], 120)
             v = task.get("verdict") or {}
             if v:
                 card["verdict"], card["verdict_source"] = v.get("verdict"), v.get("source", "")

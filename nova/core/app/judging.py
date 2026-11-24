@@ -181,15 +181,20 @@ def execute(calls, approved, activity, model):
         session.state.pop("ran_as", None)
         rid = task_state.start(card, c)   # the card: started, not confirmed - until the tool has really run
         snap = undo.before(c)             # 4e: a level-1 step that can be undone keeps what was there
+        started = time.time()             # 4c-4: a download must be newer than this
         try:
             out = conversation._execute_one(c, approved, activity, model)
             undo.after(c, out, not skillrun._failed(out), snap, card["id"] if card is not None else "")
             c = session.state.pop("ran_as", None) or c   # the call that really ran (web_research may become a background job)
             task_state.finish(card, out, not skillrun._failed(out), c["name"], rid)   # no-op if check_step did
             if card is not None and not skillrun._failed(out):     # 4c: code reads the result back, never her "done"
-                rb = readback.read_back(c["name"], c.get("args") or {}, out)
+                rb = readback.read_back(c["name"], c.get("args") or {}, out, started)
                 task_state.set_check(card, rid, rb)
                 out += readback.note(rb)
+                if not rb or rb["state"] != "failed":
+                    readback.found_after_all(card, c["name"], rid)
+            elif card is not None:        # L3: an error that says the file isn't there is a failed check too
+                task_state.set_check(card, rid, readback.missing(c["name"], c.get("args") or {}, out))
         except conversation.Stopped:      # every call still gets a result, so the history stays valid for the next request
             out = "The user pressed Stop before this step finished. It was not done (or only partly)."
             task_state.leave_open(card, rid)   # half-done: safe resume (4-pre b) checks it before anything redoes it
