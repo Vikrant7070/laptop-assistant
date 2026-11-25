@@ -71,13 +71,18 @@ def _replan(task, words):
     return replan(task, f"Stuck: it {words}. Plan a different way to reach the goal - not that step again.", "STUCK")
 
 
-def replan(task, why, label="RE-PLAN"):
+def replan(task, why, label="RE-PLAN", deep=True):
     """One fresh plan for the task's card from the goal, the one-line step outcomes and `why` (a sentence written by
-    code). -> the card's rendered plan, or "" (no card, no planner, nothing usable came back)."""
+    code). -> the card's rendered plan, or "" (no card, no planner, nothing usable came back). deep=False: only a
+    cloud brain may plan - the local deep brain costs ~2 min on the shared GPU (task exam 2026-11-25: 2 of 2 read-back
+    re-plans took 2+ min and gave nothing), so without a cloud brain she just gets her one more go."""
     card = task_state.of(task)
     if card is None:
         return ""
     goal = card["goal"] + "\nAlready tried, step by step:\n" + "\n".join(task_state.outcomes(card)) + "\n" + why
+    if not deep and not cloud_planner(config.settings(), goal):
+        conversation.task_log(f"{label} re-plan skipped (no cloud brain; the deep brain is too slow for this)")
+        return ""
     try:
         plan, m = make_plan(goal)
     except Exception:

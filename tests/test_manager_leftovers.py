@@ -96,6 +96,7 @@ def test_local_first_replans_with_the_cloud_brain_it_would_climb_to(monkeypatch,
 
 def test_a_failed_read_back_gets_one_new_plan_for_the_one_more_go(brain, monkeypatch, tmp_path):
     _settings(autonomy="full")
+    monkeypatch.setattr(watching, "cloud_planner", lambda s, goal: "cloud:google:gemini-x")   # a cloud brain is on
     goals = []
     monkeypatch.setattr(watching, "make_plan", lambda goal: (goals.append(goal), (
         "1. Write the file again - write_text_file - it is there\n2. Read it back - read_text_file - same text",
@@ -114,6 +115,26 @@ def test_a_failed_read_back_gets_one_new_plan_for_the_one_more_go(brain, monkeyp
     assert card["source"] == "cloud"
     assert out["reply"] == "I don't think I finished that - multi.txt is missing. Want me to try again?"
 
+
+
+def test_without_a_cloud_brain_a_failed_read_back_skips_the_slow_deep_brain(brain, monkeypatch, tmp_path):
+    # Task exam 2026-11-25 (local only): two read-back re-plans by the deep brain took 2+ minutes each and gave
+    # nothing. Without a cloud brain she gets her one more go straight away, with the failing check on the card.
+    _settings(autonomy="full", provider="ollama")
+    monkeypatch.setattr(watching, "make_plan", lambda goal: pytest.fail("a planner was asked"))
+    target = tmp_path / "multi.txt"
+    fake, ran = brain([("", [("write_text_file", {"path": str(target), "content": "step one done"})]),
+                       ("Saved it!", []), ("Saved it, really!", [])], tool_output=f"Wrote {target}")
+    out, _ = app.answer(f"write step one done into {target}")
+    assert out["reply"] == "I don't think I finished that - multi.txt is missing. Want me to try again?"
+    assert app.state["task"]["card"]["source"] != "deep brain"
+
+
+def test_the_stuck_replan_still_uses_the_deep_brain(monkeypatch):
+    monkeypatch.setattr(watching, "cloud_planner", lambda s, goal: None)
+    monkeypatch.setattr(watching, "make_plan", lambda goal: (PLAN, "deepseek-r1:8b"))
+    card = _card()
+    assert watching.replan({"card": card}, "Stuck.") and card["source"] == "deep brain"
 
 # ------------------------------------------------------------------ 2. research: sent back once
 
