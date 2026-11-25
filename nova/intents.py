@@ -39,6 +39,21 @@ READ_MORE = re.compile(r"\b(summar|translat|explain|mean|fix|rewrite|correct|imp
                        r"short|simplif|convert|count|search|google|save|note|email|type|paste|samjha|matlab)", re.I)
 
 
+# "open youtube and search lofi music" / "search lofi on youtube": a search on YouTube, opened by code at its results
+# page (QA 2026-11-25: the brain clicked the search box, or went through Google, and stalled both times).
+YOUTUBE_SEARCH = re.compile(
+    r"^\W*(?:(?:please|nova|can you)\W+)*(?:open|go to)\s+youtube\s+(?:and\s+)?"
+    r"(?:search|find|look up|look for)\s+(?:for\s+)?(?P<q>[^?!]+?)\W*$"
+    r"|^\W*(?:(?:please|nova|can you)\W+)*(?:search|find|look up|look for)\s+(?:for\s+)?(?P<q2>[^?!]+?)\s+on\s+youtube\W*$",
+    re.I)
+
+
+def youtube_query(text):
+    """The words to search YouTube for, or None."""
+    m = YOUTUBE_SEARCH.search(text or "")
+    return ((m.group("q") or m.group("q2")).strip() or None) if m else None
+
+
 VIDEO = [  # clear video-player requests, done directly (the small model mixed up video vs window full screen)
     (re.compile(r"\b(exit|leave|close|get out of|come out of|stop|remove|minimi[sz]e)\b[^.?!]{0,25}full ?screen", re.I),
      "exit_fullscreen"),
@@ -253,7 +268,7 @@ JUST_STOP = just_stop_re(DEFAULT_NAMES)       # voice_io builds its own from the
 
 
 KINDS = {
-    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD,
+    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD, "youtube_search": YOUTUBE_SEARCH,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
     "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "build_thing": BUILD_THING, "project_code": PROJECT_CODE,
     "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,

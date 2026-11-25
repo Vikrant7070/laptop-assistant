@@ -236,10 +236,19 @@ def _browser_in_use():
     return None
 
 
-@tool("Open a URL, or search Google if given words.", friendly="Opened the browser", core=True,
-      hints="open youtube google netflix website", props={"url_or_search": common.S}, required=["url_or_search"])
+YOUTUBE_SEARCH = re.compile(r"^\s*(?:search\s+)?youtube(?:\.com)?\s*(?:for\b|:)?\s*(?P<a>.+)$|^(?P<b>.+?)\s+on\s+youtube\s*$", re.I)
+
+
+@tool("Open a URL, or search Google if given words. To search YouTube give 'youtube <words>' - it opens the results "
+      "page directly (no clicking the search box).", friendly="Opened the browser", core=True,
+      hints="open youtube google netflix website search youtube", props={"url_or_search": common.S},
+      required=["url_or_search"])
 def open_website(url_or_search):
     q = str(url_or_search).strip()
+    yt = YOUTUBE_SEARCH.match(q) if " " in q else None
+    if yt and (yt.group("a") or yt.group("b")).strip():
+        # QA 2026-11-25: clicking YouTube's search box looped 3 times and stalled; its results URL needs no clicks.
+        q = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus((yt.group("a") or yt.group("b")).strip())
     if " " in q or "." not in q or q.lower().startswith(("file:", "javascript:")):
         url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(q)
     else:

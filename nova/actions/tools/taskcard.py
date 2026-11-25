@@ -52,7 +52,33 @@ def ask_user(question, key, why="", needed_now=False):
       props={"which": {"type": "string", "description": "'latest', a number, or words"}}, required=[])
 def undo_last_change(which="latest"):
     from nova.actions import undo
-    return undo.undo(which or "latest")
+    held = _not_from_the_last_task(which)
+    return held or undo.undo(which or "latest")
+
+
+def _not_from_the_last_task(which):
+    """'undo that' means the task just before this one. If that task changed nothing that can be undone (its step
+    failed), don't quietly undo an older change - say so and give its number. (QA 2026-11-25: a rename that never
+    happened, then "undo that" sent the file written two requests earlier to the Recycle Bin, while she said the
+    file was still there.) -> words to return instead of undoing, or None."""
+    from nova import db
+    from nova.actions import undo
+    if str(which or "latest").strip().lower().lstrip("#") not in ("", "latest", "last", "that", "it", "this"):
+        return None                                   # a number or words: the user picked it
+    rec = undo._find("latest")
+    if rec is None or not rec.get("task"):
+        return None
+    card = _card()
+    now_id = card.get("id") if isinstance(card, dict) else None
+    try:
+        before = next((t for t in db.load_tasks(limit=6) if t.get("id") != now_id), None)
+    except Exception:
+        return None
+    if before is None or before.get("id") == rec["task"]:
+        return None
+    return (f"Nothing to undo from the last request (\"{str(before.get('goal', ''))[:60]}\"): it didn't change "
+            f"anything I can put back. The newest change I can undo is #{rec['id']}: {rec['what']}. Tell the user "
+            f"that, and undo it only if they say \"undo change #{rec['id']}\".")
 
 
 @tool("Note a fact for this task on its card - something you found out on the way, or a guess (guess=true) - so "

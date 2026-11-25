@@ -303,3 +303,13 @@
 {"kind": "intent", "intent": "drop_card", "query": "cancel my netflix subscription", "match": false, "note": "a request, not a dismissal"}
 {"kind": "intent", "intent": "drop_card", "query": "no, the other folder", "match": false, "note": "a correction, not a dismissal"}
 {"kind": "intent", "intent": "drop_card", "query": "drop the file in Downloads", "match": false, "note": "a request"}
+{"kind": "intent", "intent": "youtube_search", "query": "open youtube and search lofi music", "match": true, "note": "says it - QA 2026-11-25"}
+{"kind": "intent", "intent": "youtube_search", "query": "search lofi beats on youtube", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "youtube_search", "query": "youtube pe search karo arijit songs", "match": false, "note": "Hinglish word order: not handled yet"}
+{"kind": "intent", "intent": "youtube_search", "query": "can you open youtube and look for cat videos", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "youtube_search", "query": "find a pasta recipe on youtube", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "youtube_search", "query": "go to youtube and search for f1 highlights", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "youtube_search", "query": "open youtube", "match": false, "note": "no search"}
+{"kind": "intent", "intent": "youtube_search", "query": "play the next video", "match": false, "note": "a player button"}
+{"kind": "intent", "intent": "youtube_search", "query": "search for flights to delhi", "match": false, "note": "not youtube"}
+{"kind": "intent", "intent": "youtube_search", "query": "what is youtube", "match": false, "note": "a question"}

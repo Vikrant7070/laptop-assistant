@@ -124,9 +124,22 @@ def organize_folder(folder="downloads"):
     return f"Moved {moved} files in {p} into category folders."
 
 
-@tool("Create a folder.", friendly="Created a folder", props={"path": common.S}, required=["path"])
-def create_folder(path):
-    p = common._resolve(path)
+def folder_target(args):
+    """The folder create_folder makes: path + name when a name is given (tool, read-back and undo agree)."""
+    name = str(args.get("name") or "").strip().strip("\\/")
+    p = common._resolve(args.get("path", ""))
+    return p / name if name and p.name.lower() != name.lower() else p
+
+
+@tool("Create a new folder: 'name' is the new folder's name, 'path' is the folder to make it in.",
+      friendly="Created a folder",
+      props={"path": {"type": "string", "description": "the folder to make it in (or the new folder's full path)"},
+             "name": {"type": "string", "description": "the new folder's name, e.g. qa-notes"}},
+      required=["path", "name"])
+def create_folder(path, name=""):
+    # The small brain gave only the parent folder 3 times out of 3 (task exams 2026-11-23/25, QA 2026-11-25):
+    # a separate name field is easier for it to fill than a joined path.
+    p = folder_target({"path": path, "name": name})
     if p.is_dir():          # "Created" for a folder that was already there hid a wrong path (task exam 2026-11-23)
         return f"Nothing created: {p} was already there. If you meant a new folder inside it, give its full path."
     p.mkdir(parents=True, exist_ok=True)

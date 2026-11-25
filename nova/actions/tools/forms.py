@@ -109,8 +109,9 @@ def scroll(direction="down", amount=5, window=""):
     return f"Scrolled {direction} {amount} notches" + (f" in '{w[1]}'." if w else ".")
 
 
-@tool("Type into a text box in a window and press Enter - use this to SEARCH on a website (YouTube, Google, "
-      "Amazon...) or fill a form field. 'box' is the box's name; leave it empty for the page's search box.",
+@tool("Type into a text box in a window and press Enter - use this to SEARCH on a website (Amazon, a shop...) or "
+      "fill a form field. 'box' is the box's name; leave it empty for the page's search box. For YouTube or Google, "
+      "open_website('youtube <words>') / open_website('<words>') is faster.",
       friendly="Typed into a box", risky="Type into a box",
       hints="search for something on a website, type in the search box",
       props={"text": common.S, "box": common.S, "window": common.S, "press_enter": common.B}, required=["text"])

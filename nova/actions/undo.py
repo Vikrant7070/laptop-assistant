@@ -86,7 +86,8 @@ def before(call):
             final = _final(src, dst)
             return {"src": str(src), "final": str(final), "clear": not final.exists()}
         if name == "create_folder":
-            p = _resolve(args.get("path"))
+            from nova.actions.tools.files import folder_target
+            p = folder_target(args)
             return {"path": str(p), "new": not p.exists()}
         if name == "write_text_file":
             p = _resolve(args.get("path"))
