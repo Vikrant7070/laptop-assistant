@@ -22,3 +22,30 @@ def test_type_and_save_writes_the_file_then_opens_it(brain, tmp_path):
     app.answer(f"open Notepad, type 'step one done', and save it as {target}")
     assert ran[:2] == [("write_text_file", {"path": str(target), "content": "step one done"}),
                        ("open_path", {"path": str(target)})]
+
+
+def test_close_without_saving_presses_dont_save_even_if_the_brain_forgets(brain, desktop, monkeypatch):
+    # Final QA 2026-11-25: the brain called window_action(close) without discard_changes, and the prompt went back
+    # to the user although they had said "without saving".
+    import json
+    from nova import store
+    from nova.actions.tools import forms
+    s = app.settings()
+    s["autonomy"] = "trusted"
+    store.current().settings.write_text(json.dumps(s), encoding="utf-8")
+    desktop.set_windows([(7, "*Untitled - Notepad", "notepad.exe")], front=7)
+    clicked = []
+    monkeypatch.setattr(desktop, "close", lambda hwnd: None)
+    monkeypatch.setattr(forms, "buttons_in", lambda hwnd: [("Save", 1, 1), ("Don't save", 2, 2), ("Cancel", 3, 3)]
+                        if desktop.is_window(hwnd) else [])
+
+    def click(x, y, *a, label="", **k):
+        clicked.append(label)
+        desktop.alive.discard(7)
+        desktop.scene = []
+    monkeypatch.setattr(forms, "_nova_click", click)
+    real = app.tools.run_tool
+    brain([("", [("window_action", {"title_or_app": "notepad", "action": "close"})]), ("Closed it.", [])])
+    monkeypatch.setattr(app.tools, "run_tool", lambda n, a: real(n, a))
+    app.answer("close notepad without saving")
+    assert clicked == ["Don't save"] and not desktop.is_window(7)
