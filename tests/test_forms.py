@@ -39,8 +39,10 @@ def test_plan_fills_known_boxes_and_leaves_secrets():
 def test_cards_and_ids_are_not_saved():
     saved, err = forms.save({"full_name": "4111 1111 1111 1111"})
     assert saved is None and err
-    saved, err = forms.save({**DETAILS, "password": "hunter2"})          # not a field: dropped
-    assert not err and "password" not in saved and forms.load()["email"] == "asha@example.com"
+    saved, err = forms.save({**DETAILS, "password": "hunter2"})          # Phase 7: refused, not silently dropped
+    assert saved is None and "never kept" in err
+    saved, err = forms.save({**DETAILS, "favourite_colour": "blue"})     # not a field: dropped
+    assert not err and "favourite_colour" not in saved and forms.load()["email"] == "asha@example.com"
 
 
 def test_fill_form_never_tells_the_brain_the_values(monkeypatch, desktop):
