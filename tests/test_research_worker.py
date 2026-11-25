@@ -138,7 +138,8 @@ def test_report_and_finding_past_research_by_day_or_words(monkeypatch, tmp_path)
     assert "green tea is fine" in tools.research_report(f"the research from {day_name}")
     assert "green tea is fine" in tools.research_report("tea")
     assert "Coffee is fine." in tools.research_report("latest")              # file gone: the record still helps
-    other = next(d for i, d in enumerate(workers.DAYS) if i not in (1, time.localtime(now).tm_wday))
+    busy = (time.localtime(tue).tm_wday, time.localtime(now).tm_wday)      # the two days that have a job
+    other = next(d for i, d in enumerate(workers.DAYS) if i not in busy)
     assert workers.last_record(f"the research from {other}", False, ("research",)) is None   # no job that day
     # after a restart (no jobs in memory), "show it" opens the saved report
     monkeypatch.setattr(coworker, "jobs", [])
