@@ -136,8 +136,9 @@ def offer(routine, now=None):
     from nova.core.app import asking, voice_io
     register()
     q = asking.question("go", suggest.question_text(routine), "one", choices=suggest.CHOICES, why=suggest.why(routine))
+    now = now or dt.datetime.now()
     card = asking.make(OWNER, [q], data={"routine": routine["id"], "name": routine["name"],
-                                         "request": suggest.request(routine)})
+                                         "request": suggest.request(routine), "at": now.timestamp()})
     suggest.mark_shown(routine["id"], now)
     out = asking.ask(card, "Suggested your routine", wait=False)
     out["say"] = f"{suggest.question_text(routine).split(' (')[0]} Yes, not now, or don't suggest this?"
@@ -180,7 +181,9 @@ def _answered(qcard, answers):
 
 
 def _dropped(qcard):
-    suggest.answer(qcard["data"]["routine"], "dropped")
+    """Expired unanswered: counted on the day it was offered (it may expire after midnight)."""
+    at = qcard["data"].get("at")
+    suggest.answer(qcard["data"]["routine"], "dropped", now=dt.datetime.fromtimestamp(at) if at else None)
 
 
 def run_routine(request, rid=""):
