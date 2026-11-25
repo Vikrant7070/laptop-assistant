@@ -66,6 +66,40 @@ def type_and_save_parts(text):
     return (m.group("text"), m.group("path").strip()) if m else None
 
 
+# "write 'shopping list: milk' into a new file called list.txt in C:\x": one file step by code (final exam
+# 2026-11-25: she made a "temp" folder first and wrote the file inside it, not where asked).
+WRITE_INTO = re.compile(r"^\W*(?:(?:please|nova)\W+)*(?:write|put|save)\s+[\"'](?P<text>[^\"']+)[\"']\s+(?:into|in|to)\s+"
+                        r"(?:a\s+)?(?:new\s+)?(?:text\s+)?file\s+(?:called|named)\s+[\"']?(?P<file>[^\s\"'\\/]+\.[a-z0-9]{1,6})[\"']?"
+                        r"\s+(?:in|inside|into)\s+[\"']?(?P<folder>[a-z]:\\[^\"'?]+?|~[\\/][^\"'?]+?)[\"']?\W*$", re.I)
+
+
+def write_into_parts(text):
+    """(text, file name, folder) from "write 'X' into a file called F in FOLDER", or None."""
+    m = WRITE_INTO.search(text or "")
+    return (m.group("text"), m.group("file"), m.group("folder").strip()) if m else None
+
+
+# "what is 17 times 23" / "15% of 2400": worked out by code (final exam 2026-11-25: she reached for the terminal).
+_NUM = r"-?\d[\d,]*(?:\.\d+)?"
+ARITHMETIC = re.compile(r"^\W*(?:(?:what(?:'s| is)|calculate|how much is|tell me)\s+)?(?P<a>" + _NUM + r")\s*"
+                        r"(?P<op>times|x|\*|multiplied by|into|plus|\+|minus|-|divided by|/|percent of|% of)\s*(?P<b>" + _NUM + r")"
+                        r"\s*\??\W*$", re.I)
+
+
+def arithmetic_parts(text):
+    """(a, op, b) as numbers and a normalised op ("*", "+", "-", "/", "%"), or None."""
+    m = ARITHMETIC.search(text or "")
+    if not m:
+        return None
+    op = m.group("op").lower()
+    op = {"times": "*", "x": "*", "multiplied by": "*", "into": "*", "plus": "+", "minus": "-", "divided by": "/",
+          "percent of": "%", "% of": "%"}.get(op, op)
+    try:
+        return float(m.group("a").replace(",", "")), op, float(m.group("b").replace(",", ""))
+    except ValueError:
+        return None
+
+
 # "switch to the calculator": focus that window by code when one is open (QA 2026-11-25: she said "You're already
 # in Calculator" without looking - she wasn't). No window by that name -> the brain decides as before.
 SWITCH_TO = re.compile(r"^\W*(?:(?:please|nova|can you|ok(?:ay)?)\W+)*(?:switch|go|change|move|jump|take me)\s+(?:back\s+)?to\s+"
@@ -336,7 +370,7 @@ JUST_STOP = just_stop_re(DEFAULT_NAMES)       # voice_io builds its own from the
 
 
 KINDS = {
-    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD, "youtube_search": YOUTUBE_SEARCH, "switch_to": SWITCH_TO, "rename_file": RENAME_FILE, "type_and_save": TYPE_AND_SAVE, "capabilities": CAPABILITIES,
+    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD, "youtube_search": YOUTUBE_SEARCH, "switch_to": SWITCH_TO, "rename_file": RENAME_FILE, "write_into": WRITE_INTO, "arithmetic": ARITHMETIC, "type_and_save": TYPE_AND_SAVE, "capabilities": CAPABILITIES,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
     "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "build_thing": BUILD_THING, "project_code": PROJECT_CODE,
     "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,

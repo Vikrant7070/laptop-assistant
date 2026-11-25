@@ -132,6 +132,22 @@ CAPABILITIES_SAY = ("I can open and switch apps, sort your files, change setting
                     "I always ask before deleting, sending or installing anything.")
 
 
+def _arithmetic(text):
+    """ "17 times 23 is 391." for a plain sum of two numbers, else None (a division by zero is said plainly)."""
+    parts = intents.arithmetic_parts(text)
+    if not parts:
+        return None
+    a, op, b = parts
+    if op == "/" and b == 0:
+        return "That can't be worked out - it divides by zero."
+    value = {"*": a * b, "+": a + b, "-": a - b, "/": a / b if b else 0, "%": a * b / 100}[op]
+
+    def show(n):
+        return f"{int(n):,}" if float(n).is_integer() else f"{round(n, 4):,}".rstrip("0").rstrip(".")
+    words = {"*": "times", "+": "plus", "-": "minus", "/": "divided by", "%": "percent of"}[op]
+    return f"{show(a)}{'%' if op == '%' else ''} {'of' if op == '%' else words} {show(b)} is {show(value)}."
+
+
 def _rename_call(text):
     """("move_or_rename", args) for "rename X to Y" when X is really there, else None. A bare new name stays in
     X's folder ("rename C:\\x\\old.txt to new.txt" -> C:\\x\\new.txt)."""
@@ -162,14 +178,21 @@ def look_first(text, activity):
     if intents.match("capabilities", text):          # "what can you do?": a plain answer (QA 2026-11-25)
         activity.append("Said what I can do")
         return {"reply": CAPABILITIES_REPLY, "activity": activity, "say": CAPABILITIES_SAY, "by_code": True}
+    sum_reply = _arithmetic(text)
+    if sum_reply:                    # "what is 17 times 23": worked out here (final exam: she reached for a terminal)
+        activity.append("Worked it out")
+        return {"reply": sum_reply, "activity": activity, "say": sum_reply, "by_code": True}
     video_action = next((a for rx, a in intents.VIDEO if rx.search(text)), None)
     youtube = intents.youtube_query(text)
     switch = intents.switch_target(text)
     steps = None                          # several steps by code, run as one batch
     renamed = _rename_call(text)
     saved = intents.type_and_save_parts(text)
+    into = intents.write_into_parts(text)
     if renamed:          # "rename X to Y" with X really there: the file tool, not clicks in File Explorer
         name, args = renamed
+    elif into:           # "write 'X' into a file called F in FOLDER": exactly there (final exam: she made a 'temp' folder)
+        name, args = "write_text_file", {"path": str(tools._resolve(into[2]) / into[1]), "content": into[0]}
     elif saved:          # "type 'X' and save it as PATH": write it, then open it so the user sees it
         steps = [("write_text_file", {"path": saved[1], "content": saved[0]}), ("open_path", {"path": saved[1]})]
         name, args = steps[0]

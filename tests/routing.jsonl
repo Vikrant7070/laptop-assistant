@@ -373,3 +373,16 @@
 {"kind": "intent", "intent": "type_and_save", "query": "type hello in notepad", "match": false, "note": "no save"}
 {"kind": "intent", "intent": "type_and_save", "query": "write 'buy milk' and save it as todo.txt", "match": false, "note": "no full path: the brain asks where"}
 {"kind": "intent", "intent": "type_and_save", "query": "save it as a pdf", "match": false, "note": "nothing typed"}
+{"kind": "intent", "intent": "write_into", "query": "write 'shopping list: milk' into a new file called list.txt in C:\\x\\exam", "match": true, "note": "says it - final exam 2026-11-25"}
+{"kind": "intent", "intent": "write_into", "query": "put \"hi\" in a file named a.md in C:\\notes", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "write_into", "query": "save 'todo' to a file called t.txt in C:\\work", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "write_into", "query": "write 'x' into a file called a.txt", "match": false, "note": "no folder: the brain asks where"}
+{"kind": "intent", "intent": "write_into", "query": "write 'buy milk' to todo.txt in that folder", "match": false, "note": "'that folder': the brain knows which"}
+{"kind": "intent", "intent": "arithmetic", "query": "what is 17 times 23", "match": true, "note": "says it - final exam"}
+{"kind": "intent", "intent": "arithmetic", "query": "what's 15% of 2400", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "arithmetic", "query": "calculate 1,200 divided by 8", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "arithmetic", "query": "what is 7 x 6?", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "arithmetic", "query": "15 percent of 300", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "arithmetic", "query": "what is the time", "match": false, "note": "not a sum"}
+{"kind": "intent", "intent": "arithmetic", "query": "what is 17 times", "match": false, "note": "half a sum"}
+{"kind": "intent", "intent": "arithmetic", "query": "21 savage", "match": false, "note": "a name, not a sum"}
