@@ -235,6 +235,12 @@
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="screen"> 🖥 Let Nova see my screen (only when I ask; screenshots stay in memory, never saved)</label>
       <p id="visionNote" class="mood" style="margin:4px 0 0 22px"></p>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="suggest"> 💡 Suggest things about what I'm working on (a look at my screen at most every 10 min, only while I'm active; needs 🖥 screen; the picture never leaves this laptop)</label>
+      <div id="routineBox" style="margin-top:6px">
+        <label class="mood" style="display:block"><input type="checkbox" id="routineOn"> 🗓 Offer my usual routines at their usual time ("Open your morning setup? (Gmail → Calendar → VS Code)") - once each, only when I'm at the laptop and not busy, full screen or in a meeting; nothing runs until I tap Yes, and each step still asks as usual</label>
+        <p class="mood" style="margin:4px 0 0 22px">At most <input type="number" id="routineMax" min="0" max="10" step="1" style="width:52px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> a day; quiet hours <input type="text" id="routineQuiet" placeholder="22:00-07:00" style="width:100px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline">
+          <button type="button" id="routineSnooze" style="font-size:12px;padding:2px 8px">Snooze 2 h</button> <span id="routineNote"></span></p>
+        <p id="routineNever" class="mood" style="margin:2px 0 0 22px"></p>
+      </div>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="presence"> 👋 Notice when I leave and come back (after a minute without keyboard or mouse she checks the camera for about two seconds; she finds a face, she doesn't recognise who; nothing is saved)</label>
       <label class="mood" style="display:block;margin:4px 0 0 22px"><input type="checkbox" id="presenceLock"> 🔒 …and lock the laptop when I walk away (she warns first - move the mouse to stop her)</label>
       <p class="mood" style="margin:10px 0 2px">🎙 When I talk to her, she stops listening after <input type="number" id="listenPause" min="0.3" max="2" step="0.1" style="width:60px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> seconds of quiet
@@ -411,5 +417,6 @@
 <script src="/static/nova.js"></script>
 <script src="/static/taskstrip.js"></script>
 <script src="/static/privacy.js"></script>
+<script src="/static/suggestions.js"></script>
 </body>
 </html>

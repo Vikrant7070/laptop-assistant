@@ -1333,6 +1333,125 @@ recording only when the user is the one at the laptop (YuNet presence can help),
 - Not built: the daily question list does not ask "is this routine right?" yet (the Knowledge page ✓ does); the
   site host was checked live in Chrome only (Edge / Firefox use the recorder's address-bar names, untested); desktop-app forms are not noticed (browsers only, to
   keep it cheap); no tray indicator (the chat header chip only).
+### Phase 8 design - level 2 recording (written 2026-11-24; NOT built; waits for the user's answers below)
+
+Level 2 has two parts: **(a) clicks by control name** in apps the user allows, and **(b) the sentences the user
+sends** in apps the user allows, read only *after* they are sent, kept as style features. Nothing in this section is
+built; the suggestions (Phase 8 as built, below) don't need it.
+
+**The rule that keeps it from being a keylogger:** level 2 never installs a keyboard hook, never reads key presses,
+and never reads a text box while the user is typing in it. It reads only *finished, sent* messages from the place the
+app itself keeps them (a Sent folder, the conversation's history), and only *which control* was clicked.
+
+**(a) Clicks by control name**
+- Source: UI Automation events, scoped to the allowed apps' processes - `Invoke` (a button / menu item / link was
+  pressed), `SelectionItem` (a tab / list item chosen), `FocusChanged` *to a control's name and type only*. No global
+  low-level hook. (The "watch me" recorder's mouse + keyboard hooks stay what they are today: on only between
+  "watch me" and "done".) Fallback if UIA events prove unreliable in an app: the recorder's *mouse* hook only,
+  filtered to the allowed apps' windows - the keyboard hook is never part of level 2.
+- What one event keeps: time, app (`recorder.app_name`, so no page or file names), control type, control name
+  (cleaned like `task_state.clean`; an email address, number or secret-looking name -> "[hidden]"). Never the
+  contents of a text box, never a password / PIN / code box (skipped, not even its name), never coordinates.
+- Use: app notes (4f) and "the same clicks 3 times -> offer a skill" (the Learner). Events kept 30 days in
+  `data/activity2.jsonl` through `store.py`, then deleted; what was learned from them (notes, skills) stays.
+- Proposed apps (opt-in one by one): File Explorer, VS Code, Excel, Notepad, Chrome (control names only - the page
+  is `recorder.app_name`, i.e. the site, not the URL).
+
+**(b) Sent sentences (style)**
+- "Only at send time" without key hooks - per app, from where the sent message is kept:
+  - **Gmail:** the existing connector already has `gmail.readonly`; read messages `in:sent` newer than the last one
+    seen (Gmail API). No UI reading at all. Quoted replies and signatures stripped.
+  - **Outlook (desktop):** the Sent Items folder through Outlook's own object model (read only), if the user wants it.
+  - **Chat apps (WhatsApp / Telegram / Teams desktop):** after UIA sees the app's *Send* control invoked (event (a)),
+    read the last outgoing bubble of that conversation through UIA once. Enter-to-send can't be seen without a key
+    hook, so for those apps: the outgoing bubbles that appeared since the last look, read when the conversation loses
+    focus. Later, and only if the user wants chat apps at all.
+- Before anything is kept: the secret filter (`integrations.SECRETY`, `risk.has_card_number`, OTP / password /
+  Aadhaar / PAN / passport patterns) - a message that trips it is dropped whole, not trimmed. Recipients are kept as
+  a hash plus a kind (work / friend / unknown, from the domain), never the address.
+- What is **kept** (the style profile, `data/style.json`, viewable and deletable on "What Nova knows about me"): per
+  app and recipient kind - greeting and sign-off forms ("Hi <name>," / "Thanks, V"), sentence length, formality,
+  emoji and exclamation rates, language mix (English / Hindi / Hinglish), the 50 most-used phrases of 2-4 words with
+  names and numbers removed. Features, not sentences.
+- The **raw text** (needed to recompute the profile and for the user to check what was read): DPAPI-encrypted like
+  `phone._protect`, in `data/sent_raw/`, deleted after 30 days (a startup sweep and a daily one; a test fails if a row
+  older than 30 days survives). Never sent to any brain - the profile's numbers and phrases are what a brain may see
+  when it drafts "in the user's style", and only when the user asks for a draft.
+
+**The same for both parts**
+- **Opt-in per app**, separately for clicks and for sent text; all off by default. A hard blocked list no setting can
+  open: password managers (KeePass, Bitwarden, 1Password, Authenticator), banking and payment sites / apps, incognito
+  / InPrivate windows, Nova's own windows, the lock screen.
+- **Visible indicator:** while any level-2 source is on, the live strip shows a small "● learning (Gmail sent,
+  Explorer clicks)" chip with a Pause button, and the tray icon gets a dot; the first read of the day says so once in
+  the chat ("I read 3 sent emails for your style today"). A Pause switch (and "Nova, stop learning") stops both at
+  once until turned back on.
+- Recording only while the user is at the laptop (presence / input in the last 5 min) and paused automatically in a
+  meeting, full screen or screen share (the same checks as the suggestions below).
+- Nothing raw leaves the laptop; nothing raw reaches a cloud brain (section 10).
+
+**How it will be tested**
+- Hermetic: a fake UIA event stream (button / tab / password box / an email-address name) -> only the allowed app's
+  events are kept, the password box leaves nothing, the name is "[hidden]". A fake Gmail Sent folder -> profile
+  features, quoted text stripped, a message with an OTP dropped whole.
+- Guards: an AST test that the level-2 modules never create `hooks.InputHooks` with a key callback and never call
+  `focused_text`; the 30-day sweep; the blocked list can't be turned on by a settings write; a brain prompt built from
+  the profile contains no sentence from the fake Sent folder.
+- Live, on a separate copy only (port 5092, throwaway data), with the user's OK: Explorer clicks for a few minutes,
+  then the "What Nova knows" page shows the events and Delete removes them. Sent mail is read live only from an
+  account the user picks for the test.
+
+**Questions for the user (before any of this is built)**
+1. Clicks: which apps? (proposed: File Explorer, VS Code, Excel, Notepad, Chrome - site name only.)
+2. Sent text: which apps? (proposed: Gmail only first, through the connector you already have; Outlook / WhatsApp /
+   Telegram later or never?)
+3. Raw sent text: keep it encrypted for 30 days (so the style can be recomputed and you can see what was read), or
+   compute the features at once and keep no text at all?
+4. What is the style for - only drafts you ask for ("reply to Ana in my style"), or also suggested replies?
+5. The indicator: strip chip + tray dot + one line a day - enough, or a sound / a bubble each time?
+6. Language: learn English and Hindi / Hinglish styles separately?
+7. Click events: kept 30 days (proposed) or less?
+
+### Phase 8 as built (2026-11-24, branch `claude/manager-phase8-3cca34`): suggestions at the right moment
+
+`nova/actions/suggest.py` (the rules, pure), `nova/core/app/suggesting.py` (the watcher, the card, the answers, ⚙),
+`nova/platform/busy.py` (Windows' own "don't disturb" state), `static/suggestions.js` (⚙ Senses). Level-2 recording
+is **not** built (design above).
+- Phase 7's routines come through `suggest.found_routines(now)` around `nova.actions.activity.routines(now=None)`
+  (given a `time.time()` stamp); while Phase 7 isn't on master it returns []. It reads Phase 7's shape (`key`, `steps`
+  ["Gmail", ...], `minute`, `weekdays` [0-6]; its `days` is a count and is not used as weekdays) and also `id` / `name`
+  / `apps` / `sequence` / `time` "9:00" / `hour` / `days` ["Mon", ...] / "weekdays"; a routine with no steps or no time
+  is skipped; a failing Phase 7 is logged and gives []. With no name it is the morning / afternoon / evening setup.
+- Every 30 s (`suggesting.watch`, started with the other background watchers): a routine inside its usual time
+  ± 20 min, on one of its days, not offered yet today, not "don't suggest" -> one card: "Open your morning setup?
+  (Gmail → Calendar → VS Code)" with Yes / Not now / Don't suggest this, and why ("You usually do this around 9:00.
+  Each step still asks as usual; nothing has run yet."). Chat, strip and her voice; not the phone (she only offers
+  while the user is at the laptop).
+- Only at a good moment: the user at the laptop (not away by presence, input in the last 5 min, not locked); no
+  request or task running, no task waiting for an answer, no question card or Allow / No open; Nova not asleep;
+  nothing full screen (Windows' notification state: full screen / Direct3D game / presentation mode, or the front
+  window covering its monitor and not maximised); no meeting in front (Teams / Zoom / Webex / Slack with a meeting or
+  call title, Zoom's meeting window, Google Meet in a browser). A bad moment doesn't use the offer up.
+- Answers: **Yes** -> the routine's words ("Open Gmail, then open Calendar, then open VS Code") go through
+  `body.answer` as the user's request, after the tap's reply, so the normal path plans it and every step asks by its
+  risk level (4e). **Not now** -> not that routine again today, and no suggestion at all for an hour. **Don't
+  suggest this** -> never again, listed in ⚙ Senses with ✕ to allow it again. An unanswered (expired) card counts as
+  offered.
+- Limits (⚙ Senses -> 🗓, saved through `/api/suggestions`): on / off (`routine_suggest`, on - it does nothing until
+  Phase 7 finds routines), at most N a day (`routine_suggest_max`, 2), quiet hours (`routine_quiet`,
+  "22:00-07:00"), "Snooze 2 h". State in `data/suggestions.json` (today's offers, answers, the never list, the
+  snooze).
+- Prepare ahead: from 15 min before the offer window until it closes, once a day, the routine's reads run - only a
+  tool on a short allow-list (`check_email`, `get_system_status`, `get_datetime`, `list_reminders`, `list_notes`,
+  `network_info`) **and** level 0 in `risk.LEVELS`; a Gmail / Mail / Outlook step adds `check_email`. Shell commands
+  (even read-only ones), the screen and camera, research jobs and every level-1/2 step never run ahead. Results stay
+  in memory and are shown in the chat on Yes ("📋 Ready ahead (check email): …"); the brain gets only the request.
+- Tests: `tests/test_suggestions.py` - a 9:00 routine gives one card at 9:00 and none at 15:00; none while a task
+  runs, full screen, a game, a meeting, away, a question open or asleep; quiet hours and the off switch; the daily
+  limit; "Don't suggest this" holds for days and ✕ allows it again; Not now snoozes; Yes runs the request only after
+  the tap; prepare-ahead runs only allow-listed level-0 reads, once.
+- Not built (said plainly): level-2 recording (design above, waiting for answers); prepare-ahead for anything but the
+  allow-listed reads (there is no weather tool yet); the card on the phone; suggestions from 4g's schedules.
 
 ## 9. The user's answers (2026-11-20)
 
