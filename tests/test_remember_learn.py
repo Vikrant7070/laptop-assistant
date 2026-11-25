@@ -118,7 +118,7 @@ def test_a_correction_shows_up_as_a_lesson_on_the_daily_list(brain):
     q = qs[0]
     assert "no, the other folder" in q["text"] and "open my reports folder" in q["text"] and q["why"]
     assert "the other folder" not in knowledge.recall()     # not used before the user ticks it
-    app.state["question"] = {"id": q["id"], "until": time.time() + 60}
+    app.state["daily_question"] = {"id": q["id"], "until": time.time() + 60}
     said = app.take_question("yes")
     assert "remember" in said
     lesson = knowledge.load()["lessons"][-1]
@@ -162,3 +162,20 @@ def test_the_review_brain_rewords_the_code_lesson_instead_of_saving_it(monkeypat
     assert len(knowledge.load()["lessons"]) == before        # not saved: asked first
     q = questions.get(qid)
     assert q["status"] == "open" and "D:\\Work\\Reports" in q["text"] and len(questions.open_questions()) == 1
+
+
+# ------------------------------------------------------------------ the daily question and an open question card
+
+def test_an_open_question_card_doesnt_break_the_daily_question():
+    # Found live 2026-11-25: both kept their question under session.state["question"], so with a card open (a
+    # schedule's "Save it?") every typed message crashed in take_question (KeyError 'until').
+    from nova.core.app import asking, background
+    card = asking.make("schedule", [asking.question("save", "Save this schedule?", kind="yesno", why="test")])
+    app.state["question"] = card
+    try:
+        assert app.take_question("yes") is None               # the card's "yes" is the card's, not the daily list's
+        assert learning.question_line() == ""                 # and no daily question is asked over an open card
+        with background.api.app.test_client() as c:
+            assert c.post("/api/chat", json={"text": "hello"}).status_code != 500
+    finally:
+        app.state.pop("question", None)

@@ -31,6 +31,7 @@ LEARN_IDLE, LEARN_EVERY = 60, 300      # seconds quiet before the Learner runs /
 
 
 QUESTION_SECS = 600                     # a question she asked waits this long for a yes / no
+DAILY = "daily_question"                # session.state key of the daily list's question ("question" = the open card)
 
 
 learn_state = {"last": 0.0}
@@ -91,13 +92,14 @@ def learn_now():
 
 def question_line(now=None):
     """The question to ask at the end of this answer (the daily list, one at a time, with its reason), or ""."""
-    if session.state.get("question") or session.state.get("pending") or (integrations.offer["job"] and integrations.offer["until"] > time.time()):
+    # "question" is the open question card (asking.py); the daily list's question lives under its own key.
+    if session.state.get(DAILY) or session.state.get("question") or session.state.get("pending") or (integrations.offer["job"] and integrations.offer["until"] > time.time()):
         return ""
     q = questions.due(now)
     if not q:
         return ""
     questions.mark_asked(q["id"], now)
-    session.state["question"] = {"id": q["id"], "until": (now or time.time()) + QUESTION_SECS}
+    session.state[DAILY] = {"id": q["id"], "until": (now or time.time()) + QUESTION_SECS}
     conversation.task_log(f"QUESTION #{q['id']} asked: {q['text'][:200]}")
     lead = "One question from my learning" if not q["urgent"] else "I need you for one thing"
     return f"{lead}: {q['text']} (I'm asking because {q['why']}.)"
@@ -105,11 +107,11 @@ def question_line(now=None):
 
 def take_question(text, force=None):
     """'yes' / 'no' right after her question from the daily list. Returns her answer, or None if this isn't one."""
-    pend = session.state.get("question")
+    pend = session.state.get(DAILY)
     if not pend:
         return None
     if time.time() > pend["until"]:
-        session.state.pop("question", None)
+        session.state.pop(DAILY, None)
         return None
     clean = config._unspoken(text).strip()
     short = len(clean.split()) <= 8
@@ -117,7 +119,7 @@ def take_question(text, force=None):
     no = force is False or (force is None and short and bool(intents.NO.search(clean)) and not yes)
     if not (yes or no):
         return None             # something else: the question stays on the list for another day
-    session.state.pop("question", None)
+    session.state.pop(DAILY, None)
     q = questions.get(pend["id"])
     if not q:
         return None
