@@ -176,15 +176,20 @@ def readback_verdict(task):
 
 
 def _keep_unsaved_work(call):
-    """Nova may press "Don't save" only when the user's own words say so ("close notepad without saving"): the
-    brain's discard_changes is dropped otherwise (QA plan P2-c). Unsaved work is the user's to throw away."""
-    args = call.get("args") or {}
-    if call.get("name") != "window_action" or not args.get("discard_changes"):
+    """discard_changes ("Don't save") follows the user's own words, not the brain: dropped when they didn't say
+    "without saving" (QA plan P2-c), and set when they did and it's a close (final QA 2026-11-25: "close notepad
+    without saving" - the brain left it out and the prompt went back to the user)."""
+    args = call.get("args")
+    if call.get("name") != "window_action" or not isinstance(args, dict):
         return
     words = protocol.unspoken(((session.state.get("task") or {}).get("goal")) or "")
-    if not intents.match("discard_changes", words):
+    said = bool(intents.match("discard_changes", words))
+    if args.get("discard_changes") and not said:
         args["discard_changes"] = False
         conversation.task_log("UNSAVED WORK: discard_changes dropped - the user didn't say to close without saving")
+    elif said and str(args.get("action", "")).lower() == "close" and not args.get("discard_changes"):
+        args["discard_changes"] = True
+        conversation.task_log("UNSAVED WORK: discard_changes set - the user said to close without saving")
 
 
 def execute(calls, approved, activity, model):

@@ -132,6 +132,20 @@ CAPABILITIES_SAY = ("I can open and switch apps, sort your files, change setting
                     "I always ask before deleting, sending or installing anything.")
 
 
+def _rename_call(text):
+    """("move_or_rename", args) for "rename X to Y" when X is really there, else None. A bare new name stays in
+    X's folder ("rename C:\\x\\old.txt to new.txt" -> C:\\x\\new.txt)."""
+    parts = intents.rename_parts(text)
+    if not parts:
+        return None
+    src = tools._resolve(parts[0])
+    if not src.exists():
+        return None
+    dst = parts[1]
+    target = tools._resolve(dst) if ("\\" in dst or "/" in dst) else src.parent / dst
+    return "move_or_rename", {"source": str(src), "destination": str(target)}
+
+
 def look_first(text, activity):
     """Small models sometimes 'answer' about the user or the screen without looking. If the user clearly asked
     Nova to look, take the picture first and hand her the result, so she describes what's really there.
@@ -151,7 +165,15 @@ def look_first(text, activity):
     video_action = next((a for rx, a in intents.VIDEO if rx.search(text)), None)
     youtube = intents.youtube_query(text)
     switch = intents.switch_target(text)
-    if youtube:          # "open youtube and search lofi music": its results page, no clicking (QA 2026-11-25)
+    steps = None                          # several steps by code, run as one batch
+    renamed = _rename_call(text)
+    saved = intents.type_and_save_parts(text)
+    if renamed:          # "rename X to Y" with X really there: the file tool, not clicks in File Explorer
+        name, args = renamed
+    elif saved:          # "type 'X' and save it as PATH": write it, then open it so the user sees it
+        steps = [("write_text_file", {"path": saved[1], "content": saved[0]}), ("open_path", {"path": saved[1]})]
+        name, args = steps[0]
+    elif youtube:          # "open youtube and search lofi music": its results page, no clicking (QA 2026-11-25)
         name, args = "open_website", {"url_or_search": "youtube " + youtube}
     elif switch and tools._find_window(switch):
         # "switch to the calculator" with one open: focus it by code - she said "you're already in Calculator"
@@ -176,15 +198,19 @@ def look_first(text, activity):
            "video_control": "🎬 That's a video-player button - pressing it directly.",
            "open_website": "▶️ A YouTube search - opening its results page directly.",
            "window_action": "🪟 Switching to that window directly.",
+           "move_or_rename": "📁 A rename - doing it with the file tool directly.",
+           "write_text_file": "📝 Writing the file directly, then opening it for you.",
            "read_selection": "📋 You selected some text - I'll copy it first."}.get(
         name, "📌 That's a plain fact - I'll check it instead of guessing."))
     model = config.brain()
-    call = {"id": "look_0", "name": name, "args": args}
+    calls = [{"id": f"look_{i}", "name": n, "args": a} for i, (n, a) in enumerate(steps or [(name, args)])]
     session.state["messages"].append({"role": "assistant", "content": "",
-                              "tool_calls": [{"function": {"name": call["name"], "arguments": call["args"]}}]}
+                              "tool_calls": [{"function": {"name": c["name"], "arguments": c["args"]}} for c in calls]}
                              if llm.supports_tools(model) else
-                             {"role": "assistant", "content": json.dumps({"tool": call["name"], "args": call["args"]})})
-    session.state["messages"].extend(judging.execute([call], True, activity, model))
+                             {"role": "assistant", "content": json.dumps([{"tool": c["name"], "args": c["args"]}
+                                                                         for c in calls] if steps else
+                                                                        {"tool": calls[0]["name"], "args": calls[0]["args"]})})
+    session.state["messages"].extend(judging.execute(calls, True, activity, model))
     out = session.state["last_outs"][0]
     if name == "read_selection" and not intents.READ_MORE.search(config._unspoken(text)) and not out.startswith(("Error", "Nothing is")):
         # Just "read it": say the text itself. Through the brain it came out as one line (a summary, or the local

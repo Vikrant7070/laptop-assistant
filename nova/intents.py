@@ -41,6 +41,31 @@ READ_MORE = re.compile(r"\b(summar|translat|explain|mean|fix|rewrite|correct|imp
 
 # "open youtube and search lofi music" / "search lofi on youtube": a search on YouTube, opened by code at its results
 # page (QA 2026-11-25: the brain clicked the search box, or went through Google, and stalled both times).
+# "rename C:\x\old.txt to new.txt": move_or_rename by code (exams + QA 2026-11-25: the brain clicked through File
+# Explorer for 4 minutes instead, every time). Only when the file is really there - else the brain answers.
+RENAME_FILE = re.compile(r"^\W*(?:(?:please|nova|can you)\W+)*rename\s+(?:the\s+(?:file|folder)\s+)?[\"']?(?P<src>[^\"']+?)[\"']?"
+                         r"\s+(?:to|as)\s+[\"']?(?P<dst>[^\"'?!]+?)[\"']?\W*$", re.I)
+
+
+def rename_parts(text):
+    """(source, new name or path) from "rename X to Y", or None."""
+    m = RENAME_FILE.search(text or "")
+    return (m.group("src").strip(), m.group("dst").strip()) if m else None
+
+
+# "open Notepad, type 'step one done', and save it as C:\x\multi.txt": the file is written by code and then opened,
+# so the user sees it (exams 2026-11-23/25: she opened Notepad, wandered into File Explorer and never typed).
+TYPE_AND_SAVE = re.compile(r"^\W*(?:(?:please|nova)\W+)*(?:open\s+notepad\W+(?:and\s+)?)?(?:type|write)\s+[\"'](?P<text>[^\"']+)[\"']"
+                           r"\W+(?:and\s+)?save\s+(?:it\s+)?(?:as|to|in)\s+[\"']?(?P<path>[a-z]:\\[^\"'?]+?|~[\\/][^\"'?]+?)[\"']?\W*$",
+                           re.I)
+
+
+def type_and_save_parts(text):
+    """(text to write, file path) from "type 'X' and save it as PATH", or None."""
+    m = TYPE_AND_SAVE.search(text or "")
+    return (m.group("text"), m.group("path").strip()) if m else None
+
+
 # "switch to the calculator": focus that window by code when one is open (QA 2026-11-25: she said "You're already
 # in Calculator" without looking - she wasn't). No window by that name -> the brain decides as before.
 SWITCH_TO = re.compile(r"^\W*(?:(?:please|nova|can you|ok(?:ay)?)\W+)*(?:switch|go|change|move|jump|take me)\s+(?:back\s+)?to\s+"
@@ -311,7 +336,7 @@ JUST_STOP = just_stop_re(DEFAULT_NAMES)       # voice_io builds its own from the
 
 
 KINDS = {
-    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD, "youtube_search": YOUTUBE_SEARCH, "switch_to": SWITCH_TO, "capabilities": CAPABILITIES,
+    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD, "youtube_search": YOUTUBE_SEARCH, "switch_to": SWITCH_TO, "rename_file": RENAME_FILE, "type_and_save": TYPE_AND_SAVE, "capabilities": CAPABILITIES,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
     "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "build_thing": BUILD_THING, "project_code": PROJECT_CODE,
     "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
