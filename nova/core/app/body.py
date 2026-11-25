@@ -130,7 +130,10 @@ def look_first(text, activity):
         return moved
     text = config._unspoken(text)       # only the user's words: the 📱 phone note itself mentions "the screen"
     video_action = next((a for rx, a in intents.VIDEO if rx.search(text)), None)
-    if video_action and tools._video_window():
+    youtube = intents.youtube_query(text)
+    if youtube:          # "open youtube and search lofi music": its results page, no clicking (QA 2026-11-25)
+        name, args = "open_website", {"url_or_search": "youtube " + youtube}
+    elif video_action and tools._video_window():
         name, args = "video_control", {"action": video_action}
     elif intents.SELECTION.search(text):     # before SCREEN: a screenshot only showed her one line of the selection
         name, args = "read_selection", {}
@@ -147,6 +150,7 @@ def look_first(text, activity):
     session.think({"look_at_screen": "👀 You asked about your screen - I'll look at it first.",
            "look_through_camera": "📷 You want me to see you - I'll look through the camera first.",
            "video_control": "🎬 That's a video-player button - pressing it directly.",
+           "open_website": "▶️ A YouTube search - opening its results page directly.",
            "read_selection": "📋 You selected some text - I'll copy it first."}.get(
         name, "📌 That's a plain fact - I'll check it instead of guessing."))
     model = config.brain()

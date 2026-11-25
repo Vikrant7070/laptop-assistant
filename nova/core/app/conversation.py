@@ -527,7 +527,7 @@ DONE_CLAIM_RE = re.compile(r"(all set|ready (for|to)\b|is ready|are ready|\bi['�
 # "let me know..." is a question to the user, not a promise.
 PROMISE_RE = re.compile(
     r"\b(i['’]?ll|i will|i['’]?m|i am|let me(?! know)|going to|now)\b[^.!?]{0,30}\b(click|open|search|play|scroll|type|"
-    r"press|clos|select|tap|launch|start|go to|navigat|lock|mut|paus|turn|set|shut|restart|remind|delet|mov|install|"
+    r"press|clos|select|tap|launch|start|go to|navigat|lock|mut|paus|turn|(?<!all )set|shut|restart|remind|delet|mov|install|"
     r"check|look|find|scan|measur)"
     r"|\b(lock|open|clos|play|search|launch|start|turn|mut|paus|set|shut|restart|delet|mov|install|clean|check|scan|switch|focus|"
     r"measur)\w*ing\b[^.!?]{0,30}\b(now|right away)\b|\bi['’]?ll do (it|that) (right away|now)\b", re.I)
@@ -563,7 +563,7 @@ def _agent_loop(activity):
         if stage:
             extra.setdefault("stage_reaction", stage)
         reply = re.sub(r"[ \t]{2,}", " ", shared.REACT_MARKER_RE.sub(" ", reply or "")).strip()   # ...and not on screen
-        reply = no_self_greeting(reply)
+        reply = shared.tidy_reply(no_self_greeting(reply))
         say = " ".join(unsaid).strip()
         if not say and not spoken:
             say = reply                     # e.g. the plain "Done!"
@@ -645,7 +645,7 @@ def _agent_loop(activity):
                     task_log(f"CLOUD FELL BACK -> local route '{task['route']}' from next turn")
         if stream:
             stream.flush()
-        session.state["messages"].append(stored)
+        session.state["messages"].append(shared.tidy_message(stored))
         if text:
             task_log(f"NOVA SAYS: {text[:300]}")
         did_something = did_something or bool(calls)
@@ -659,7 +659,7 @@ def _agent_loop(activity):
                               "name, a duration in seconds, and 4-8 keys (each {\"at\": 0..1, plus poses such as right_arm_out, "
                               "left_arm_out, lean_side, jump, head_nod}). Then say one short line.")})
             continue
-        if not calls and not nudged and not (task or {}).get("declined") and (claimed_body or (not did_something and PROMISE_RE.search(text or ""))):
+        if not calls and not nudged and not (task or {}).get("declined") and (claimed_body or (not did_something and not (task or {}).get("did") and PROMISE_RE.search(text or ""))):
             # Small models sometimes *say* "I'm clicking it now" without calling a tool. Make her follow through.
             nudged = True
             session.think("🙈 I said I'd do it but didn't actually do anything - doing it properly now.")

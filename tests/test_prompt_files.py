@@ -28,7 +28,7 @@ LOCKED = {   # prompt -> first 16 hex of sha256 of its text
     "skill_hints": "e804eb5026c84c7a",
     "skill_step": "f97a46c49472fd91",
     "suggest": "0023b58644ccf43f",
-    "system": "e26c045926ce2f7b",
+    "system": "f3c62be26098a861",     # QA 2026-11-25: "Nova" is her too; no asides / one emoji (exam before + after)
     "talk_english": "3863d31ffffc5129",
     "talk_mixed": "8154b21b957dba82",
     "text_protocol": "c2dc39548e963c9f",

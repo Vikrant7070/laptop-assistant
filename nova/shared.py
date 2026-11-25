@@ -68,6 +68,31 @@ def stage_directions(text):
     return text, found
 
 
+_ASIDE = _STAGE[1]                                                   # *(I'm dancing!)*
+_EMOJI = r"[\U0001F300-\U0001FAFF\U0001F1E6-\U0001F1FF☀-➿‍️]"
+_EMOJI_TAIL = re.compile(r"(?:\s*%s){2,}\s*$" % _EMOJI)               # "...anything else? 😊📚🎬"
+_EMOJI_LINE = re.compile(r"(?m)^[ \t]*(?:%s[ \t]*)+$\n?" % _EMOJI)
+
+
+def tidy_reply(text):
+    """Her reply without "*(aside)*" lines and the trailing pile of emoji the small model adds to everything (QA
+    2026-11-25: 30 of 44 replies ended "😊📚🎬"). Kept out of her history too, so she stops copying it. Speech
+    already drops these (wording._clean_for_speech); this is what's on screen and what she reads back."""
+    if not text:
+        return text
+    text = _ASIDE.sub("", text)
+    text = _EMOJI_LINE.sub("", _EMOJI_TAIL.sub("", text))
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def tidy_message(msg):
+    """tidy_reply on an assistant message for the history (a copy; tool calls untouched)."""
+    if isinstance(msg, dict) and msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
+        return {**msg, "content": tidy_reply(msg["content"])}
+    return msg
+
+
 def stage_reaction(found):
     """The move the first stage direction names ('[react: "laugh"]' -> 'laugh', '*spins*' -> 'spin'), or None."""
     for bit in found:
