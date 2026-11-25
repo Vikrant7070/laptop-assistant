@@ -322,3 +322,19 @@
 {"kind": "intent", "intent": "try_again", "query": "try the other folder", "match": false, "note": "a new request"}
 {"kind": "intent", "intent": "try_again", "query": "again open notepad", "match": false, "note": "not a retry of the last task"}
 {"kind": "intent", "intent": "try_again", "query": "what time is it again", "match": false, "note": "a question"}
+{"kind": "intent", "intent": "small_talk", "query": "hi nova", "match": true, "note": "says it - QA 2026-11-25"}
+{"kind": "intent", "intent": "small_talk", "query": "hi", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "small_talk", "query": "how are you?", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "small_talk", "query": "tell me a short joke", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "small_talk", "query": "thanks", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "small_talk", "query": "thank you so much nova", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "small_talk", "query": "good morning lucy", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "small_talk", "query": "kaise ho", "match": true, "note": "says it (Hindi)"}
+{"kind": "intent", "intent": "small_talk", "query": "hey nova, how are you doing today?", "match": true, "note": "two greetings"}
+{"kind": "intent", "intent": "small_talk", "query": "tell me a joke about cats", "match": true, "note": "a joke on a topic"}
+{"kind": "intent", "intent": "small_talk", "query": "hi nova, open chrome", "match": false, "note": "a request after the greeting"}
+{"kind": "intent", "intent": "small_talk", "query": "ok", "match": false, "note": "an answer to her question"}
+{"kind": "intent", "intent": "small_talk", "query": "yes", "match": false, "note": "an answer"}
+{"kind": "intent", "intent": "small_talk", "query": "thanks, now close notepad", "match": false, "note": "a request after thanks"}
+{"kind": "intent", "intent": "small_talk", "query": "how are you so slow", "match": false, "note": "not small talk"}
+{"kind": "intent", "intent": "small_talk", "query": "what's up with my wifi", "match": false, "note": "a laptop question"}

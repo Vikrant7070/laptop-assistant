@@ -72,6 +72,7 @@ _ASIDE = _STAGE[1]                                                   # *(I'm dan
 _EMOJI = r"[\U0001F300-\U0001FAFF\U0001F1E6-\U0001F1FF☀-➿‍️]"
 _EMOJI_TAIL = re.compile(r"(?:\s*%s){2,}\s*$" % _EMOJI)               # "...anything else? 😊📚🎬"
 _EMOJI_LINE = re.compile(r"(?m)^[ \t]*(?:%s[ \t]*)+$\n?" % _EMOJI)
+_PAREN_LINE = re.compile(r"(?m)^[ \t]*\([^()\n]{3,}\)[ \t]*(?:%s[ \t]*)*$\n?" % _EMOJI)   # a whole line in (brackets)
 
 
 def tidy_reply(text):
@@ -81,6 +82,8 @@ def tidy_reply(text):
     if not text:
         return text
     text = _ASIDE.sub("", text)
+    if _PAREN_LINE.sub("", text).strip():                  # a reply that is only "(...)" keeps it
+        text = _PAREN_LINE.sub("", text)
     text = _EMOJI_LINE.sub("", _EMOJI_TAIL.sub("", text))
     text = re.sub(r"[ \t]+\n", "\n", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()

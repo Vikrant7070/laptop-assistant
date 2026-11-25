@@ -210,6 +210,13 @@ def answer(text, quiet=False, remote=False):
         if not by_code and resume_module.fold_failed(text):   # a failed task's transcript doesn't steer this one
             n = len(session.state["messages"])
         carry_on = "" if by_code else conversation.new_task(text)
+        if (not by_code and session.state.get("task") and session.state["task"].get("skill_how") != "exact"
+                and intents.match("small_talk", protocol.unspoken(text).strip())):   # "good morning" may be your skill
+            # "hi" / "thanks" / a joke: no tools to send (a short prompt the model can reuse: QA 2026-11-25, "hi" took
+            # 12 s) and nothing to "do", so no promise nudge either.
+            session.state["task"].update(answer_only=True, model=config.brain())
+            screen = ""        # no window list either: "hi" got "I see you've got a few explorer tabs open"
+            conversation.task_log("SMALL TALK -> words only, no tools")
         # (Tried also passing the time and battery here to save a tool call: the small model then read the line
         # out loud and stopped calling tools for other facts. Only the window list is passed.)
         session.state["messages"].append({"role": "user", "content":

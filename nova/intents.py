@@ -214,6 +214,19 @@ WATCH_DONE = re.compile(r"^\W*(ok(ay)?\W+|so\W+)?(nova\W+)?(i'?m |i am |all )?(d
                         r"stop watching|you can stop( watching)?)(\W+nova)?\W*$", re.I)
 
 
+# The WHOLE message is small talk - a greeting, thanks, "how are you", a joke, a compliment - with nothing to do on the
+# laptop: she answers with no tools (a short, stable prompt the model can reuse: faster) and isn't nudged to "do" it.
+# QA 2026-11-25: "hi" took 12 s, and its promise nudge turned "Hey Vikrant!" into "Oops! Sorry - I'm back on track".
+# Not "ok" / "yes" (an answer to her question) and not "hi, open chrome" (a request).
+_HELLO = (r"(hi+|hello+|hey+|hiya|namaste|namaskar|good (morning|afternoon|evening|night)|"
+          r"how are you( doing)?( today)?|how('s| is) it going|how('re| are) things|what'?s up|wassup|sup|kaise ho|kya haal hai|"
+          r"thanks?( (a lot|so much|you( so much| very much)?))?|thank you( (so|very) much)?|thx|ty|shukriya|dhanyavaa?d|"
+          r"tell me (a|another|one more) (short |quick |funny |good )?joke( about [a-z ]{1,30})?|(another|one more) joke|"
+          r"(you('re| are)|you're) (great|awesome|amazing|the best|so (sweet|cute|smart|funny))|good (job|girl|work)|"
+          r"well done|nice one|love you|haha+|lol+|hehe+)")
+SMALL_TALK = re.compile(r"^\W*((hi|hey|hello|ok(ay)?|oh|aww+|wow)\W+)?" + _HELLO + r"(\W+(nova|lucy|makima|buddy|dear|yaar))?"
+                        r"(\W+" + _HELLO + r")?(\W+(nova|lucy|makima|buddy|dear|yaar))?\W*$", re.I)
+
 # "try again" / "do it again": a follow-up on the task before, which needs its whole story (resume.fold_failed
 # leaves that task's turns alone).
 TRY_AGAIN = re.compile(r"^\W*((please|ok(ay)?|nova|so|yes|haan)\W+)*(try (it |that |this )?again|retry|"
@@ -280,7 +293,7 @@ KINDS = {
     "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
     "show": SHOW, "help_yes": HELP_YES,
     "answer_yes": ANSWER_YES, "research": RESEARCH, "watch_start": WATCH_START, "watch_done": WATCH_DONE,
-    "correction": CORRECTION, "try_again": TRY_AGAIN, "about_me": ABOUT_ME,
+    "correction": CORRECTION, "try_again": TRY_AGAIN, "small_talk": SMALL_TALK, "about_me": ABOUT_ME,
     "hard": HARD,
     "body_ask": BODY_ASK, "body_not_done": BODY_NOT_DONE,
 }

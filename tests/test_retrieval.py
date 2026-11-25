@@ -83,8 +83,8 @@ def test_cloud_brain_sees_every_tool(monkeypatch):
 
 def test_picking_failure_falls_back_to_all_tools(brain, monkeypatch):
     monkeypatch.setattr(toolpick, "pick", lambda *a, **k: 1 / 0)
-    seen, _ = recording_brain(brain, [("Hi!", [])])
-    out, status = app.answer("hello")
+    seen, _ = recording_brain(brain, [("It's on.", [])])
+    out, status = app.answer("is my wifi on")          # ("hello" is small talk now: it gets no tools at all)
     assert status == 200 and len(seen[0]) == len(tools.TOOLS)
 
 
