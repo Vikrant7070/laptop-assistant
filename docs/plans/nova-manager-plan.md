@@ -1,15 +1,13 @@
-Status: active — 2026-11-23, phases 1–3, Phase 4 step 0, 4-pre (a–e), 4a, 4b and 4c-1 merged; 4c-2 (worker job checks, PR #67), 4c-3 (send-back, limits, brief guard, PR #69) 4c-2 to 4e-1 merged (PRs #67-#74, 2026-11-24); 4e-2 (undo, settings by level) on its branch; 4c–4g rewritten for every laptop task (not only coding) and wait for the user's go-ahead.
+Status: active — 2026-11-25. Phases 1–8 are built and merged (master 09e3166; PRs up to #93), except Phase 8's level-2 recording (design only, waits for the user's answers). What is left: docs/plans/manager-handoff.md.
 
 # Nova as a manager — plan
 
-**Status (2026-11-23): phase 1 (Judge, `nova/actions/judge.py`), phase 2 (episode log + Learner,
-`nova/actions/learner.py`, `nova/actions/questions.py`), phase 3 (workers, `nova/actions/workers.py`), Phase 4
-step 0 (research as a worker, PR #24), 4-pre (task state, PRs #50–#54), 4a (ask → brief → go, PR #55) and 4b (worker
-pick from history, research → coding, PR #57) are built. 4c–4g ("The manager for the whole laptop", end of section 6)
-and phases 5–8 are not.** Nova manages **every** task on the laptop, not only coding (the user, 2026-11-23). The
-user's answers are in
-section 9. Build the phases in order, one at a time, each on its own branch/commit with tests, and only after the
-user says go.
+**Status (2026-11-25): every phase in this plan is built and merged** - phases 1-3, Phase 4 (step 0, 4-pre a-e,
+4a, 4b, 4c-1 to 4c-4, 4d-1/2, 4e-1/2, 4f, 4g and the leftovers), Phase 5 (judges), Phase 6 (existing history),
+Phase 7 (activity log level 1, form profile) and Phase 8 (routine suggestions). **Not built:** Phase 8's level-2
+recording (design only, waiting for the user's answers). Owed: the task exam on the whole stack. The open items are
+on `docs/plans/manager-handoff.md`. Nova manages **every** task on the laptop, not only coding (the user,
+2026-11-23). The user's answers are in section 9. Each new step still waits for the user's go.
 
 ## 1. The goal (the user's words, summarised)
 
