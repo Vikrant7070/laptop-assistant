@@ -117,9 +117,10 @@ def _window_by_hand(hwnd, title, action):
 
 @tool("Focus, minimize, maximize or close an open window (match by title or app name).", friendly="Managed a window",
       risky="Control a window", core=True,
-      props={"title_or_app": common.S, "action": {"type": "string", "enum": ["focus", "minimize", "maximize", "close"]}},
+      props={"title_or_app": common.S, "action": {"type": "string", "enum": ["focus", "minimize", "maximize", "close"]},
+             "discard_changes": {"type": "boolean", "description": "close only: true if the user said 'without saving'"}},
       required=["title_or_app", "action"])
-def window_action(title_or_app, action):
+def window_action(title_or_app, action, discard_changes=False):
     w = _find_window(title_or_app)
     if not w:
         return f"No open window matches '{title_or_app}'."
@@ -129,11 +130,60 @@ def window_action(title_or_app, action):
         return f"Switched to '{title}'."
     if action not in CAPTION_NAMES:
         return "action must be focus, minimize, maximize or close"
+    pid = platform.current().window_pid(hwnd)
     done, note = _window_by_hand(hwnd, title, action)
+    if action == "close":
+        asking = _save_prompt_after(hwnd, pid)
+        if asking:
+            if discard_changes in (True, "true", "yes", 1):     # the user's own words said so (judging checks)
+                return (f"Closed '{title}' without saving." if _press_dont_save(asking, hwnd) else
+                        f"'{title}' asked to save and I couldn't press Don't save - it is still open.")
+            return ASKS_TO_SAVE.format(title=title)
     if note == "asks":
-        return (f"'{title}' is asking whether to save before it closes. Tell the user and let them choose - "
-                "don't click Save or Don't Save yourself.")
+        return ASKS_TO_SAVE.format(title=title)
     return f"{action.title()}d '{title}'."
+
+
+# QA 2026-11-25: told only "let the user choose", the brain tried taskkill in a terminal three times.
+ASKS_TO_SAVE = ("'{title}' is asking whether to save its unsaved work before it closes, so it is still open. Tell "
+                "the user and let them choose (Save / Don't save / Cancel). Do NOT close it any other way - no "
+                "terminal, taskkill or Stop-Process: that would lose their work.")
+DONT_SAVE = ("don't save", "dont save", "do not save", "don't save changes")
+
+
+def _save_prompt(hwnd, pid):
+    """The app is asking to save: -> the window that holds its "Don't save" button (its own dialog, or the app's
+    window itself - Windows 11 Notepad asks inside its window, so the old dialog check never saw it), else None."""
+    d = platform.current()
+    fg = d.foreground()
+    for h in ([fg] if fg and fg != hwnd and d.window_pid(fg) == pid else []) + ([hwnd] if d.is_window(hwnd) else []):
+        if any(n.lower().replace("’", "'") in DONT_SAVE for n, _, _ in forms.buttons_in(h)):
+            return h
+    return None
+
+
+def _save_prompt_after(hwnd, pid, wait=2.0):
+    """After a close: the save prompt's window if one comes up, None if the window went (or nothing asked)."""
+    end = time.time() + wait
+    while True:
+        if not platform.current().is_window(hwnd):
+            return None
+        found = _save_prompt(hwnd, pid)
+        if found or time.time() >= end:
+            return found
+        time.sleep(0.2)
+
+
+def _press_dont_save(asking, hwnd):
+    """Click "Don't save" in the prompt; -> True when the window then closed."""
+    button = next(((x, y) for n, x, y in forms.buttons_in(asking) if n.lower().replace("’", "'") in DONT_SAVE), None)
+    if not button:
+        return False
+    forms._nova_click(*button, label="Don't save")
+    end = time.time() + 3.0
+    while time.time() < end and platform.current().is_window(hwnd):
+        time.sleep(0.15)
+    return not platform.current().is_window(hwnd)
 
 
 def _own_pids():

@@ -467,6 +467,22 @@ def _mouse_click(x, y, button="left", double=False):
         time.sleep(0.08)
 
 
+def buttons_in(hwnd, limit=150):
+    """The buttons inside one window: [(name, x, y)] (centre points). [] when it can't be read."""
+    try:
+        import uiautomation as auto
+        out = []
+        for ctrl, _depth in auto.WalkControl(auto.ControlFromHandle(hwnd), maxDepth=30):
+            if len(out) >= limit:
+                break
+            if ctrl.ControlTypeName == "ButtonControl" and (ctrl.Name or "").strip() and not ctrl.IsOffscreen:
+                r = ctrl.BoundingRectangle
+                out.append((ctrl.Name.strip(), (r.left + r.right) // 2, (r.top + r.bottom) // 2))
+        return out
+    except Exception:
+        return []
+
+
 def _nova_click(x, y, button="left", double=False, label=""):
     """Nova walks over, points at the spot, and the real mouse clicks it."""
     from nova.avatar import avatar_client

@@ -142,6 +142,7 @@ def test_it_refuses_to_run_without_yes(monkeypatch, capsys):
 
 def test_it_refuses_while_nova_is_running(monkeypatch, capsys):
     monkeypatch.setattr(exam, "nova_running", lambda port=5055: True)
+    monkeypatch.setattr(exam, "notepad_open", lambda: False)       # not whatever is open on this laptop right now
     monkeypatch.setattr(exam, "run_task", lambda *a, **k: pytest.fail("ran a task while Nova was running"))
     assert exam.main(["--model", "x", "--yes"]) == 2
     assert "Quit her" in capsys.readouterr().out

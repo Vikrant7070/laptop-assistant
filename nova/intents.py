@@ -227,6 +227,11 @@ _HELLO = (r"(hi+|hello+|hey+|hiya|namaste|namaskar|good (morning|afternoon|eveni
 SMALL_TALK = re.compile(r"^\W*((hi|hey|hello|ok(ay)?|oh|aww+|wow)\W+)?" + _HELLO + r"(\W+(nova|lucy|makima|buddy|dear|yaar))?"
                         r"(\W+" + _HELLO + r")?(\W+(nova|lucy|makima|buddy|dear|yaar))?\W*$", re.I)
 
+# The user's own words say to throw unsaved work away: only then may Nova press "Don't save" when an app asks
+# (window_action's discard_changes is dropped otherwise - QA plan P2-c).
+DISCARD_CHANGES = re.compile(r"\b(without sav(ing|e)|don'?t save|do not save|no need to save|discard( the)? changes|"
+                             r"lose the changes|bina save( kiye| kare)?|save mat karo|save nahi)\b", re.I)
+
 # "try again" / "do it again": a follow-up on the task before, which needs its whole story (resume.fold_failed
 # leaves that task's turns alone).
 TRY_AGAIN = re.compile(r"^\W*((please|ok(ay)?|nova|so|yes|haan)\W+)*(try (it |that |this )?again|retry|"
@@ -293,7 +298,7 @@ KINDS = {
     "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
     "show": SHOW, "help_yes": HELP_YES,
     "answer_yes": ANSWER_YES, "research": RESEARCH, "watch_start": WATCH_START, "watch_done": WATCH_DONE,
-    "correction": CORRECTION, "try_again": TRY_AGAIN, "small_talk": SMALL_TALK, "about_me": ABOUT_ME,
+    "correction": CORRECTION, "discard_changes": DISCARD_CHANGES, "try_again": TRY_AGAIN, "small_talk": SMALL_TALK, "about_me": ABOUT_ME,
     "hard": HARD,
     "body_ask": BODY_ASK, "body_not_done": BODY_NOT_DONE,
 }
