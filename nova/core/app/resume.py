@@ -176,6 +176,39 @@ def unsaid_part(reply, said):
     return None
 
 
+FOLDED_STATUSES = ("failed", "stopped", "stuck", "interrupted", "dropped")
+
+
+def fold_failed(text):
+    """A new request after a task that didn't get done: that task's turns in the history become the user's request
+    plus one line, "(I didn't finish that: <why>.)". QA 2026-11-25: after a failed folder step, four unrelated
+    requests in a row kept talking about the missing todo.txt - a failed transcript left in the context steers the
+    next task (QA plan P2-a). The task card keeps the full record (/tasks), and "continue" reads the card.
+    Left alone: "continue" / "try again" / a correction ("no, the other folder"), which need the whole story.
+    -> True when something was folded."""
+    task = session.state.get("task")
+    if not task or not task.get("goal"):
+        return False
+    card = task_state.of(task)
+    status = (card or {}).get("status", "")
+    if not (task.get("done") is False or status in FOLDED_STATUSES):
+        return False
+    words = protocol.unspoken(text or "").strip()
+    if any(intents.match(k, words) for k in ("resume", "continue", "try_again", "correction")):
+        return False
+    msgs = session.state["messages"]
+    start = task.get("start", -1)
+    if not (0 <= start < len(msgs)) or msgs[start].get("role") != "user" or len(msgs) - start <= 2:
+        return False                         # not where we left it, or nothing to fold (a request and one answer)
+    why = task.get("fail_plain") or (card or {}).get("why") or "it isn't done"
+    note = f"(I didn't finish that: {task_state.clean(why, 140)}.)"
+    folded = len(msgs) - start - 1
+    del msgs[start + 1:]
+    msgs.append({"role": "assistant", "content": note})
+    conversation.task_log(f"HISTORY: the unfinished task \"{task['goal'][:60]}\" folded ({folded} messages -> 1): {note}")
+    return True
+
+
 def cut_off(t_stop, mouth=None):
     """Barge-in stopped her at t_stop: keep only what was really said in the history, mark it cut off, and keep the
     rest so "continue" can finish it. Sentences still playing at t_stop count as not said."""
