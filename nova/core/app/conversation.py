@@ -659,7 +659,7 @@ def _agent_loop(activity):
                               "name, a duration in seconds, and 4-8 keys (each {\"at\": 0..1, plus poses such as right_arm_out, "
                               "left_arm_out, lean_side, jump, head_nod}). Then say one short line.")})
             continue
-        if not calls and not nudged and not (task or {}).get("declined") and (claimed_body or (not did_something and not (task or {}).get("did") and PROMISE_RE.search(text or ""))):
+        if not calls and not nudged and not (task or {}).get("declined") and not (task or {}).get("answer_only") and (claimed_body or (not did_something and not (task or {}).get("did") and PROMISE_RE.search(text or ""))):
             # Small models sometimes *say* "I'm clicking it now" without calling a tool. Make her follow through.
             nudged = True
             session.think("🙈 I said I'd do it but didn't actually do anything - doing it properly now.")
