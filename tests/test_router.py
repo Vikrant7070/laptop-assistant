@@ -354,9 +354,9 @@ def test_cloud_fails_on_a_code_request_then_the_coder_answers_it(brain, monkeypa
 
 
 def test_cloud_fails_on_a_plain_question_then_the_everyday_brain_answers_at_once(brain, monkeypatch):
-    models, _ = cloud_that_fails(brain, monkeypatch, [("It's 4.", [])])
-    out, _ = app.answer("what is 2 + 2?")
-    assert models == [CLOUD] and out["reply"] == "It's 4."  # the same turn ran locally, no retry
+    models, _ = cloud_that_fails(brain, monkeypatch, [("Paris.", [])])
+    out, _ = app.answer("what is the capital of France?")    # ("2 + 2" is worked out by code now: no brain at all)
+    assert models == [CLOUD] and out["reply"] == "Paris."  # the same turn ran locally, no retry
 
 
 def test_cloud_fails_mid_task_then_the_rest_runs_locally(brain, monkeypatch):
