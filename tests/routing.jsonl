@@ -338,3 +338,11 @@
 {"kind": "intent", "intent": "small_talk", "query": "thanks, now close notepad", "match": false, "note": "a request after thanks"}
 {"kind": "intent", "intent": "small_talk", "query": "how are you so slow", "match": false, "note": "not small talk"}
 {"kind": "intent", "intent": "small_talk", "query": "what's up with my wifi", "match": false, "note": "a laptop question"}
+{"kind": "intent", "intent": "discard_changes", "query": "close notepad without saving", "match": true, "note": "says it - QA 2026-11-25"}
+{"kind": "intent", "intent": "discard_changes", "query": "close it, don't save", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "discard_changes", "query": "discard the changes and close word", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "discard_changes", "query": "notepad band karo bina save kiye", "match": true, "note": "says it (Hinglish)"}
+{"kind": "intent", "intent": "discard_changes", "query": "close notepad, no need to save", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "discard_changes", "query": "close notepad", "match": false, "note": "nothing about saving: she asks"}
+{"kind": "intent", "intent": "discard_changes", "query": "save it and close notepad", "match": false, "note": "the opposite"}
+{"kind": "intent", "intent": "discard_changes", "query": "close the unsaved notepad", "match": false, "note": "names it, doesn't say to discard"}

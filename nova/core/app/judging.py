@@ -8,7 +8,7 @@ from nova.brain import cloud
 from nova.brain import llm
 from nova.actions import judge
 from nova.actions import tools
-from nova import protocol, task_state
+from nova import intents, protocol, task_state
 from nova.actions import readback
 from nova.actions import undo
 
@@ -175,11 +175,24 @@ def readback_verdict(task):
             task["screen"] += "\nA new plan is on the card below - follow it from the first step not done."
 
 
+def _keep_unsaved_work(call):
+    """Nova may press "Don't save" only when the user's own words say so ("close notepad without saving"): the
+    brain's discard_changes is dropped otherwise (QA plan P2-c). Unsaved work is the user's to throw away."""
+    args = call.get("args") or {}
+    if call.get("name") != "window_action" or not args.get("discard_changes"):
+        return
+    words = protocol.unspoken(((session.state.get("task") or {}).get("goal")) or "")
+    if not intents.match("discard_changes", words):
+        args["discard_changes"] = False
+        conversation.task_log("UNSAVED WORK: discard_changes dropped - the user didn't say to close without saving")
+
+
 def execute(calls, approved, activity, model):
     outs = []
     card = task_state.of(session.state.get("task"))
     for c in calls:
         session.state.pop("ran_as", None)
+        _keep_unsaved_work(c)
         rid = task_state.start(card, c)   # the card: started, not confirmed - until the tool has really run
         snap = undo.before(c)             # 4e: a level-1 step that can be undone keeps what was there
         started = time.time()             # 4c-4: a download must be newer than this

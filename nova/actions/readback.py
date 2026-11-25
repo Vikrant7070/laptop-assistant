@@ -144,8 +144,14 @@ def window_action(args, out):
         ok, seen = _check("front_window", name)
         return _passed(seen, name) if ok else _failed(seen, name)
     if action == "close":
-        ok, seen = checks.evaluate({"check": "window_open", "arg": name}, {}, timeout=0)
-        return _failed(f"{name} is still open", name) if ok else _passed(f"{name} is closed", name)
+        # The window it closed, by its full title ("Closed '*notes - Notepad'."): with two Notepad windows open,
+        # "is any Notepad open?" stayed yes after closing one, and she kept retrying (QA 2026-11-25).
+        m = re.match(r"Closed '(.+)'(?:\.| without)", str(out))
+        target = m.group(1) if m else name
+        if "asking whether to save" in str(out):
+            return _skipped("it is waiting for the user to choose Save / Don't save", name)
+        ok, seen = checks.evaluate({"check": "window_open", "arg": target}, {}, timeout=0)
+        return _failed(f"{target} is still open", target) if ok else _passed(f"{target} is closed", target)
     return _skipped(f"no read-back for '{action}' yet", name)
 
 
