@@ -247,6 +247,7 @@ def from_words(text):
     session.state.pop("stop_why", None)
     eventbus.publish("question", {"id": card["id"], "closed": "answered"})
     conversation.task_log(f"ANSWERED ({card['owner']}): {answers}")
+    task_state.note_choice(task_state.of(session.state.get("task")), card, answers)     # 4f: on the task's record
     on_answer = HANDLERS.get(card["owner"], (None, None))[0]
     if on_answer is None:
         return True, {"reply": "Thanks!", "say": "Thanks!", "activity": ["Got your answer"], "by_code": True}

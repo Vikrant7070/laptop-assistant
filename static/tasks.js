@@ -38,6 +38,17 @@ function row(r) {
   </details>`;
 }
 
+function recordLine(r) {
+  if (!r) return "";
+  const bits = [];
+  if (r.app) bits.push("app: " + r.app + (r.blocked.length ? " (in the way: " + r.blocked.join(", ") + ")" : ""));
+  if (r.workers.length) bits.push("workers: " + r.workers.map(w => w.who + " " + w.status).join(", "));
+  if (r.rounds > 1) bits.push(r.rounds + " rounds");
+  if (r.cost) bits.push("cost $" + r.cost.toFixed(2));
+  if (r.learned) bits.push(r.worked ? "the Learner counted it as worked" : "the Learner read it (not counted as worked)");
+  return bits.length ? html`<p class="k">Record: ${bits.join(" · ")}</p>` : "";
+}
+
 function taskBody(d) {
   const c = d.card;
   return html`${c.plan.length ? html`<p class="k">Plan (from ${c.source}):</p><ol>${c.plan.map(s =>
@@ -53,6 +64,9 @@ function taskBody(d) {
     ${(d.undo || []).length ? html`<p class="k">Changes that can be undone:</p><ul>${d.undo.map(u => html`<li>#${u.id} ${u.what} <small>${
         u.state === "can undo" ? html`<button data-chat="undo change #${u.id}" title="Opens the chat with this filled in">↩ Undo…</button>` : u.state}</small></li>`)}</ul>` : ""}
     ${(c.asks || []).length ? html`<p class="k">Waiting for your answer: ${c.asks.map(a => a.text).join("; ")}</p>` : ""}
+    ${(c.choices || []).length ? html`<p class="k">You chose:</p><ul>${c.choices.map(x => html`<li>${x.q} → ${x.a}${x.how === "skip" ? html` <small>skipped - her guess</small>` : ""}</li>`)}</ul>` : ""}
+    ${c.app_notes ? html`<p class="k">Read before it started: ${c.app_notes}</p>` : ""}
+    ${recordLine(d.record)}
     ${d.checks.length ? html`<p class="k">The Judge's checks (${d.verdict_source || "checks"}): ${d.checks.join("; ")}</p>` : ""}
     <p class="k">Why it ended: ${d.status === "running" ? "still running" : d.status === "waiting" ? "waiting for you" + (d.why ? ": " + d.why : "")
       : d.why || (d.status === "done" ? "done" : WORD[d.status] || d.status)}${d.card.read_only ? " · saved by a newer Nova (read-only)" : ""}</p>`;

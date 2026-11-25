@@ -9,12 +9,18 @@ Learner (learn(), run by app.py at idle time - never during a task). Pure code, 
     on the daily list: "save it as a skill?" (only for tasks with 2+ replayable steps - one step is just a request).
   - The same kind of task done twice with one changing part (search for tea / search for coffee) -> "save it as a
     skill with the changing part as {input}?" (the two episodes are compared; the differing argument is the slot).
+  - An app task (4f): offered only once the same path in that app (the same steps) has worked APP_TIMES times -
+    "it worked twice in Notepad the same way" - not after the first time.
   - Research jobs -> facts (data/facts.json), learned silently: which sites' pages ended up cited in the report and
     which were opened and not used. The next research on the same topic reads them first (sites_for).
 
 Learning without asking: facts only (viewable and deletable on the Knowledge page, "unconfirmed" until the user
 confirms one). New skills: always asked. A wrong verdict would teach a wrong skill, so "worked" is strict (worked()):
 a task no check could look at never becomes a skill offer.
+
+4f, one record: the episode lives on its task card's row (db.py), so /tasks and the Learner read one record. It
+also keeps the task's app and what got in the way there (sign-in wall, cookie banner, slow load), which the app
+notes read (appnotes.py).
 """
 import json
 import re
@@ -27,6 +33,7 @@ from nova import db
 from nova import store
 
 KEEP_DAYS = 30
+APP_TIMES = 2           # 4f: the same path in an app worked this many times -> offered as a skill
 MAX_EPISODES = 2000
 MAX_FACTS = 300
 _lock = threading.RLock()
@@ -78,6 +85,7 @@ def episode_from_task(task, brain="", now=None):
             jobs.append({"id": int(m.group(1)), "status": "working"})
     if not steps:
         return None
+    from nova.actions import appnotes
     v = task.get("verdict") or {}
     started = task.get("started") or now
     last = max([t.get("t", started) for t in task.get("trace") or []] or [started])
@@ -87,7 +95,8 @@ def episode_from_task(task, brain="", now=None):
             "checks_ok": bool(v.get("results")) and all(r.get("ok") for r in v["results"]),
             "secs": round(max(0.0, last - started), 1), "brain": str(brain or task.get("model") or "")[:60],
             "skill": ran_skill, "stopped": bool(task.get("stopped")),
-            "redacted": HIDDEN in json.dumps(steps, ensure_ascii=False), "jobs": jobs}
+            "redacted": HIDDEN in json.dumps(steps, ensure_ascii=False), "jobs": jobs,
+            "app": appnotes.app_of(task), "blocked": appnotes.blocked(task.get("trace"))}
 
 
 def load(now=None):
@@ -221,6 +230,9 @@ def describe_fact(f):
     if f.get("kind") == "answer":
         from nova.actions import manager
         return manager.describe_answer(f)
+    if f.get("kind") == "routine":
+        from nova.actions import activity
+        return activity.describe(f)
     good = sorted(f["good"], key=lambda h: -f["good"][h])
     bad = sorted((h for h in f["ignored"] if f["ignored"][h] > f["good"].get(h, 0)), key=lambda h: -f["ignored"][h])
     parts = []
@@ -348,6 +360,11 @@ def template(ep_a, ep_b):
     return a, prefix
 
 
+def _same_path(ep, shape):
+    steps = _replay(ep)
+    return bool(steps) and _shape(steps) == shape
+
+
 def _skill_name(words):
     from nova.actions import skills
     return skills.slug("-".join(words.split()[:5])) or "saved-task"
@@ -392,6 +409,17 @@ def learn(is_skill=None, now=None):
                 "it worked both times and only one word changed", key=f"slot:{shape}:{prefix}",
                 data={"episode": e["id"], "steps": tsteps, "examples": [prefix], "name": _skill_name(prefix),
                       "goal": e["goal"]}, now=now)
+        elif len([s for s in steps if "tool" in s]) >= 2 and e.get("app"):
+            same = {o["id"] for o in good if o.get("app") == e["app"] and _same_path(o, shape)} | {e["id"]}
+            if len(same) < APP_TIMES:
+                continue                    # an app path is offered once it has worked APP_TIMES times
+            qid = questions.add(
+                "save_skill", f"“{e['goal'][:80]}” has worked {len(same)} times the same way in {e['app']}. Shall I "
+                "save it as a skill, so next time I do the same steps straight away?",
+                f"the same {len(steps)} steps in {e['app']} worked {len(same)} times and my checks said it was done",
+                key=f"app:{e['app']}:{shape}",
+                data={"episode": e["id"], "steps": steps, "examples": [" ".join(_norm_words(e["goal"]))],
+                      "name": _skill_name(" ".join(_norm_words(e["goal"]))), "goal": e["goal"]}, now=now)
         elif len([s for s in steps if "tool" in s]) >= 2:
             qid = questions.add(
                 "save_skill", f"“{e['goal'][:80]}” worked. Shall I save it as a skill, so next time I do the same "

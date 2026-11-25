@@ -76,7 +76,7 @@ def test_the_project_s_own_venv_comes_first(tmp_path, monkeypatch):
 def test_tests_that_pass_fail_or_don_t_exist(tmp_path, py_here):
     _pyproj(tmp_path)
     c = jobchecks.coding(tmp_path, tmp_path, ["README.md"])
-    assert [x["state"] for x in c] == ["passed", "passed"] and "1 passed" in c[1]["why"]
+    assert [x["state"] for x in c[:2]] == ["passed", "passed"] and "1 passed" in c[1]["why"]
     (tmp_path / "test_readme.py").write_text(FAILING, encoding="utf-8")
     t = jobchecks.coding(tmp_path, tmp_path, ["README.md"])[1]
     assert t["state"] == "failed" and "1 failed" in t["why"] and "test_readme_is_perfect" in t["why"]
@@ -128,7 +128,8 @@ def test_research_checks_catch_a_missing_report_and_too_few_sources(tmp_path):
     report = tmp_path / "Research - tea.txt"
     report.write_text("Headline: tea [1] [2]", encoding="utf-8")
     ok = jobchecks.research({"path": str(report), "sources": ["a", "b", "c"], "cited": ["a", "b"]}, 3)
-    assert jobchecks.verdict(ok) == "passed" and ok[0]["why"] == "2 sources cited"
+    assert jobchecks.verdict(ok[:2]) == "passed" and ok[0]["why"] == "2 sources cited"
+    assert [c["name"] for c in ok[2:]] == ["citations", "independent", "backed", "disagreements"]   # Phase 5
     # a fake "saved": the job says it wrote the report, the file isn't there
     gone = jobchecks.research({"path": str(tmp_path / "missing.txt"), "sources": ["a", "b"], "cited": ["a", "b"]})
     assert jobchecks.verdict(gone) == "failed" and "the report file is missing" in gone[1]["why"]
@@ -171,7 +172,7 @@ def test_a_project_with_no_test_command_shows_tests_skipped(repo, fake_worker): 
     assert "tests: skipped - no test command found" in job["result"]
     assert job["result"].index("tests: skipped") < job["result"].index("Nothing is committed")
     rec = workers.load_jobs()[-1]
-    assert rec["verdict"] == "passed" and [c["state"] for c in rec["checks"]] == ["passed", "skipped"]
+    assert rec["verdict"] == "passed" and [c["state"] for c in rec["checks"][:2]] == ["passed", "skipped"]
 
 
 def test_a_job_whose_tests_fail_is_reported_plainly(repo, fake_worker, py_here):  # noqa: F811
@@ -187,7 +188,7 @@ def test_a_job_whose_tests_fail_is_reported_plainly(repo, fake_worker, py_here):
     row = tasks_page.job_row(rec)
     assert row["verdict"] is False and row["not_checked"] is False
     d = tasks_page.detail(row["id"])
-    assert [c["state"] for c in d["checks"]] == ["passed", "failed"] and d["left"] == rec["left"]
+    assert [c["state"] for c in d["checks"][:2]] == ["passed", "failed"] and d["left"] == rec["left"]
 
 
 def test_a_job_whose_tests_pass(repo, fake_worker, py_here):  # noqa: F811
@@ -196,7 +197,7 @@ def test_a_job_whose_tests_pass(repo, fake_worker, py_here):  # noqa: F811
     git(repo, "add", ".")
     git(repo, "commit", "-qm", "tests")
     job, _ = run_job(repo)
-    assert "Checks: files passed; tests passed." in job["result"]
+    assert "Checks: files passed; tests passed; lint: skipped - the project has no lint set up." in job["result"]
     assert tasks_page.job_row(workers.load_jobs()[-1])["verdict"] is True
 
 
@@ -222,6 +223,8 @@ def test_a_real_research_job_is_checked(monkeypatch, tmp_path):
     tools.research_in_background("green tea")
     assert _wait(lambda: done) and done[0]["status"] == "done"
     rec = workers.last_record("latest", need_files=False, kinds=("research",))
-    assert {c["name"]: c["state"] for c in rec["checks"]} == {"sources": "failed", "report": "passed"}
-    assert rec["verdict"] == "failed" and rec["left"] == ["sources: 1 source cited (need 2)"]
-    assert "But a check failed - sources: 1 source cited (need 2)." in rec["result"]
+    states = {c["name"]: c["state"] for c in rec["checks"]}
+    assert {k: states[k] for k in ("sources", "report")} == {"sources": "failed", "report": "passed"}
+    assert rec["verdict"] == "failed" and rec["left"][0] == "sources: 1 source cited (need 2)"
+    assert {"citations", "independent", "backed", "disagreements"} <= set(states)        # Phase 5's judge ran too
+    assert "But a check failed - sources: 1 source cited (need 2);" in rec["result"]

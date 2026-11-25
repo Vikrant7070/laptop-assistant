@@ -56,7 +56,7 @@ def test_episodes_are_updated_in_place_and_old_ones_pruned():
     eps = learner.load()
     assert [e["id"] for e in eps] == ["t1"] and len(eps[0]["steps"]) == 2
     with store.current().db() as con:                                   # the 40-day-old one is gone, not just hidden
-        assert con.execute("SELECT id FROM episodes").fetchall() == [("t1",)]
+        assert con.execute("SELECT id FROM tasks WHERE json_extract(data, '$.episode') IS NOT NULL").fetchall() == [("t1",)]
 
 
 def test_worked_is_strict():
@@ -75,11 +75,24 @@ def test_worked_is_strict():
 # ------------------------------------------------------------------ the Learner's skill offers
 
 def test_a_task_that_worked_is_offered_once_as_a_skill():
+    learner.record(learner.episode_from_task(_task("make a list of my plans", [_step("write_text_file", path="C:/x/plans.txt"),
+                                                                             _step("read_text_file", path="C:/x/plans.txt")],
+                                                   verdict=True)))
+    made = learner.learn()
+    assert len(made) == 1                          # not an app task: offered the first time it worked
+    assert questions.get(made[0])["key"].startswith("one:")
+
+
+def test_an_app_path_is_offered_once_it_has_worked_twice():
+    learner.record(learner.episode_from_task(_task("open notepad and type my shopping list", NOTEPAD, verdict=True)))
+    assert learner.load()[-1]["app"] == "notepad"
+    assert learner.learn() == []                   # 4f: once in an app isn't a path yet
     learner.record(learner.episode_from_task(_task("open notepad and type my shopping list", NOTEPAD, verdict=True)))
     made = learner.learn()
     assert len(made) == 1
     q = questions.get(made[0])
     assert q["kind"] == "save_skill" and "open notepad and type my shopping list" in q["text"] and q["why"]
+    assert "2 times the same way in notepad" in q["text"] and q["key"].startswith("app:notepad:")
     assert [s["tool"] for s in q["data"]["steps"]] == ["open_app", "type_text"]
     assert learner.learn() == []                                   # learned once: not offered again
     learner.record(learner.episode_from_task(_task("open notepad and type my shopping list", NOTEPAD, verdict=True)))
@@ -269,12 +282,14 @@ def test_idle_learner_records_the_current_task_and_queues_an_offer(brain, monkey
     monkeypatch.setattr(app.checks, "evaluate", lambda chk, ctx, **k: (True, "it is open"))
     brain([("", [("open_app", {"name": "notepad"})]), ("", [("open_app", {"name": "calculator"})]),
            ("Both are open.", [])])
+    learner.record({**learner.episode_from_task(_task("open notepad and calculator", [
+        _step("open_app", name="notepad"), _step("open_app", name="calculator")], verdict=True)), "learned": True})
     app.answer("open notepad and calculator")
     assert app.state["task"]["verdict"]["verdict"] is True        # the Judge's checks cover the whole goal
     app.nap["last_task"] = time.time() - 120
     assert app.learn_due()
-    made = app.learn_now()
-    assert len(made) == 1 and len(learner.load()) == 1
+    made = app.learn_now()                        # the second time this path worked in notepad: offered
+    assert len(made) == 1 and len(learner.load()) == 2
     assert not app.learn_due()                    # not again for a while
 
 

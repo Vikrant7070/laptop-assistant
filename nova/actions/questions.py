@@ -69,6 +69,22 @@ def add(kind, text, why, data=None, key="", urgent=False, now=None):
         return q["id"]
 
 
+def update(qid, **fields):
+    """Rewrite an open question's text / data / key (a better wording of the same lesson, 4f). -> True if done."""
+    with _lock:
+        d = load()
+        q = next((x for x in d["questions"] if x["id"] == qid and x["status"] == "open"), None)
+        if not q:
+            return False
+        if fields.get("key") and any(x.get("key") == fields["key"] for x in d["questions"] if x is not q):
+            fields.pop("key")           # that wording was asked about already: keep this one's key
+        for k in ("text", "why", "data", "key"):
+            if k in fields:
+                q[k] = str(fields[k])[:300] if k in ("text", "why") else fields[k]
+        _save(d)
+        return True
+
+
 def open_questions():
     return [q for q in load()["questions"] if q["status"] == "open"]
 

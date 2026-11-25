@@ -14,7 +14,7 @@ always / paid / never) decides whether the brief waits for Go; the default is al
 import re
 
 from nova import protocol, task_state
-from nova.actions import manager, workers
+from nova.actions import jobrounds, manager, workers
 from nova.log import log_exception
 
 def mode():
@@ -209,6 +209,34 @@ def after_job(job):
         return None
 
 
+# ------------------------------------------------------------------ a worker at its usage limit (plan 9, answer 3)
+
+def limit_card(job):
+    """integrations.job_done for a job that stopped at its worker's usage limit (jobrounds.usage_stop): "Carry on with
+    <other> (cost)" / "Wait". Never switches by itself - the other worker may cost money. Never raises."""
+    try:
+        h = job["handoff"]
+        q = asking.question("handoff", f"{job.get('result') or 'The worker hit its usage limit.'} Carry on with "
+                            f"{workers.NAMES[h['to']]}, from where it stopped?", "one",
+                            choices=[("go", f"Carry on with {h['label']}"), ("wait", "Wait")],
+                            why="Switching workers may cost money, so I only do it when you say.")
+        return _deliver(asking.ask(asking.make("limit", [q], data=dict(h)), "A worker hit its usage limit", wait=False))
+    except Exception:
+        log_exception("manager: the usage-limit card")
+        return None
+
+
+def _limit_answered(qcard, answers):
+    h = qcard["data"]
+    rec = next((r for r in reversed(workers.load_jobs()) if r.get("key") == h["key"]), None)
+    if rec is None:
+        return _said("I can't find that job any more.", "Job gone")
+    if answers["handoff"]["value"] != "go":
+        return _said(f"Okay, I'll wait - nothing switched. Its changes so far are kept, not committed. Say 'try job "
+                     f"#{rec['job']} again' when you want {workers.NAMES[h['to']]} to carry on.", "Waiting")
+    return _said(_for_user(jobrounds.hand_over(rec)), f"Handed job #{rec['job']} to {workers.NAMES[h['to']]}")
+
+
 def _deliver(out):
     """A card asked outside a request (a job just finished): the chat, her voice, and the phone when the user is away
     (it is 'blocked, waiting for you' - Telegram gets it with its buttons)."""
@@ -225,4 +253,5 @@ def _deliver(out):
 # Used only when a function runs; imported last so each module is complete before its siblings load.
 from nova.core.app import asking, conversation, integrations, resume, session, voice_io  # noqa: E402
 asking.handler("manager", _answered, _dropped)
+asking.handler("limit", _limit_answered)
 manager.HAND_OFF = from_tool
