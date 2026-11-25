@@ -138,6 +138,10 @@ KINDS = {
                 "connect_gmail", "fill_form"}),
 }
 _LEAD = r"(?:(?:please|kindly|now|then|also|and|immediately|urgent(?:ly)?:?|nova|assistant|ai|bot|you (?:must|should|need to|have to))[,:!]?\s+)*"
+# 4g: "Every morning at 9, delete …" in an email is an order too (a schedule is made only from the user's words)
+_WHEN = (r"(?:(?:every|each|daily|hourly|weekly)\b(?:\s+\w+)?(?:\s+(?:morning|afternoon|evening|night))?"
+         r"(?:\s+at\s+\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)?)?[,:]?\s+)?")
+_LEAD = _WHEN + _LEAD
 _ORDER = re.compile(r"^\W*" + _LEAD + r"(?P<verb>" + "|".join(v for v, _ in KINDS.values()) + r")\b", re.I)
 _JAILBREAK = re.compile(r"\b(ignore|disregard|forget)\b.{0,30}\b(instructions|rules|previous|above|prompt)\b|"
                         r"\b(new instructions|system prompt|you are now)\b", re.I)

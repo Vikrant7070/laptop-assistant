@@ -136,6 +136,7 @@ def start_background():
     runtime.spawn("background.pulse_watch", pulse_watch)
     runtime.spawn("background.resume_offer", resume.offer_after_start)    # chat back + "should I continue?"
     suggesting.start()                                      # Phase 8: "open your morning setup?" at the right moment
+    runtime.spawn("background.schedule_watch", scheduling.watch, delay=scheduling.TICK, every=scheduling.TICK)   # 4g
 
 
 @api.app.get("/ear")
@@ -413,4 +414,4 @@ def pulse_now():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, config, conversation, integrations, learning, privacy, prompts, resume, session, suggesting, voice_io  # noqa: E402
+from nova.core.app import body, config, conversation, integrations, learning, privacy, prompts, resume, scheduling, session, suggesting, voice_io  # noqa: E402

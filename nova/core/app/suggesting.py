@@ -94,14 +94,20 @@ def tick(now=None):
         for r in routines:
             if suggest.prepare_due(r, now, state):
                 prepare(r, now)
-    r, why = suggest.pick(routines, now, context(), s, suggest.load(now))
-    if r is None:
-        if why != last["why"]:
-            last["why"] = why
-            conversation.task_log(f"SUGGEST routine: none ({why})")
+    from nova.core.app import session
+    if not session.starting.acquire(blocking=False):     # a scheduled run (4g) is starting: look again next tick
         return None
-    last["why"] = ""
-    return offer(r, now)
+    try:
+        r, why = suggest.pick(routines, now, context(), s, suggest.load(now))
+        if r is None:
+            if why != last["why"]:
+                last["why"] = why
+                conversation.task_log(f"SUGGEST routine: none ({why})")
+            return None
+        last["why"] = ""
+        return offer(r, now)
+    finally:
+        session.starting.release()
 
 
 def prepare(routine, now=None):

@@ -26,6 +26,9 @@ state = {"messages": [], "pending": None}
 
 
 lock = eventbus.BusyLock()    # held while she handles a request; taking and letting go are published as "busy"
+# Held by a background starter (a scheduled run, a routine suggestion) from its "is she free?" look until its work has
+# started, never waited for: two of them never start at the same moment (one laptop task at a time).
+starting = threading.Lock()
 
 
 recorder.busy = lock.locked     # 👀 while she handles a request, the windows she opens aren't the user's steps

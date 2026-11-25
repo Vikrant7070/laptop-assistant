@@ -20,3 +20,4 @@ who *means* to work somewhere, the script says who *has* uncommitted or unmerged
 | Manager Phase 7: activity log level 1 + form profile (`nova/actions/activity.py`, `nova/actions/forms.py`, `nova/core/app/privacy.py`, `static/privacy.js`) | Claude session (manager phase 7) | `claude/manager-phase7-e77e40` | 2026-11-24 |
 | Part B leftovers | OpenCode | `refactor/part-b` | 2026-11 |
 | Barge-in echo fix (`nova/audio/voice/barge_in.py`, `tests/test_barge_in.py`) | Claude session (barge-in echo) | `claude/bargein-echo-4ec2d0` | 2026-11-24 |
+| Manager 4g: scheduled and repeating jobs (`nova/schedules.py`, `nova/core/app/scheduling.py`, `static/schedules.js`, the ⏰ section in `static/tasks.html`; one line each in `body.py`, `background.py`, `tasks_page.py`, `risk.py`, `protocol.py`, `store.py`) | Claude session (manager 4g) | `claude/manager-4g-7b7ac5` | 2026-11-24 |
