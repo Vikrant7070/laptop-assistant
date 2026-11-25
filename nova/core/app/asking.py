@@ -239,6 +239,11 @@ def from_words(text):
     else:
         answers = words(card, protocol.unspoken(text).strip())
     if answers is None:
+        if intents.match("drop_card", protocol.unspoken(text).strip()):   # "never mind": close it, nothing else
+            conversation.task_log(f"QUESTION dropped (waved away): {text[:80]}")
+            _drop(card, "you said never mind")
+            return True, {"reply": "Okay, dropped it.", "say": "Okay, dropped it.", "activity": ["Dropped the question"],
+                          "by_code": True}
         conversation.task_log(f"QUESTION dropped (not an answer): {text[:80]}")
         _drop(card, "moved on")
         return False, None

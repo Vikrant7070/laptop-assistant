@@ -126,6 +126,19 @@ def test_words_that_dont_answer_it_drop_the_card_and_go_on_as_a_new_request(brai
     assert out["reply"] == "It's sunny." and GOT == [] and DROPPED == [card["id"]] and "question" not in app.state
 
 
+def test_never_mind_just_closes_the_card(brain):
+    # Found live 2026-11-25: "never mind, drop that job" on a Go card went on to the brain as a new request, and she
+    # started on the README anyway.
+    card, _ = _ask(FOLDERS)
+    fake, ran = brain([("I'll fix the README now.", [("open_path", {"path": "x"})])])
+    out, _ = app.answer("never mind, drop that job")
+    assert out["reply"] == "Okay, dropped it." and not ran and DROPPED == [card["id"]] and "question" not in app.state
+    card, _ = _ask(FOLDERS)                                  # "never mind, <a new request>" still goes on
+    brain([("It's sunny.", [])])
+    out, _ = app.answer("never mind, what's the weather like")
+    assert out["reply"] == "It's sunny." and DROPPED[-1] == card["id"]
+
+
 def test_two_questions_words_answer_the_first_and_the_second_takes_its_guess(brain):
     brain([])
     second = asking.question("style", "A style?", "one", choices=[("plain", "Plain"), ("bold", "Bold")], guess="plain")

@@ -166,7 +166,8 @@ def test_the_review_brain_rewords_the_code_lesson_instead_of_saving_it(monkeypat
 
 # ------------------------------------------------------------------ the daily question and an open question card
 
-def test_an_open_question_card_doesnt_break_the_daily_question():
+def test_an_open_question_card_doesnt_break_the_daily_question(brain):
+    brain([("Hi!", [])])
     # Found live 2026-11-25: both kept their question under session.state["question"], so with a card open (a
     # schedule's "Save it?") every typed message crashed in take_question (KeyError 'until').
     from nova.core.app import asking, background
