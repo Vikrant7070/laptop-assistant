@@ -80,6 +80,11 @@ YES = re.compile(r"^\W*(yes|yeah|yep|sure|ok(ay)?|do it|go ahead|allow( it)?|ple
 
 
 NO = re.compile(r"^\W*(no|nope|don'?t|cancel|stop|never ?mind|nahin?|nai|mat|rehne do|ruko?|chhodo)\b", re.I)
+# The WHOLE message only waves an open question card away ("never mind, drop that job"): the card closes and nothing
+# else happens. "never mind, open Chrome instead" is not this - it goes on as a new request.
+DROP_CARD = re.compile(r"^\W*(ok(ay)?\W+)?(never ?mind|cancel( (it|that|this))?|forget (it|that|about it)|drop (it|that|this)|"
+                       r"leave it|rehne do|chhodo)(\W+(drop|cancel|forget|leave)( (it|that|this)( (job|one|question|"
+                       r"task))?)?)?\W*$", re.I)
 
 
 # --- Tasks (from app/conversation.py) ---
@@ -248,7 +253,7 @@ JUST_STOP = just_stop_re(DEFAULT_NAMES)       # voice_io builds its own from the
 
 
 KINDS = {
-    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO,
+    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
     "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "build_thing": BUILD_THING, "project_code": PROJECT_CODE,
     "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,

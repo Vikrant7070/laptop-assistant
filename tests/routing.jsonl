@@ -293,3 +293,13 @@
 {"kind": "intent", "intent": "ask_cloud", "query": "what's the weather in the cloud forest", "match": false, "note": "cloud, but not the brain"}
 {"kind": "intent", "intent": "ask_cloud", "query": "ask me before you delete anything", "match": false, "note": "ask, but not a brain"}
 {"kind": "intent", "intent": "ask_cloud", "query": "open claude.ai in chrome", "match": false, "note": "names a site, doesn't ask it"}
+{"kind": "intent", "intent": "drop_card", "query": "never mind", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "drop_card", "query": "never mind, drop that job", "match": true, "note": "says it - found live 2026-11-25"}
+{"kind": "intent", "intent": "drop_card", "query": "cancel that", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "drop_card", "query": "forget it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "drop_card", "query": "okay drop it", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "drop_card", "query": "chhodo", "match": true, "note": "says it (Hindi)"}
+{"kind": "intent", "intent": "drop_card", "query": "never mind, open chrome instead", "match": false, "note": "a new request after it"}
+{"kind": "intent", "intent": "drop_card", "query": "cancel my netflix subscription", "match": false, "note": "a request, not a dismissal"}
+{"kind": "intent", "intent": "drop_card", "query": "no, the other folder", "match": false, "note": "a correction, not a dismissal"}
+{"kind": "intent", "intent": "drop_card", "query": "drop the file in Downloads", "match": false, "note": "a request"}

@@ -337,6 +337,7 @@ def _execute_one(c, approved, activity, model):
         session.state["ran_as"] = c                  # traced as what ran, so a skill saved from it does the same
     if session.is_risky(c) and not approved:
         out = "The user declined this action. Do not do it."
+        (session.state.get("task") or {})["declined"] = True     # her "okay, I'll wait" isn't a promise to push on
         activity.append(f"Skipped: {session.FRIENDLY.get(c['name'], session.ask_label(c['name']))}")
         session.think(f"🚫 Skipping: {session.ask_label(c['name']).lower()} (not allowed).")
     elif mcp.owns(c["name"]):                   # 🔌 a connector's tool runs in its MCP server
@@ -658,7 +659,7 @@ def _agent_loop(activity):
                               "name, a duration in seconds, and 4-8 keys (each {\"at\": 0..1, plus poses such as right_arm_out, "
                               "left_arm_out, lean_side, jump, head_nod}). Then say one short line.")})
             continue
-        if not calls and not nudged and (claimed_body or (not did_something and PROMISE_RE.search(text or ""))):
+        if not calls and not nudged and not (task or {}).get("declined") and (claimed_body or (not did_something and PROMISE_RE.search(text or ""))):
             # Small models sometimes *say* "I'm clicking it now" without calling a tool. Make her follow through.
             nudged = True
             session.think("🙈 I said I'd do it but didn't actually do anything - doing it properly now.")

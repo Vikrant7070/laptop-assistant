@@ -38,6 +38,18 @@ def test_declined_action_does_not_run(brain):
     assert not ran
 
 
+def test_after_a_no_her_ill_wait_isnt_pushed_into_asking_again(brain):
+    # Found live 2026-11-25: after No, "Okay, I'll wait - no deletion yet" matched PROMISE_RE, the promise nudge sent
+    # her back to the tool, and she asked for the same delete a second time.
+    set_autonomy("careful")
+    fake, ran = brain([("", [("kill_process", {"name_or_pid": "chrome"})]),
+                       ("Okay, I'll wait - I won't close it.", []),
+                       ("", [("kill_process", {"name_or_pid": "chrome"})])])     # what the nudge used to bring
+    app.answer("close chrome")
+    out, _ = app.confirm_pending(False)
+    assert not ran and not out.get("pending") and "wait" in out["reply"]
+
+
 def test_moving_on_declines_pending(brain):
     set_autonomy("careful")
     fake, ran = brain([("", [("kill_process", {"name_or_pid": "chrome"})]), ("Hi!", [])])
