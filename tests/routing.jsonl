@@ -360,3 +360,16 @@
 {"kind": "intent", "intent": "capabilities", "query": "what are your features", "match": true, "note": "says it"}
 {"kind": "intent", "intent": "capabilities", "query": "what can you do with files", "match": false, "note": "a specific question: the brain answers"}
 {"kind": "intent", "intent": "capabilities", "query": "can you do me a favour", "match": false, "note": "a request"}
+{"kind": "intent", "intent": "rename_file", "query": "rename C:\\Users\\me\\old.txt to new.txt", "match": true, "note": "says it - exams 2026-11-23/25"}
+{"kind": "intent", "intent": "rename_file", "query": "rename \"C:\\x y\\old.txt\" to \"new name.txt\"", "match": true, "note": "quoted paths"}
+{"kind": "intent", "intent": "rename_file", "query": "please rename the file C:\\a\\b.txt as c.txt", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "rename_file", "query": "rename my photos folder to Holiday", "match": true, "note": "matches; code only acts if that path exists"}
+{"kind": "intent", "intent": "rename_file", "query": "rename it to final", "match": true, "note": "matches; 'it' isn't a file, so the brain answers"}
+{"kind": "intent", "intent": "rename_file", "query": "what should I rename this to", "match": false, "note": "a question"}
+{"kind": "intent", "intent": "rename_file", "query": "rename", "match": false, "note": "nothing to rename"}
+{"kind": "intent", "intent": "type_and_save", "query": "open Notepad, type 'step one done', and save it as C:\\Temp\\multi.txt", "match": true, "note": "says it - exams"}
+{"kind": "intent", "intent": "type_and_save", "query": "type 'hello' and save it to C:\\a\\b.txt", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "type_and_save", "query": "write \"buy milk\" and save it as C:\\notes\\todo.txt", "match": true, "note": "double quotes"}
+{"kind": "intent", "intent": "type_and_save", "query": "type hello in notepad", "match": false, "note": "no save"}
+{"kind": "intent", "intent": "type_and_save", "query": "write 'buy milk' and save it as todo.txt", "match": false, "note": "no full path: the brain asks where"}
+{"kind": "intent", "intent": "type_and_save", "query": "save it as a pdf", "match": false, "note": "nothing typed"}
