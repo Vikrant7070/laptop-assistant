@@ -168,9 +168,10 @@ def readback_verdict(task):
     task.update(done=False, verdict_source="checks", screen="Read back by code: " + "; ".join(bad), fail_plain=bad[0])
     conversation.task_log("READ BACK says not done: " + "; ".join(bad))
     if not task.get("nudged"):
-        # One fresh plan for the one more go (cloud brain first, else the deep brain), from the step outcomes only.
+        # One fresh plan for the one more go, from the step outcomes only - from a cloud brain; without one she just
+        # gets the one more go with the failing check on her card (the local deep brain is too slow here).
         if watching.replan(task, f"A check by code failed: {bad[0]}. Plan how to finish the task - fix what that "
-                                 "check found, don't repeat a step that already failed.", "READ BACK"):
+                                 "check found, don't repeat a step that already failed.", "READ BACK", deep=False):
             task["screen"] += "\nA new plan is on the card below - follow it from the first step not done."
 
 

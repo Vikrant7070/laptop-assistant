@@ -83,6 +83,15 @@ def test_promise_without_tool_gets_one_nudge(brain):
     assert ran == [("open_app", {"name": "chrome"})]
 
 
+def test_switching_now_without_a_step_gets_a_nudge(brain):
+    # Task exam 2026-11-25: "Switching to Calculator now... Calculator is ready." with no tool call passed as done.
+    fake, ran = brain([("Switching to Calculator now...", []),
+                       ("", [("window_action", {"title": "Calculator", "action": "focus"})]), ("Done!", [])])
+    out, _ = app.answer("switch to the calculator")
+    step = ran or [(p["tool"], p["input"]) for p in out.get("pending") or []]     # it runs, or it asks first
+    assert step == [("window_action", {"title": "Calculator", "action": "focus"})]
+
+
 def test_turn_limit(brain):
     fake, ran = brain([("", [("get_datetime", {"n": i})]) for i in range(40)])
     out, _ = app.answer("loop forever")

@@ -529,7 +529,7 @@ PROMISE_RE = re.compile(
     r"\b(i['’]?ll|i will|i['’]?m|i am|let me(?! know)|going to|now)\b[^.!?]{0,30}\b(click|open|search|play|scroll|type|"
     r"press|clos|select|tap|launch|start|go to|navigat|lock|mut|paus|turn|set|shut|restart|remind|delet|mov|install|"
     r"check|look|find|scan|measur)"
-    r"|\b(lock|open|clos|play|search|launch|start|turn|mut|paus|set|shut|restart|delet|mov|install|clean|check|scan|"
+    r"|\b(lock|open|clos|play|search|launch|start|turn|mut|paus|set|shut|restart|delet|mov|install|clean|check|scan|switch|focus|"
     r"measur)\w*ing\b[^.!?]{0,30}\b(now|right away)\b|\bi['’]?ll do (it|that) (right away|now)\b", re.I)
 
 
