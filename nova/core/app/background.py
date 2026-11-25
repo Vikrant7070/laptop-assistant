@@ -127,6 +127,7 @@ def start_background():
         integrations.mobile.start()                          # the iPhone web app's server (127.0.0.1 only)
     mcp.start()                                 # 🔌 connectors in data/mcp.json, each on its own thread
     runtime.spawn("background.presence_watch", integrations.presence_watch)
+    runtime.spawn("background.activity_watch", privacy.activity_watch)   # off unless ticked in ⚙ Privacy
     runtime.spawn("background.work_watch", work_watch)
     runtime.spawn("background.help_watch", integrations.help_watch)
     if config.settings()["notifications"]:
@@ -134,6 +135,7 @@ def start_background():
     runtime.spawn("background.sync_phone_banners", integrations.sync_phone_banners)
     runtime.spawn("background.pulse_watch", pulse_watch)
     runtime.spawn("background.resume_offer", resume.offer_after_start)    # chat back + "should I continue?"
+    suggesting.start()                                      # Phase 8: "open your morning setup?" at the right moment
     runtime.spawn("background.schedule_watch", scheduling.watch, delay=scheduling.TICK, every=scheduling.TICK)   # 4g
 
 
@@ -412,4 +414,4 @@ def pulse_now():
 
 
 # Used only when a function runs; imported last so each module is complete before its siblings load.
-from nova.core.app import body, config, conversation, integrations, learning, prompts, resume, scheduling, session, voice_io  # noqa: E402
+from nova.core.app import body, config, conversation, integrations, learning, privacy, prompts, resume, scheduling, session, suggesting, voice_io  # noqa: E402

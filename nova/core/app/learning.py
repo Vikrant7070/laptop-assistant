@@ -16,6 +16,7 @@ from nova.actions import knowledge
 from nova.brain import llm
 from nova.actions import skills
 from nova.actions import learner
+from nova.actions import lessons
 from nova.actions import questions
 from nova.actions import recorder
 from nova.actions import tools
@@ -35,8 +36,21 @@ QUESTION_SECS = 600                     # a question she asked waits this long f
 learn_state = {"last": 0.0}
 
 
-def record_episode(task):
-    """Write a finished task to the episode log (nothing for a chat with no steps). Never raises."""
+CORRECTED = "the user corrected Nova or was unhappy with what she did"
+LESSON_SECS = 120                       # the review brain's better wording replaces a code lesson this soon after it
+
+
+def record_episode(task, next_goal=""):
+    """Write a finished task to the episode log (nothing for a chat with no steps). With the user's next request,
+    a correction of that task becomes a lesson on the daily list (4f, lessons.py). Never raises."""
+    if next_goal:
+        try:
+            qid = lessons.from_turn(task, next_goal)
+            if qid:
+                session.state["lesson_q"] = {"id": qid, "ts": time.time()}
+                conversation.task_log(f"LESSON queued for the daily list (#{qid})")
+        except Exception as e:
+            conversation.task_log(f"LESSON not queued: {type(e).__name__}: {e}")
     if not task or not task.get("goal"):
         return
     try:
@@ -110,14 +124,18 @@ def take_question(text, force=None):
     questions.answer(q["id"], "yes" if yes else "no", clean)
     conversation.task_log(f"QUESTION #{q['id']} answered {'yes' if yes else 'no'}")
     voice_io.note_task()
-    if not yes:
-        line = "Okay, I won't." if q["kind"] == "save_skill" else "Okay."
-    elif q["kind"] == "save_skill":
-        line = save_offered_skill(q["data"])
-    else:
-        line = "Thanks - noted."
+    line = accept_question(q) if yes else "Okay, I won't." if q["kind"] in ("save_skill", "lesson") else "Okay."
     nxt = question_line()
     return line + (" " + nxt if nxt else "")
+
+
+def accept_question(q):
+    """A yes (said, or ✓ on the Knowledge page) to a question from the daily list. -> her answer."""
+    if q["kind"] == "save_skill":
+        return save_offered_skill(q["data"])
+    if q["kind"] == "lesson":                   # 4f: only now is the lesson used
+        return lessons.accept(q)
+    return "Thanks - noted."
 
 
 def save_offered_skill(data):
@@ -303,7 +321,7 @@ def why_review(user_text, out):
         return None                            # she already wrote it down herself
     clean_text = config._unspoken(user_text)
     if intents.CORRECTION.search(clean_text):
-        return "the user corrected Nova or was unhappy with what she did"
+        return CORRECTED
     task = session.state.get("task") or {}
     if FAILED_RE.search(out.get("reply") or "") or (task.get("nudged") and task.get("done") is False):
         return "Nova could not finish what was asked"
@@ -333,7 +351,13 @@ def review_turn(why):
                 data = data.get("args", data) if isinstance(data, dict) else {}
             saved = []
             for l in (data.get("lessons") or [])[:2]:
-                if isinstance(l, dict) and l.get("lesson"):
+                if isinstance(l, dict) and l.get("lesson") and why == CORRECTED:      # 4f: asked first, not saved
+                    pend = session.state.pop("lesson_q", None) or {}
+                    qid = lessons.offer(l.get("situation", ""), l["lesson"], "you corrected me",
+                                        replace=pend.get("id") if time.time() - pend.get("ts", 0) < LESSON_SECS else None)
+                    if qid:
+                        saved.append(f"lesson for the daily list (#{qid}): {l['lesson'][:120]}")
+                elif isinstance(l, dict) and l.get("lesson"):
                     msg = knowledge.learn_lesson(l.get("situation", ""), l["lesson"], l.get("kind", "mistake"), source="auto")
                     if "saved" in msg or "already" in msg:
                         saved.append(f"lesson: {l['lesson'][:120]}")
@@ -398,7 +422,7 @@ def knowledge_get():
               "when": time.strftime("%d %b %Y", time.localtime(f.get("last", f.get("learned", 0))))}
              for f in sorted(learner.load_facts()["facts"], key=lambda f: -f.get("last", 0))
              if f.get("kind") != "history"]        # history facts have their own section (history_page)
-    asks = [{"id": q["id"], "text": q["text"], "why": q["why"], "asked": q["asked"], "urgent": q["urgent"]}
+    asks = [{"id": q["id"], "text": q["text"], "why": q["why"], "asked": q["asked"], "urgent": q["urgent"], "kind": q["kind"]}
             for q in questions.open_questions()]
     return jsonify(profile=k["profile"], lessons=sorted(k["lessons"], key=lambda l: -l.get("last", 0)),
                    labels=knowledge.LABELS, one=knowledge.ONE, many=knowledge.MANY, file=str(store.current().knowledge),
@@ -420,13 +444,19 @@ def knowledge_edit():
         if not isinstance(b.get("id"), int) or isinstance(b.get("id"), bool):
             return jsonify(error="id must be a number"), 400
         msg = f"Deleted {knowledge.delete_lesson(b['id'])} lesson(s)."
-    elif do in ("fact_delete", "fact_confirm", "question_drop"):
+    elif do in ("fact_delete", "fact_confirm", "question_drop", "question_yes"):
         if not isinstance(b.get("id"), int) or isinstance(b.get("id"), bool):
             return jsonify(error="id must be a number"), 400
         if do == "fact_delete":
             msg = f"Forgot {learner.delete_fact(b['id'])} fact(s)."
         elif do == "fact_confirm":
             msg = "Marked as right." if learner.confirm_fact(b["id"]) else "That fact isn't there any more."
+        elif do == "question_yes":         # 4f: the tick - a lesson is used only after this (or a yes to her question)
+            q = questions.get(b["id"])
+            if not q or q["status"] != "open":
+                return jsonify(error="That question isn't there any more."), 404
+            questions.answer(q["id"], "yes", "ticked on the page")
+            msg = accept_question(q)
         else:
             msg = "Okay, she won't ask that." if questions.answer(b["id"], "dropped", "dropped on the page") else \
                 "That question isn't there any more."

@@ -79,6 +79,9 @@ class Settings:
     phone_quiet: bool = True
     phone_notes_cloud: bool = False
     suggest: bool = False
+    routine_suggest: bool = True         # Phase 8: offer a routine Phase 7 found, at its usual time (suggesting.py)
+    routine_suggest_max: int = 2         # ...at most this many a day
+    routine_quiet: str = "22:00-07:00"   # ...never in these hours ("" = no quiet hours)
     reaction_sounds: bool = True
     power_ok: bool = False
     reasoning: str = "auto"

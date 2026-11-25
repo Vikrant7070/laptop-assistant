@@ -598,6 +598,7 @@ function showWorkers(w) {
   const rs = c.research || {};
   $("#wkRsSources").value = rs.max_sources || 3; $("#wkRsCloud").checked = rs.cloud_report !== false;
   $("#wkGoAhead").value = (c.manager || {}).go_ahead || "always";
+  const jd = c.judges || {}; $("#wkJdPage").value = jd.page_secs || 40; $("#wkJdLh").value = jd.lighthouse_min ?? 80;
   const when = t => t ? new Date(t * 1000).toLocaleString([], {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}) + " · " : "";
   put($("#wkRecent"), w.recent.length > 0 && html`<b>Recent jobs</b>${w.recent.map(r => html`<div>${when(r.started)}#${r.job} ${r.worker} · ${
     r.status}${r.files > 0 && ` · ${r.files} file${r.files > 1 ? "s" : ""}`}${r.sources > 0 && ` · ${r.sources} source${r.sources > 1 ? "s" : ""}`}${r.committed && " · committed"}${
@@ -611,7 +612,7 @@ $("#wkSave").onclick = async () => {
       opencode_timeout_min: $("#wkOcTimeout").value, claude_model: $("#wkCcModel").value, claude_budget_usd: $("#wkCcBudget").value,
       daily_budget_usd: $("#wkDaily").value, claude_timeout_min: $("#wkCcTimeout").value,
       research_max_sources: $("#wkRsSources").value, research_cloud_report: $("#wkRsCloud").checked,
-      manager_go_ahead: $("#wkGoAhead").value}));
+      manager_go_ahead: $("#wkGoAhead").value, judges_page_secs: $("#wkJdPage").value, judges_lighthouse_min: $("#wkJdLh").value}));
     $("#wkNote").textContent = "Saved ✓";
   } catch (e) { put($("#wkNote"), html`<span style="color:var(--bad)">${e.message}</span>`); }
 };

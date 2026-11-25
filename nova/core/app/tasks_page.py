@@ -12,6 +12,10 @@ Nothing here changes anything, except that the page's Drop it / Continue use res
 usual Allow / No asks first. Text from jobs goes through the card's cleaning (task_state.clean), so nothing
 secret-looking is shown; a coding job's diff is shown only when asked for, as the "what changed?" tool shows it.
 The iPhone app's read-only list (/m/tasks) is `rows(..., limit=30)`.
+
+4f, one record per task: a laptop task's detail reads its card and the episode kept on the same row (db.py) - the
+workers it started (their job records, live), rounds, cost, what the user chose and the app's notes. Nothing here
+keeps a copy.
 """
 import time
 
@@ -121,7 +125,7 @@ def detail(rid):
             return None
         return {**task_row(card), "card": task_state.strip(card, runs=task_state.MAX_RUNS),
                 "verdict_source": card.get("verdict_source", ""), "checks": card.get("checks") or [],
-                "undo": [undo.describe(r) for r in undo.records(card["id"])][-10:]}
+                "undo": [undo.describe(r) for r in undo.records(card["id"])][-10:], "record": record(card)}
     if rid.startswith("j:"):
         rec = _job(rid[2:])
         if rec is None:
@@ -151,6 +155,29 @@ def detail(rid):
                 "left": [_clean(x, 200) for x in rec.get("left") or []][:10],
                 "sent_back": int(rec.get("sent_back") or 0), "guard": [_clean(x, 200) for x in rec.get("guard") or []][:10]}
     return None
+
+
+def record(card):
+    """4f: the rest of the task's one record - the episode on its row and the jobs it started (read now)."""
+    try:
+        ep = db.task_episode(card["id"]) or {}
+    except Exception:
+        log_exception("tasks page: a task's episode")
+        ep = {}
+    ids = {j.get("id") for j in ep.get("jobs") or []}
+    started = float(card.get("started") or 0)
+    jobs = [r for r in workers.load_jobs() if ids and r.get("job") in ids and float(r.get("started") or 0) >= started - 1]
+    return {"app": ep.get("app") or card.get("notes_app") or card.get("app") or "",
+            "blocked": list(ep.get("blocked") or []), "brain": ep.get("brain") or "",
+            "workers": [{"id": job_row(r)["id"], "who": job_row(r)["who"], "status": job_row(r)["status"]} for r in jobs],
+            "rounds": 1 + bool(card.get("replanned")) + sum(int(r.get("sent_back") or 0) for r in jobs),
+            "cost": round(sum(float(r.get("cost") or 0) for r in jobs), 2),
+            "learned": bool(ep.get("learned")), "worked": bool(ep) and _worked(ep)}
+
+
+def _worked(ep):
+    from nova.actions import learner
+    return learner.worked(ep)
 
 
 # ------------------------------------------------------------------ routes

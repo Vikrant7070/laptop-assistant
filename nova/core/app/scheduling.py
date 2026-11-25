@@ -136,13 +136,18 @@ def tick(now=None):
     if not due:
         return None
     rec = due[0]
-    if busy():
-        if not rec.get("waiting"):
-            schedules.change(rec["id"], lambda r: r.update(waiting=now))
-            conversation.task_log(f"SCHEDULE #{rec['id']} due - waiting: another task is going on")
-            eventbus.publish("schedule", {"id": rec["id"]})
+    if not session.starting.acquire(blocking=False):     # a routine suggestion (Phase 8) is starting right now
         return None
-    return run(rec, now)
+    try:
+        if busy():
+            if not rec.get("waiting"):
+                schedules.change(rec["id"], lambda r: r.update(waiting=now))
+                conversation.task_log(f"SCHEDULE #{rec['id']} due - waiting: another task is going on")
+                eventbus.publish("schedule", {"id": rec["id"]})
+            return None
+        return run(rec, now)
+    finally:
+        session.starting.release()
 
 
 def _result(out, status, card):

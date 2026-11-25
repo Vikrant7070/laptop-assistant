@@ -121,6 +121,7 @@
         <button id="tasksBtn" title="Everything Nova did or handed to a worker, and why it ended" onclick="location.href='/tasks'">📋 Tasks</button>
         <button id="kbBtn" title="What Nova knows about you, and what she has learned" onclick="location.href='/knowledge'">🧠 Knowledge</button>
         <button id="cloudChip" title="Free cloud uses left today - click for details" hidden></button>
+        <button id="actChip" title="The activity log is on - click to pause or see what it recorded" hidden></button>
         <button id="keyBtn" title="Choose model">⚙ Model</button>
         <button id="quitBtn" title="Shut Nova down completely (windows, 3D Nova, listening, tray icon)">⏻ Quit</button>
       </div>
@@ -161,6 +162,7 @@
 <button type="button" data-tab="alerts">🔔 Alerts</button>
 <button type="button" data-tab="phone">📱 Phone</button>
 <button type="button" data-tab="forms">📝 Forms</button>
+<button type="button" data-tab="privacy">🔒 Privacy</button>
 <button type="button" data-tab="tools">🔌 Connectors</button>
 <button type="button" data-tab="workers">🧑‍💻 Workers</button>
 </div>
@@ -233,6 +235,12 @@
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="screen"> 🖥 Let Nova see my screen (only when I ask; screenshots stay in memory, never saved)</label>
       <p id="visionNote" class="mood" style="margin:4px 0 0 22px"></p>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="suggest"> 💡 Suggest things about what I'm working on (a look at my screen at most every 10 min, only while I'm active; needs 🖥 screen; the picture never leaves this laptop)</label>
+      <div id="routineBox" style="margin-top:6px">
+        <label class="mood" style="display:block"><input type="checkbox" id="routineOn"> 🗓 Offer my usual routines at their usual time ("Open your morning setup? (Gmail → Calendar → VS Code)") - once each, only when I'm at the laptop and not busy, full screen or in a meeting; nothing runs until I tap Yes, and each step still asks as usual</label>
+        <p class="mood" style="margin:4px 0 0 22px">At most <input type="number" id="routineMax" min="0" max="10" step="1" style="width:52px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> a day; quiet hours <input type="text" id="routineQuiet" placeholder="22:00-07:00" style="width:100px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline">
+          <button type="button" id="routineSnooze" style="font-size:12px;padding:2px 8px">Snooze 2 h</button> <span id="routineNote"></span></p>
+        <p id="routineNever" class="mood" style="margin:2px 0 0 22px"></p>
+      </div>
       <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="presence"> 👋 Notice when I leave and come back (after a minute without keyboard or mouse she checks the camera for about two seconds; she finds a face, she doesn't recognise who; nothing is saved)</label>
       <label class="mood" style="display:block;margin:4px 0 0 22px"><input type="checkbox" id="presenceLock"> 🔒 …and lock the laptop when I walk away (she warns first - move the mouse to stop her)</label>
       <p class="mood" style="margin:10px 0 2px">🎙 When I talk to her, she stops listening after <input type="number" id="listenPause" min="0.3" max="2" step="0.1" style="width:60px;display:inline-block;padding:3px 6px;margin:2px 3px;font-size:13px;vertical-align:baseline"> seconds of quiet
@@ -325,7 +333,30 @@
         <p class="mood" style="margin:6px 0 0">Say <i>"fill in this form"</i> and Nova types these into the boxes for you, then leaves it for you to check - she never presses Submit by herself. They're saved only on this laptop, and her AI brain is only told <i>which</i> boxes she filled, never what's in them (a screenshot she takes afterwards can still show the filled form). <b>Passwords, OTPs, card, bank and ID numbers are never kept here</b> - for logins she opens the box and your browser's password manager fills it; for codes she waits while you type them.</p>
         <div id="formFields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 10px;margin-top:8px"></div>
         <button id="formsSave" class="yes" style="width:auto;padding:8px 14px;margin-top:8px">Save my details</button>
+        <button id="formsForget" type="button" style="width:auto;padding:8px 14px;margin-top:8px">Forget all my details</button>
         <span id="formsNote" class="mood" style="margin-left:8px"></span>
+        <p class="mood" style="margin:6px 0 0">They're kept encrypted (Windows DPAPI: only your Windows account can read them). With the activity log on (🔒 Privacy), when you type a new name, email, phone or address into a web form, Nova asks once whether to keep it - she never reads password boxes.</p>
+      </div>
+</div>
+<div class="pane" data-pane="privacy">
+      <h3 style="margin-top:16px">📊 Activity log</h3>
+      <div style="border:1px solid var(--line);border-radius:12px;padding:4px 12px 10px">
+        <p class="mood" style="margin:6px 0 0">When it's on, Nova notes which app and window you have in front (the title, with codes, emails and long numbers taken out), the website's address for browsers, and when. <b>Never</b> keys, typed text, screenshots or the clipboard. It only records while you're the one at the laptop, keeps everything on this laptop, and deletes it after 30 days. From it she spots routines ("weekdays ~9 am: Gmail → Calendar → VS Code") and asks you before treating them as facts. Nothing here is sent to any AI brain.</p>
+        <label class="mood" style="display:block;margin-top:6px"><input type="checkbox" id="actOn"> Switch on the activity log</label>
+        <label class="mood" style="display:block;margin-top:4px"><input type="checkbox" id="actPaused"> ⏸ Pause it (say <i>"pause the activity log"</i> any time)</label>
+        <label class="mood" style="display:block;margin-top:4px"><input type="checkbox" id="actForms"> Offer to save name / email / phone / address I type into web forms (asked once; kept encrypted)</label>
+        <p id="actState" class="mood" style="margin:6px 0 0"></p>
+        <p class="mood" style="margin:8px 0 2px"><b>Never record these apps</b> (one program name per line, e.g. <code>keepass.exe</code>)</p>
+        <textarea id="actApps" class="sel" rows="4" spellcheck="false" style="font-family:Consolas,monospace;font-size:12.5px;resize:vertical"></textarea>
+        <p class="mood" style="margin:8px 0 2px"><b>Never record these sites</b> (a domain like <code>paypal.com</code>, or a word like <code>bank</code>). Private / incognito windows are never recorded.</p>
+        <textarea id="actSites" class="sel" rows="4" spellcheck="false" style="font-family:Consolas,monospace;font-size:12.5px;resize:vertical"></textarea>
+        <button id="actSave" class="yes" style="width:auto;padding:8px 14px;margin-top:6px">Save lists</button>
+        <span id="actNote" class="mood" style="margin-left:8px"></span>
+        <h3 style="margin-top:14px">Routines found</h3>
+        <div id="actRoutines" class="mood"></div>
+        <h3 style="margin-top:14px">What was recorded</h3>
+        <button id="actDeleteAll" type="button" style="width:auto;padding:6px 12px">Delete everything recorded</button>
+        <div id="actRecent" class="mood" style="max-height:260px;overflow:auto;margin-top:6px"></div>
       </div>
 </div>
 <div class="pane" data-pane="tools">
@@ -357,6 +388,12 @@
           <label class="mood">Pages to read (1-5)<input id="wkRsSources" class="sel" type="number" min="1" max="5"></label>
           <label class="mood" style="display:flex;gap:6px;align-items:center"><input id="wkRsCloud" type="checkbox"> The cloud brain may write the report (off = the brain on this laptop only)</label>
         </div>
+        <h4 style="margin:12px 0 0">⚖️ Judges</h4>
+        <p class="mood" style="margin:4px 0 0">When a worker finishes, Nova checks its work herself: tests, lint and build when the project has them, and for a website she opens the page (Chrome or Edge, hidden) for console errors, phone width (375 px), broken links and Lighthouse if it's installed. A failed check goes back to the worker once.</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px 10px;margin-top:8px">
+          <label class="mood">Time to open a page (seconds, 10-180)<input id="wkJdPage" class="sel" type="number" min="10" max="180"></label>
+          <label class="mood">Lowest Lighthouse score (0-100)<input id="wkJdLh" class="sel" type="number" min="0" max="100"></label>
+        </div>
         <h4 style="margin:12px 0 0">🧑‍💼 Manager</h4>
         <p class="mood" style="margin:4px 0 0">Say <i>"make a website for my project"</i> and Nova asks a few short questions, writes the brief and hands it to a worker. Should she show the brief and wait for your go?</p>
         <label class="mood">Before a job starts<select id="wkGoAhead" class="sel">
@@ -379,5 +416,7 @@
 <script src="/static/question.js"></script>
 <script src="/static/nova.js"></script>
 <script src="/static/taskstrip.js"></script>
+<script src="/static/privacy.js"></script>
+<script src="/static/suggestions.js"></script>
 </body>
 </html>

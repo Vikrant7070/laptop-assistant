@@ -1058,6 +1058,66 @@ messages, form submits, the wallpaper.** `nova/actions/readback.py`; `judging.ex
 - **Done when:** the second run of an app task has that app's notes in its plan; a correction shows up as a lesson
   on the daily list.
 
+**4f as built (2026-11-24, branch `claude/manager-4f-c45edf`): one record, app notes, app paths, lessons.**
+`nova/db.py` (migration 3), `nova/actions/appnotes.py`, `nova/actions/lessons.py`, `learner.py`, `learning.py`.
+- One record per task: the Learner's episode (steps, verdict, checks, brain, time, jobs it started, app, what got in
+  the way) now lives **on its task card's row** (`tasks.data.episode`), not in a table of its own. Migration 3 moves
+  the old episodes table's rows there and leaves that table empty; an episode with no saved card gets a stub row
+  that `/tasks` doesn't list. `save_task` keeps the row's episode when the card saved has none (the card in memory
+  never carries it). `learner.load()` / `record()` work as before, over the same rows.
+  - The card also keeps what the user chose on question cards during the task (`choices`: question → answer, or
+    "skipped - her guess").
+  - Worker jobs keep their one record in the jobs table (brief, worker, rounds/`sent_back`, checks, committed, cost),
+    as since 4b-4c.
+  - `/tasks` → a laptop task's detail reads the same row: "You chose: …", "Read before it started: <app notes>", and
+    "Record: app (in the way: …) · workers: <the jobs it started, read now> · N rounds · cost $x · the Learner
+    counted it as worked".
+- App notes (`appnotes.py`) are **read from those records**, not kept anywhere else: per app, its newest 8 runs -
+  which controls worked (`press_keys ctrl+s`, `click_text "Save as"`; typed text is never shown), which didn't,
+  what got in the way (sign-in wall / cookie banner / slow load, found in the steps' results when the episode is
+  made), how long it took on average, how many worked.
+  - The app is the one the request named, else the first app the task opened.
+  - An app task's card gets the line when it starts (`task_state.attach`) or when a step opens the app
+    (`task_state.start`): "APP NOTES (notepad, 2 earlier runs, 2 worked, about 25 s) Worked: press_keys ctrl+s …".
+    The brain sees it under the plan on every step, and the deep brain's planner gets it with the goal
+    (`task_state.plan_goal`).
+  - Done when: `test_the_second_run_of_an_app_task_has_that_apps_notes_in_its_plan`.
+- App path → skill: an app task is offered as a skill only once **the same path in that app** (the same tools in the
+  same order) has worked twice (`APP_TIMES`): "“…” has worked 2 times the same way in notepad. Shall I save it as a
+  skill …?" on the daily list. Tasks with no app keep the old rule (offered the first time it worked); the slot
+  ("search for tea / coffee") offer is unchanged and still wins.
+- Lessons from corrections (`lessons.py`, pure code), read from the user's next request and the task before it
+  (within 30 min):
+  - "don't X" / "never X" / "stop doing X" → "Don't X." ("don't worry", "never mind", "don't forget …" are not);
+  - "no, the other folder", "wrong window", "that's not what I asked" (the CORRECTION words) → "<what she did last>
+    was wrong - the user said “…”." (when: the last request);
+  - Stop, then the same request in other words (half the words shared) → "The user stopped me at “…” and asked again
+    as “…” - do it that way."
+  - Each goes on the daily list as "Shall I keep this lesson? … (When: …)" (kind `lesson`). It is **not** in her knowledge
+    bank until the user ticks it: a yes to the daily question, or the new ✓ on the Knowledge page (`question_yes`).
+    Then it is saved as a lesson with source "user" and read before answering like any other.
+  - The review brain that runs after a correction no longer saves its lessons straight away either: its better
+    wording replaces the code's question (one question per correction), still waiting for the tick. Its lessons for
+    "Nova could not finish" are saved as before.
+  - Done when: `test_a_correction_shows_up_as_a_lesson_on_the_daily_list`.
+- Live check (2026-11-24) on a separate copy (port 5099, throwaway data seeded with two Notepad runs that worked -
+  one hit a cookie banner, one with a folder answer - and a "no, the other folder" correction), no brain calls:
+  - a third Notepad card got "APP NOTES (notepad, 2 earlier runs, 2 worked …) … Got in the way: cookie banner (2x)";
+  - the Learner queued "… has worked 2 times the same way in notepad. Shall I save it as a skill …";
+  - `/tasks` showed the second run's "You chose: Where should I save it? → Documents", "Read before it started:
+    APP NOTES …" and "Record: app: notepad (in the way: cookie banner) · the Learner counted it as worked";
+  - the Knowledge page listed the lesson with ✓ / ×; ✓ put it in the lessons (source "user") and took it off the
+    list. No console or server errors.
+- Not built (said plainly):
+  - Notes attribute every step of a task to its one app: a task that used two apps puts both apps' steps under the
+    first. "Slow load" is found from words in results, not from timing (step times include the brain's thinking).
+  - The planner and the card get the notes; there is no separate "app worker" yet that reads them (the brain is the
+    app worker today).
+  - A worker job's notes per job type are still 4b's (`manager.choose` reads the job records); nothing new there.
+  - Lessons don't yet look at what the user did after a Stop with their own hands (the recorder is off by default).
+  - Changes the planner's prompt (the goal now carries the app notes): a task exam before/after is owed (the user
+    starts it).
+
 **4g — Scheduled and repeating jobs**
 - "Every morning at 9 check my Gmail and tell me what's important", "every Sunday copy Documents to D:" → a schedule
   record (`data/schedules.json` through `store.py`), shown on `/tasks` with the next run, Pause and Delete.
@@ -1088,6 +1148,9 @@ through `store.py`), `nova/core/app/scheduling.py` (the card, the commands, the 
   the request). One laptop task at a time: while a request runs, an Allow / No or a question card waits, it waits
   ("waiting - another task is going on" on `/tasks`). The next time is set from now, so runs missed while the laptop
   was off or asleep happen **once**, and that run says "late: it was due …".
+  - With Phase 8: a routine suggestion and a scheduled run never start together. Each takes `session.starting`
+    (never waited for) from its "is she free?" look until it has started, and an open suggestion card makes the
+    run wait, as any card does.
   - Level-2 steps still ask (Allow / No in the chat; Telegram with Yes / No when the user is away). Level 0/1 follow
     the usual settings - the plan was approved on the card.
   - Each run is kept on the schedule (last 10: due, at, late, done / blocked / failed, its task, what she said) and
@@ -1117,8 +1180,44 @@ through `store.py`), `nova/core/app/scheduling.py` (the card, the commands, the 
 - A second worker reviewing the first one's work without seeing the conversation (costs a second run; after 4c
   works).
 - When a worker hits a usage limit (DeepSeek 429, Claude Code quota), the other worker carries on from the same
-  commit — with the user's OK, since it may cost money.
+  commit — with the user's OK, since it may cost money. *(Built 2026-11-24 - see "Leftovers as built" below.)*
 - Several devices (UFO's "Galaxy") belong to `docs/device-network-plan.md`.
+
+**Leftovers as built (2026-11-24, branch `claude/manager-leftovers-bdf9fd`): cloud re-plan, research send-back,
+usage-limit handoff.** `watching.plan_from_brains` / `watching.replan`, `jobrounds.research_round`,
+`jobrounds.usage_stop` / `hand_over`, `managing.limit_card`. Tests: `tests/test_manager_leftovers.py`.
+- **Re-plan from a cloud brain (4c-1 and 4d-1 gaps).** A re-plan goes to the cloud brain first when one is on - the
+  cloud brain picker's model (cloud-first mode), or the one a local-first task would climb to - else the local deep
+  brain; a cloud error or limit falls back to the deep brain. Rule 7: it is sent the goal, one line per step (its
+  words and done / failed / skipped, `task_state.outcomes`) and why - never raw tool results, and not the user's
+  folder paths. A goal about mail stays local unless ⚙ lets mail go to the cloud (`email_cloud`), as for climbing.
+  The card's plan source says "cloud" or "deep brain".
+  - Stuck (4d): the same one new plan as before, now cloud first.
+  - A laptop task whose read-back failed (4c-1): the one more go now comes with a fresh plan on the card ("A check by
+    code failed: multi.txt is missing. Plan how to finish the task …"), and the note says "A new plan is on the card
+    below - follow it". One per request; still failing → the plain "I don't think I finished that - …".
+  - Test: `test_the_cloud_replan_is_sent_step_outcomes_never_raw_results` (raw output, paths absent from the request),
+    `test_no_cloud_brain_means_the_deep_brain_plans`, the cloud-error / mail fallback.
+- **Research send-back (4c-3 gap).** A research job whose check fails (fewer than 2 cited sources, report missing or
+  empty) goes back once, in the same job: it reads more pages (2 more, at most 5) with "Nova checked the last report
+  and this check failed: sources: 1 source cited (need 2). Read more pages, and cite at least 2 different sources"
+  in its focus, and writes a new report (the first one is kept on disk). Same `send_backs` / `job_min` limits as
+  coding (a time limit stops it as `limit`, "Say 'try job #n again'"). A send-back that breaks keeps the first
+  report. Reported like coding: "(… I sent it back once to read more pages and it fixed it.)" or "… it still fails -
+  over to you: look at the report, or ask me to research it again another way."
+- **Usage-limit handoff (section 9, answer 3).** OpenCode with every model at its limit (429 / free limit, after the
+  big-pickle fallback), or Claude Code whose *error* says usage limit / quota / 429: the job stops as `limit`
+  ("usage: … hit its usage limit"), its changes kept and not committed, and a question card asks "… Carry on with
+  Claude Code, from where it stopped?" → "Carry on with Claude Code, paid, up to $1.00" (or "OpenCode + DeepSeek
+  (free)") / "Wait". Nothing switches by itself. On Carry on, the other worker gets the same brief plus "Another
+  worker started this job and stopped at its usage limit. It already changed these files …: README.md. Look at them
+  first and carry on from there", in the same folder as it was left; those files count as the new job's own. A job is
+  handed over once. `/tasks` ▶ Continue… ("try job #n again") does the same hand-over (Claude Code still asks Allow).
+  The card goes to the phone when the user is away, like 4b's cards.
+- Not built (said plainly): the resume re-plan (an app that has gone, 4-pre b) still uses the deep brain only.
+  "From the same commit": the other worker continues from the folder as it is (uncommitted changes), not a commit.
+  Claude Code's exact limit wording was not seen live (no paid job was run); the words matched are the known ones.
+  The research send-back's extra pages are read only when the check fails, never because the report looked thin.
 
 **Build order from here:** 4c → 4d → 4e → 4f → 4g, each on its own branch with tests and a live check on a separate
 copy, and only after the user says go for that step. 4e must be built before the manager runs any level-2 laptop
@@ -1137,6 +1236,53 @@ Quality comes from measurement, not from the user's habits or the worker's own c
 - **Research:** claims backed by 2+ independent sources, disagreements listed, citations present.
 
 Each judge gives a pass/fail list Nova can quote back to the worker ("mobile layout overflows at 375 px").
+
+**Phase 5 as built (2026-11-24, branch `claude/manager-phase5-fc2a5f`): judges for websites, code and research.**
+`nova/actions/judges.py` (settings, lint/build, research) and `nova/actions/sitejudge.py` (the website judge), called
+from `jobchecks.coding` (every coding round, after files + tests) and `jobchecks.research`. Same check shape as 4c-2:
+passed / failed / skipped-with-why, never "passed" for a check that didn't run, nothing installed to make one run.
+A failed check's `why` is the sentence Nova quotes back, so 4c-3's send-back brief carries it unchanged
+("- mobile: mobile layout overflows at 375 px (the page is 512 px wide; div.hero sticks out)").
+- **Websites** - for job type `new site` / `new app` (`rec["job_type"]`, now passed by `jobrounds.check_round`) or a
+  folder (or one above it, up to the git root) with an `index.html` (also `public/`) or an npm `dev` / `start` script:
+  - How it opens: the build check's output (`dist/` `build/` `out/` with an index.html) → served from there (SPA
+    fallback); else the npm `dev`/`start` script (with node_modules and npm/pnpm/yarn present) started with the
+    worker's safety env + `PORT`/`BROWSER=none`, its address read from its output, time-limited (`start_secs`) and
+    killed with its process tree afterwards; else the folder's `index.html`.
+  - Nova serves the page on 127.0.0.1 herself (static, or a proxy in front of the dev server) and injects a small probe
+    script into every HTML page. Chrome (else Edge) runs headless with a throwaway profile and `--dump-dom`; the page
+    sits in an iframe exactly 375 px wide because headless Chrome won't make a window narrower than ~500 px
+    (found live: `--window-size=375` gave innerWidth 504).
+  - Checks: `page` (opens, title; a "new site" with nothing to open fails, other jobs skip), `console` (console.error,
+    script errors, unhandled rejections, files that failed to load - the server's own 404s too; dev-server HMR /
+    websocket chatter ignored behind the proxy), `mobile` (no sideways scroll at `width`, names the first element that
+    sticks out; skipped if the frame couldn't be sized), `links` (local links fetched, up to 40; links to other sites
+    counted, not fetched - no network for judging), `lighthouse` (performance / accessibility / SEO ≥ `lighthouse_min`
+    when `lighthouse` is on the PATH; else skipped "Lighthouse isn't installed").
+  - No Chrome/Edge → every website check skipped "no headless browser (Chrome or Edge) on this laptop".
+- **Code** - `lint`: ruff (`ruff.toml` / `.ruff.toml` / `[tool.ruff` in pyproject; the project's venv first), else
+  flake8 (`.flake8`, `[flake8]` in setup.cfg / tox.ini), else an npm `lint` script; none → skipped "the project has no
+  lint set up"; set up but not installed → skipped, saying so. `build` (package.json projects only): `npm run build`
+  (by lock file; no node_modules → skipped). Both run like the tests (`jobchecks.run_tests(..., name=)`: safety env,
+  time limit, Stop stops them, the end of the output kept as `detail`). "Diff only in the expected folder" is 4c-2's
+  `files` check, unchanged.
+- **Research** - over the saved report: `citations` (every finding cites a source, and only listed ones: "cites [7],
+  but only 3 sources are listed"), `independent` (the cited sources come from 2+ different sites, `www.` ignored),
+  `backed` (at least `backed_share` - default half - of the findings cite 2+ different sites), `disagreements` (a
+  "Disagreements: …" line, "none found" counts). Fewer than 2 sources read → skipped. The research prompt
+  (`nova/prompts/research.md`) now asks for every source number per point ([1][3]) and the closing Disagreements line
+  - **a prompt change: run the task exam (`python -m nova.exam`, the user starts it) before/after merging.** Research
+  jobs still aren't sent back (4c-3); a failed research judge is reported in the result line.
+- Settings: `workers.json` → `judges` (`page_secs` 40, `start_secs` 60, `lint_secs` 180, `build_secs` 300, `width` 375,
+  `lighthouse_min` 80, `lighthouse_secs` 120, `backed_share` 0.5), each clamped to a range by `judges.limits`; a
+  ⚙ Workers save keeps them. ⚙ Workers shows "Time to open a page" and "Lowest Lighthouse score".
+- Live check (2026-11-24, real Chrome, fixture pages, outside Nova): a page with a 520 px div → "mobile layout overflows
+  at 375 px (the page is 528 px wide; div.hero sticks out)", console "boom; failed to load missing.png", links
+  "gone.html (404)"; a responsive page → all passed; ~4 s per page.
+- Not built (said plainly): ML-model judges (held-out score, speed, memory vs the last run); Playwright (not installed
+  here - Chrome's `--dump-dom` plus the probe does the job without it); desktop-width checks; Lighthouse itself isn't
+  installed on this laptop, so its pass/fail is tested with a fake run only; a build's output (`dist/`) may show up as
+  changed files on a send-back round if the project doesn't ignore it.
 
 ## 8. Phase 6–8 — Knowing the user (all opt-in, local, viewable, deletable)
 
@@ -1200,6 +1346,160 @@ recording only when the user is the one at the laptop (YuNet presence can help),
 - **Not built:** a local-model summary of transcripts (plain-code sentences instead; safer and testable); using
   confirmed history facts in briefs or prompts (needs the user's say on what may reach a cloud brain); Chrome's
   other browsers (Edge, Firefox); the ⚙ settings copy of the switches (they live on the Knowledge page only).
+
+**Phase 7 as built (2026-11-24, branch `claude/manager-phase7-e77e40`): activity log level 1 + form profile.**
+- `nova/actions/activity.py`: OFF by default; one tick in ⚙ Settings → 🔒 Privacy turns it on. Every 3 s
+  (`Sampler.tick`, thread `background.activity_watch` in `nova/core/app/privacy.py`) it notes the app (process name),
+  the front window's title cleaned (a title with OTP / password / verification words becomes "(hidden)"; e-mails →
+  "(email)", 5+ digit runs → "#"), the site's host for browsers (address bar, read only when the title changes), and
+  start / end. Never keys, typed text, screenshots or the clipboard. Spans < 2 s are dropped; kept in its own
+  `<data>/activity.db` (not nova.db, so no migration clash); raw spans deleted after 30 days. Its settings are in
+  `<data>/activity.json` (`prefs()` / `save_prefs()`), not settings.json.
+- Records only while the user is here: presence (YuNet) when that is on, else unlocked + input in the last 5 min.
+  Never in a blocked app (password managers by default), a blocked site (banks, payment, password and ID sites by
+  default; a word or a domain + its sub-domains) or a private / incognito / InPrivate window - not even a "blocked"
+  row. A pause switch; the header chip (`static/privacy.js`) shows ● logging / ⏸ paused while it is on. The ⚙ view
+  lists what was recorded with 🗑 (one entry), 🚫 (never record this app / site + delete it) and "delete everything".
+  Voice: tool `activity_log` (pause / resume / off / status / routines; level 1) - it can't switch the log on.
+- Routines by plain code (`find_routines`): per day, steps ≥ 20 s merged, sequences of 2-4 different steps with gaps
+  ≤ 20 min; one seen on ≥ 3 days starting within a 90-minute window is a routine ("weekdays ~9 am: Gmail → Google
+  Calendar → VS Code"). Saved every 6 h as unconfirmed facts (kind "routine", `learner.describe_fact` says them; the
+  Knowledge page ✓ / delete). **For Phase 8:** `activity.routines(now=None)` → `[{key, text, steps, minute, window,
+  when, weekdays, days, last_day, due}]` - `due` is True when `now` is inside its window on one of its weekdays.
+- Form profile (`nova/actions/forms.py`): `form_details.json` is now DPAPI-encrypted (`platform.protect`; an old
+  plain file is encrypted on first read). `refuse()` blocks passwords / OTPs / card (Luhn) / bank / IFSC / Aadhaar /
+  PAN / passport, as a field name or a value - an error, even when asked. With the log on and "offer to save" ticked,
+  in a browser the focused box is looked at only if `forms.classify` says it is a profile detail (password boxes are
+  never read); when the page moves on, new valid values are offered ONCE with a question card naming labels only
+  ("Save your email and phone?"); Yes saves encrypted, No forgets; a hash stops the same value being asked again.
+  ⚙ Forms has "Forget all my details". `fill_form` unchanged: values typed locally, never in a brain message (test).
+- Measured CPU (2026-11-24, real desktop, throwaway data, log + form noticing on, 2 min): **0.22 % of one core**
+  (0.27 s CPU over 121 s, 40 ticks); worst tick 154 ms (the UI Automation address-bar read after a title change).
+- Tests: `tests/test_activity.py`, `tests/test_form_profile.py` (+ one changed case in `test_forms.py`: a password
+  field is now refused with an error, not silently dropped). Live check on a copy (port 5093): switch, chip, pause,
+  view, delete all.
+- Not built: the daily question list does not ask "is this routine right?" yet (the Knowledge page ✓ does); the
+  site host was checked live in Chrome only (Edge / Firefox use the recorder's address-bar names, untested); desktop-app forms are not noticed (browsers only, to
+  keep it cheap); no tray indicator (the chat header chip only).
+### Phase 8 design - level 2 recording (written 2026-11-24; NOT built; waits for the user's answers below)
+
+Level 2 has two parts: **(a) clicks by control name** in apps the user allows, and **(b) the sentences the user
+sends** in apps the user allows, read only *after* they are sent, kept as style features. Nothing in this section is
+built; the suggestions (Phase 8 as built, below) don't need it.
+
+**The rule that keeps it from being a keylogger:** level 2 never installs a keyboard hook, never reads key presses,
+and never reads a text box while the user is typing in it. It reads only *finished, sent* messages from the place the
+app itself keeps them (a Sent folder, the conversation's history), and only *which control* was clicked.
+
+**(a) Clicks by control name**
+- Source: UI Automation events, scoped to the allowed apps' processes - `Invoke` (a button / menu item / link was
+  pressed), `SelectionItem` (a tab / list item chosen), `FocusChanged` *to a control's name and type only*. No global
+  low-level hook. (The "watch me" recorder's mouse + keyboard hooks stay what they are today: on only between
+  "watch me" and "done".) Fallback if UIA events prove unreliable in an app: the recorder's *mouse* hook only,
+  filtered to the allowed apps' windows - the keyboard hook is never part of level 2.
+- What one event keeps: time, app (`recorder.app_name`, so no page or file names), control type, control name
+  (cleaned like `task_state.clean`; an email address, number or secret-looking name -> "[hidden]"). Never the
+  contents of a text box, never a password / PIN / code box (skipped, not even its name), never coordinates.
+- Use: app notes (4f) and "the same clicks 3 times -> offer a skill" (the Learner). Events kept 30 days in
+  `data/activity2.jsonl` through `store.py`, then deleted; what was learned from them (notes, skills) stays.
+- Proposed apps (opt-in one by one): File Explorer, VS Code, Excel, Notepad, Chrome (control names only - the page
+  is `recorder.app_name`, i.e. the site, not the URL).
+
+**(b) Sent sentences (style)**
+- "Only at send time" without key hooks - per app, from where the sent message is kept:
+  - **Gmail:** the existing connector already has `gmail.readonly`; read messages `in:sent` newer than the last one
+    seen (Gmail API). No UI reading at all. Quoted replies and signatures stripped.
+  - **Outlook (desktop):** the Sent Items folder through Outlook's own object model (read only), if the user wants it.
+  - **Chat apps (WhatsApp / Telegram / Teams desktop):** after UIA sees the app's *Send* control invoked (event (a)),
+    read the last outgoing bubble of that conversation through UIA once. Enter-to-send can't be seen without a key
+    hook, so for those apps: the outgoing bubbles that appeared since the last look, read when the conversation loses
+    focus. Later, and only if the user wants chat apps at all.
+- Before anything is kept: the secret filter (`integrations.SECRETY`, `risk.has_card_number`, OTP / password /
+  Aadhaar / PAN / passport patterns) - a message that trips it is dropped whole, not trimmed. Recipients are kept as
+  a hash plus a kind (work / friend / unknown, from the domain), never the address.
+- What is **kept** (the style profile, `data/style.json`, viewable and deletable on "What Nova knows about me"): per
+  app and recipient kind - greeting and sign-off forms ("Hi <name>," / "Thanks, V"), sentence length, formality,
+  emoji and exclamation rates, language mix (English / Hindi / Hinglish), the 50 most-used phrases of 2-4 words with
+  names and numbers removed. Features, not sentences.
+- The **raw text** (needed to recompute the profile and for the user to check what was read): DPAPI-encrypted like
+  `phone._protect`, in `data/sent_raw/`, deleted after 30 days (a startup sweep and a daily one; a test fails if a row
+  older than 30 days survives). Never sent to any brain - the profile's numbers and phrases are what a brain may see
+  when it drafts "in the user's style", and only when the user asks for a draft.
+
+**The same for both parts**
+- **Opt-in per app**, separately for clicks and for sent text; all off by default. A hard blocked list no setting can
+  open: password managers (KeePass, Bitwarden, 1Password, Authenticator), banking and payment sites / apps, incognito
+  / InPrivate windows, Nova's own windows, the lock screen.
+- **Visible indicator:** while any level-2 source is on, the live strip shows a small "● learning (Gmail sent,
+  Explorer clicks)" chip with a Pause button, and the tray icon gets a dot; the first read of the day says so once in
+  the chat ("I read 3 sent emails for your style today"). A Pause switch (and "Nova, stop learning") stops both at
+  once until turned back on.
+- Recording only while the user is at the laptop (presence / input in the last 5 min) and paused automatically in a
+  meeting, full screen or screen share (the same checks as the suggestions below).
+- Nothing raw leaves the laptop; nothing raw reaches a cloud brain (section 10).
+
+**How it will be tested**
+- Hermetic: a fake UIA event stream (button / tab / password box / an email-address name) -> only the allowed app's
+  events are kept, the password box leaves nothing, the name is "[hidden]". A fake Gmail Sent folder -> profile
+  features, quoted text stripped, a message with an OTP dropped whole.
+- Guards: an AST test that the level-2 modules never create `hooks.InputHooks` with a key callback and never call
+  `focused_text`; the 30-day sweep; the blocked list can't be turned on by a settings write; a brain prompt built from
+  the profile contains no sentence from the fake Sent folder.
+- Live, on a separate copy only (port 5092, throwaway data), with the user's OK: Explorer clicks for a few minutes,
+  then the "What Nova knows" page shows the events and Delete removes them. Sent mail is read live only from an
+  account the user picks for the test.
+
+**Questions for the user (before any of this is built)**
+1. Clicks: which apps? (proposed: File Explorer, VS Code, Excel, Notepad, Chrome - site name only.)
+2. Sent text: which apps? (proposed: Gmail only first, through the connector you already have; Outlook / WhatsApp /
+   Telegram later or never?)
+3. Raw sent text: keep it encrypted for 30 days (so the style can be recomputed and you can see what was read), or
+   compute the features at once and keep no text at all?
+4. What is the style for - only drafts you ask for ("reply to Ana in my style"), or also suggested replies?
+5. The indicator: strip chip + tray dot + one line a day - enough, or a sound / a bubble each time?
+6. Language: learn English and Hindi / Hinglish styles separately?
+7. Click events: kept 30 days (proposed) or less?
+
+### Phase 8 as built (2026-11-24, branch `claude/manager-phase8-3cca34`): suggestions at the right moment
+
+`nova/actions/suggest.py` (the rules, pure), `nova/core/app/suggesting.py` (the watcher, the card, the answers, ⚙),
+`nova/platform/busy.py` (Windows' own "don't disturb" state), `static/suggestions.js` (⚙ Senses). Level-2 recording
+is **not** built (design above).
+- Phase 7's routines come through `suggest.found_routines(now)` around `nova.actions.activity.routines(now=None)`
+  (given a `time.time()` stamp); while Phase 7 isn't on master it returns []. It reads Phase 7's shape (`key`, `steps`
+  ["Gmail", ...], `minute`, `weekdays` [0-6]; its `days` is a count and is not used as weekdays) and also `id` / `name`
+  / `apps` / `sequence` / `time` "9:00" / `hour` / `days` ["Mon", ...] / "weekdays"; a routine with no steps or no time
+  is skipped; a failing Phase 7 is logged and gives []. With no name it is the morning / afternoon / evening setup.
+- Every 30 s (`suggesting.watch`, started with the other background watchers): a routine inside its usual time
+  ± 20 min, on one of its days, not offered yet today, not "don't suggest" -> one card: "Open your morning setup?
+  (Gmail → Calendar → VS Code)" with Yes / Not now / Don't suggest this, and why ("You usually do this around 9:00.
+  Each step still asks as usual; nothing has run yet."). Chat, strip and her voice; not the phone (she only offers
+  while the user is at the laptop).
+- Only at a good moment: the user at the laptop (not away by presence, input in the last 5 min, not locked); no
+  request or task running, no task waiting for an answer, no question card or Allow / No open; Nova not asleep;
+  nothing full screen (Windows' notification state: full screen / Direct3D game / presentation mode, or the front
+  window covering its monitor and not maximised); no meeting in front (Teams / Zoom / Webex / Slack with a meeting or
+  call title, Zoom's meeting window, Google Meet in a browser). A bad moment doesn't use the offer up.
+- Answers: **Yes** -> the routine's words ("Open Gmail, then open Calendar, then open VS Code") go through
+  `body.answer` as the user's request, after the tap's reply, so the normal path plans it and every step asks by its
+  risk level (4e). **Not now** -> not that routine again today, and no suggestion at all for an hour. **Don't
+  suggest this** -> never again, listed in ⚙ Senses with ✕ to allow it again. An unanswered (expired) card counts as
+  offered.
+- Limits (⚙ Senses -> 🗓, saved through `/api/suggestions`): on / off (`routine_suggest`, on - it does nothing until
+  Phase 7 finds routines), at most N a day (`routine_suggest_max`, 2), quiet hours (`routine_quiet`,
+  "22:00-07:00"), "Snooze 2 h". State in `data/suggestions.json` (today's offers, answers, the never list, the
+  snooze).
+- Prepare ahead: from 15 min before the offer window until it closes, once a day, the routine's reads run - only a
+  tool on a short allow-list (`check_email`, `get_system_status`, `get_datetime`, `list_reminders`, `list_notes`,
+  `network_info`) **and** level 0 in `risk.LEVELS`; a Gmail / Mail / Outlook step adds `check_email`. Shell commands
+  (even read-only ones), the screen and camera, research jobs and every level-1/2 step never run ahead. Results stay
+  in memory and are shown in the chat on Yes ("📋 Ready ahead (check email): …"); the brain gets only the request.
+- Tests: `tests/test_suggestions.py` - a 9:00 routine gives one card at 9:00 and none at 15:00; none while a task
+  runs, full screen, a game, a meeting, away, a question open or asleep; quiet hours and the off switch; the daily
+  limit; "Don't suggest this" holds for days and ✕ allows it again; Not now snoozes; Yes runs the request only after
+  the tap; prepare-ahead runs only allow-listed level-0 reads, once.
+- Not built (said plainly): level-2 recording (design above, waiting for answers); prepare-ahead for anything but the
+  allow-listed reads (there is no weather tool yet); the card on the phone; suggestions from 4g's schedules.
 
 ## 9. The user's answers (2026-11-20)
 

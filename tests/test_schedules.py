@@ -219,3 +219,28 @@ def test_a_run_that_took_no_steps_still_shows_on_tasks(brain, client, phone):
     run = scheduling.run(schedules.get(1))
     rows = client.get("/api/tasks").get_json()["rows"]
     assert run["status"] == "done" and any(r["id"] == "t:" + run["task"] for r in rows)
+
+
+def test_a_scheduled_run_and_a_routine_suggestion_never_start_together(brain, monkeypatch):
+    """One laptop task at a time: Phase 8's card open -> the schedule waits; each skips while the other is starting."""
+    import datetime as dt
+    from nova.actions import suggest
+    from nova.core.app import asking, suggesting
+    t0 = time.time()
+    _saved("every minute check the time", now=t0)
+    with session.starting:                                    # the suggester is between its look and its card
+        assert scheduling.tick(t0 + 61) is None and schedules.get(1)["runs"] == []
+    routine = {"id": "morning", "name": "morning setup", "steps": ["Gmail"], "time": "09:00", "days": "weekdays"}
+    monkeypatch.setattr(suggest, "source", lambda: (lambda now=None: [routine]))
+    monkeypatch.setattr(suggesting, "context", lambda: {"present": True, "busy": False, "asleep": False,
+                                                        "question": False, "fullscreen": "", "title": "x", "proc": "x"})
+    monkeypatch.setattr(suggesting, "prepare", lambda *a, **k: None)          # no prepare-ahead tools here
+    suggesting.register()
+    tue_9 = dt.datetime(2026, 11, 24, 9, 0)
+    with session.starting:                                    # a scheduled run is starting: no card now
+        assert suggesting.tick(tue_9) is None
+    assert suggesting.tick(tue_9) is not None and asking.current()["owner"] == "routine"
+    assert scheduling.tick(t0 + 62) is None and schedules.get(1)["waiting"]     # the card is open: the run waits
+    session.state.pop("question", None)
+    _time_brain(brain)
+    assert scheduling.tick(t0 + 63)["status"] == "done"
