@@ -207,6 +207,8 @@ def answer(text, quiet=False, remote=False):
         handled, by_code = asking.from_words(text)      # the answer to a question card (a tap, or words)
         if not handled:
             by_code = resume_module.direct(text)      # "continue": a cut-off reply's rest, or the task to carry on
+        if not by_code and resume_module.fold_failed(text):   # a failed task's transcript doesn't steer this one
+            n = len(session.state["messages"])
         carry_on = "" if by_code else conversation.new_task(text)
         # (Tried also passing the time and battery here to save a tool call: the small model then read the line
         # out loud and stopped calling tools for other facts. Only the window list is passed.)

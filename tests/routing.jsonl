@@ -313,3 +313,12 @@
 {"kind": "intent", "intent": "youtube_search", "query": "play the next video", "match": false, "note": "a player button"}
 {"kind": "intent", "intent": "youtube_search", "query": "search for flights to delhi", "match": false, "note": "not youtube"}
 {"kind": "intent", "intent": "youtube_search", "query": "what is youtube", "match": false, "note": "a question"}
+{"kind": "intent", "intent": "try_again", "query": "try again", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "try_again", "query": "please try it again", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "try_again", "query": "do that again", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "try_again", "query": "one more try", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "try_again", "query": "phir se karo", "match": true, "note": "says it (Hindi)"}
+{"kind": "intent", "intent": "try_again", "query": "retry", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "try_again", "query": "try the other folder", "match": false, "note": "a new request"}
+{"kind": "intent", "intent": "try_again", "query": "again open notepad", "match": false, "note": "not a retry of the last task"}
+{"kind": "intent", "intent": "try_again", "query": "what time is it again", "match": false, "note": "a question"}

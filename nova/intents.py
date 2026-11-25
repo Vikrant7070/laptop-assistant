@@ -214,6 +214,12 @@ WATCH_DONE = re.compile(r"^\W*(ok(ay)?\W+|so\W+)?(nova\W+)?(i'?m |i am |all )?(d
                         r"stop watching|you can stop( watching)?)(\W+nova)?\W*$", re.I)
 
 
+# "try again" / "do it again": a follow-up on the task before, which needs its whole story (resume.fold_failed
+# leaves that task's turns alone).
+TRY_AGAIN = re.compile(r"^\W*((please|ok(ay)?|nova|so|yes|haan)\W+)*(try (it |that |this )?again|retry|"
+                       r"do (it|that|this) again|one more (time|try|go)|phir se( (karo|try karo))?|dobara( karo)?)\b",
+                       re.I)
+
 CORRECTION = re.compile(
     r"(that'?s (wrong|not right|not what|incorrect)|not what i (asked|said|meant|wanted)|wrong (one|window|app|tab|file|thing)|"
     r"\byou (didn'?t|did not|forgot|missed|got (it|that) wrong|made a mistake|misunderstood|misheard)\b|"
@@ -274,7 +280,7 @@ KINDS = {
     "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
     "show": SHOW, "help_yes": HELP_YES,
     "answer_yes": ANSWER_YES, "research": RESEARCH, "watch_start": WATCH_START, "watch_done": WATCH_DONE,
-    "correction": CORRECTION, "about_me": ABOUT_ME,
+    "correction": CORRECTION, "try_again": TRY_AGAIN, "about_me": ABOUT_ME,
     "hard": HARD,
     "body_ask": BODY_ASK, "body_not_done": BODY_NOT_DONE,
 }
