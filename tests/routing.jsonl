@@ -346,3 +346,17 @@
 {"kind": "intent", "intent": "discard_changes", "query": "close notepad", "match": false, "note": "nothing about saving: she asks"}
 {"kind": "intent", "intent": "discard_changes", "query": "save it and close notepad", "match": false, "note": "the opposite"}
 {"kind": "intent", "intent": "discard_changes", "query": "close the unsaved notepad", "match": false, "note": "names it, doesn't say to discard"}
+{"kind": "intent", "intent": "switch_to", "query": "switch to the calculator", "match": true, "note": "says it - QA 2026-11-25"}
+{"kind": "intent", "intent": "switch_to", "query": "go to chrome", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "switch_to", "query": "switch back to notepad window", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "switch_to", "query": "take me to file explorer", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "switch_to", "query": "please switch to my downloads", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "switch_to", "query": "switch the calculator off", "match": false, "note": "not a switch to"}
+{"kind": "intent", "intent": "switch_to", "query": "open calculator", "match": false, "note": "opening, not switching"}
+{"kind": "intent", "intent": "capabilities", "query": "what can you do?", "match": true, "note": "says it - QA 2026-11-25"}
+{"kind": "intent", "intent": "capabilities", "query": "so what all can you do", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "capabilities", "query": "how can you help me", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "capabilities", "query": "kya kya kar sakti ho", "match": true, "note": "says it (Hindi)"}
+{"kind": "intent", "intent": "capabilities", "query": "what are your features", "match": true, "note": "says it"}
+{"kind": "intent", "intent": "capabilities", "query": "what can you do with files", "match": false, "note": "a specific question: the brain answers"}
+{"kind": "intent", "intent": "capabilities", "query": "can you do me a favour", "match": false, "note": "a request"}

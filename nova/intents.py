@@ -41,6 +41,25 @@ READ_MORE = re.compile(r"\b(summar|translat|explain|mean|fix|rewrite|correct|imp
 
 # "open youtube and search lofi music" / "search lofi on youtube": a search on YouTube, opened by code at its results
 # page (QA 2026-11-25: the brain clicked the search box, or went through Google, and stalled both times).
+# "switch to the calculator": focus that window by code when one is open (QA 2026-11-25: she said "You're already
+# in Calculator" without looking - she wasn't). No window by that name -> the brain decides as before.
+SWITCH_TO = re.compile(r"^\W*(?:(?:please|nova|can you|ok(?:ay)?)\W+)*(?:switch|go|change|move|jump|take me)\s+(?:back\s+)?to\s+"
+                       r"(?:the\s+|my\s+)?(?P<app>[a-z0-9][a-z0-9 .+&'-]{1,30}?)(?:\s+(?:window|app|tab))?\W*$", re.I)
+
+
+def switch_target(text):
+    """What to switch to ("calculator"), or None."""
+    m = SWITCH_TO.search(text or "")
+    return m.group("app").strip() if m else None
+
+
+# "what can you do?": a plain answer by code (QA 2026-11-25: one vague line from the brain).
+CAPABILITIES = re.compile(r"^\W*(?:(?:so|nova|lucy|ok(?:ay)?|and)\W+)*(?:what (?:all )?(?:can|could) you do|what are you able to do|"
+                          r"what do you do|what are your (?:skills|features|powers)|how can you help(?: me)?|"
+                          r"what can i ask you(?: to do)?|tum kya kar sakti ho|aap kya kar sakti ho|kya kya kar sakti ho)"
+                          r"(?:\W+(?:nova|lucy|makima|for me|here))*\W*$", re.I)
+
+
 YOUTUBE_SEARCH = re.compile(
     r"^\W*(?:(?:please|nova|can you)\W+)*(?:open|go to)\s+youtube\s+(?:and\s+)?"
     r"(?:search|find|look up|look for)\s+(?:for\s+)?(?P<q>[^?!]+?)\W*$"
@@ -292,7 +311,7 @@ JUST_STOP = just_stop_re(DEFAULT_NAMES)       # voice_io builds its own from the
 
 
 KINDS = {
-    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD, "youtube_search": YOUTUBE_SEARCH,
+    "sleep": SLEEP, "stop": JUST_STOP, "yes": YES, "no": NO, "drop_card": DROP_CARD, "youtube_search": YOUTUBE_SEARCH, "switch_to": SWITCH_TO, "capabilities": CAPABILITIES,
     "camera": CAMERA, "screen": SCREEN, "selection": SELECTION, "read_more": READ_MORE,
     "continue": CONTINUE, "resume": RESUME, "skip": SKIP, "all_of_them": ALL_OF_THEM, "build_thing": BUILD_THING, "project_code": PROJECT_CODE,
     "research_then_build": RESEARCH_THEN_BUILD, "email": EMAIL, "ask_cloud": ASK_CLOUD, "job_status": JOB_STATUS, "watch_search": WATCH_SEARCH,
