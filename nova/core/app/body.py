@@ -116,6 +116,22 @@ def body_command(text):
     return {"reply": reply, "activity": [session.FRIENDLY["react"]], "say": reply}
 
 
+# What she really does today - kept to things that are built (QA 2026-11-25: "what can you do?" got one vague line).
+CAPABILITIES_REPLY = (
+    "Here's what I can do on this laptop:\n"
+    "- Apps and windows: open, close, switch, type into them, YouTube searches.\n"
+    "- Files: make folders, write, read, rename, move, find big files - and undo the last change.\n"
+    "- Settings: dark mode, volume, brightness, Wi-Fi, wallpaper, any Settings page.\n"
+    "- Quick facts: time, battery, disk, what's running, what's open.\n"
+    "- Research in the background, with sources, while you keep working.\n"
+    "- Coding jobs: I write the brief and hand it to OpenCode or Claude Code - you say go.\n"
+    "- Schedules (\"every morning at 9...\"), reminders, and your own skills.\n"
+    "- I remember what you tell me, and I always ask before deleting, sending or installing anything.")
+CAPABILITIES_SAY = ("I can open and switch apps, sort your files, change settings, check the time and battery, research "
+                    "in the background, hand coding jobs to my coding helpers, and run your schedules and skills. "
+                    "I always ask before deleting, sending or installing anything.")
+
+
 def look_first(text, activity):
     """Small models sometimes 'answer' about the user or the screen without looking. If the user clearly asked
     Nova to look, take the picture first and hand her the result, so she describes what's really there.
@@ -129,10 +145,18 @@ def look_first(text, activity):
         activity.extend(moved["activity"])
         return moved
     text = config._unspoken(text)       # only the user's words: the 📱 phone note itself mentions "the screen"
+    if intents.match("capabilities", text):          # "what can you do?": a plain answer (QA 2026-11-25)
+        activity.append("Said what I can do")
+        return {"reply": CAPABILITIES_REPLY, "activity": activity, "say": CAPABILITIES_SAY, "by_code": True}
     video_action = next((a for rx, a in intents.VIDEO if rx.search(text)), None)
     youtube = intents.youtube_query(text)
+    switch = intents.switch_target(text)
     if youtube:          # "open youtube and search lofi music": its results page, no clicking (QA 2026-11-25)
         name, args = "open_website", {"url_or_search": "youtube " + youtube}
+    elif switch and tools._find_window(switch):
+        # "switch to the calculator" with one open: focus it by code - she said "you're already in Calculator"
+        # without looking (QA 2026-11-25). No such window: the brain decides (it may need to open the app).
+        name, args = "window_action", {"title_or_app": switch, "action": "focus"}
     elif video_action and tools._video_window():
         name, args = "video_control", {"action": video_action}
     elif intents.SELECTION.search(text):     # before SCREEN: a screenshot only showed her one line of the selection
@@ -151,6 +175,7 @@ def look_first(text, activity):
            "look_through_camera": "📷 You want me to see you - I'll look through the camera first.",
            "video_control": "🎬 That's a video-player button - pressing it directly.",
            "open_website": "▶️ A YouTube search - opening its results page directly.",
+           "window_action": "🪟 Switching to that window directly.",
            "read_selection": "📋 You selected some text - I'll copy it first."}.get(
         name, "📌 That's a plain fact - I'll check it instead of guessing."))
     model = config.brain()
